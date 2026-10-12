@@ -42,7 +42,6 @@ All figures come from real-device / emulator testing, not theory:
 | Metric | Measured | Environment |
 |---|---|---|
 | **Cold start to engine ready** | **< 10 s** | OnePlus 15T (Android 16), real device; ~15 s on tablets |
-| **Local closed-loop step** | **p50 ~0.9–1 s** | pick + act + verify entirely on-device; picking itself 1–2 ms |
 | **Memory with parallel services** | **< 400 MB** | Engine + multiple toolchains running together |
 | **Android compatibility** | **8.0 → 16** | Requires WebView ≥ Chrome 85 (see below) |
 | **APK size** | **~130 MB** | Full Node.js runtime + 19 extension toolchains |
@@ -57,17 +56,6 @@ Hand the Agent tasks: read/write files, run shell commands, full-text search, ma
 
 **Instant preview of what it builds**
 The Agent starts a local HTTP server (with the bundled node) and hands you a `http://127.0.0.1:port` link — tap to preview live, one tap back home. Battle-tested with mini-games, static sites, and API services.
-
-**Local closed loop: plan once, execute on-device**
-The cloud plans **once**; the decision program is handed to an on-device executor that runs **PICK → ACT → VERIFY → retry** locally — no round trip per step. Matching takes 1–2 ms; a full step settles around 0.9–1 s (p50, emulator).
-
-- **Loop gate**: drive the local closed loop straight from the conversation (`run` / `pick` / `status` / `memory` / `vision` / `frame`) — the phone executes and reports back
-- **Evidence on failure**: a blocked run escalates back to the cloud with its candidate pool, so the cloud re-plans with facts instead of the phone retrying blindly
-- **State assertions**: `checkedText` asserts a toggle is actually checked/unchecked instead of guessing from frame diffs; every step is snapshotted for evidence
-- **Visual localization**: when a screen exposes no accessibility nodes (pure-graphics UIs), template matching locates targets at 2 px precision in ~100 ms
-
-**Scene memory: repeated tasks get faster**
-Running the same task again reuses the **verified** path (14–53% faster in testing); failures never pollute the memory, so the next run still does full picking.
 
 **Scalable Agent capabilities**
 Three privilege tiers on demand — Normal (sandbox, default) for everyday use; Shizuku mode grants adb-level commands (process management, system properties, no Root needed); Root mode grants full read/write (double confirmation + automatic backup). Options whose capability isn't ready are grayed out automatically.
@@ -95,7 +83,7 @@ The Agent doesn't just use the Extension Center — it acts on its own: it insta
 - **WebView must be Chrome 85+ (2020-06 or later)**: the app itself supports Android 8.0 → 16, but the UI renders in the system WebView, and the engine frontend uses modern syntax (`??=`, class fields) — a **parse-time** feature that polyfills cannot patch. Devices whose system WebView is older than Chrome 85 show a blank page (export the log from Settings to confirm: it records the `SyntaxError` and the WebView version). **On Android 8.0+ the WebView is an independently updatable system component** (Google Play / OEM stores), so updating it to 85+ is all it takes; the few Chinese ROMs that can never update their WebView are a known limitation.
 - **No desktop environment**: Linux GUI desktop apps can't run; visual outputs are previewed via local HTTP + the built-in WebView
 - **Bundled toolchain is node/bash only**: Clang/Python/Go and 16 more environments come through the built-in **Extension Center** (one tap), or the Agent can install them itself (verified in Root mode with the Android SDK)
-- **Screen reading is "half-blind"**: `scr dump` reads the accessibility node tree (text + coordinates + clickability), which is useless for pure-graphics or game canvases — those can fall back to **visual template matching** (2 px precision measured on node-less screens), but it needs pre-stored templates and pure dynamic graphics can still defeat it; complex UI automation stays limited
+- **Screen reading is "half-blind"**: `scr dump` reads the accessibility node tree (text + coordinates + clickability), which is useless for pure-graphics or game canvases; complex UI automation stays limited
 - **Android 13+ asks for confirmation when enabling accessibility**: for sideloaded apps the system shows an "Allow full control of your device" dialog that must be accepted by hand; writing the setting over adb gets reverted by the system. Follow the in-app guide to the system UI.
 - **Long tasks are not immortal**: the foreground service maximally avoids system reclamation, but a force-stop or extreme battery saver can still interrupt (the engine auto-restarts; in-flight tasks must be re-dispatched)
 - **Escalation carries risk**: in Root mode the AI has full-device read/write and misoperations can damage the system — see the disclaimer below
@@ -112,9 +100,6 @@ dsh's "everything is a plugin" architecture is preserved as-is: hot plugin loadi
 
 **Survives background reclamation, notifies on completion**
 specialUse foreground service + exponential-backoff supervisor against system reclamation; long tasks keep running with the screen off, and a system notification fires when a task completes. Keeping a Termux session alive under aggressive Chinese-ROM battery savers is everyone's private superstition.
-
-**A local execution loop, not "ask the cloud every step"**
-Screen reading, picking, tapping and verification all close the loop on the device; the cloud only plans once. Scene memory takes over repeated tasks, so the phone gets faster the more you use it — an execution chain the Termux routes simply don't have.
 
 ## 🆚 Routes to Running an Agent on Android
 
