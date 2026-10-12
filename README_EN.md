@@ -31,6 +31,7 @@ DSH Mobile is the **complete Android port of [DeepSeek Harness](https://github.c
 - ❌ **Not a self-built AI agent framework** — agent logic, plugin system, and context management all belong to DeepSeek Harness. This project is a **port**, not a replacement, and it does not compete with upstream
 - ❌ **Not an on-device LLM app** — no model weights, no local inference. Models are reached through the API endpoint you configure, exactly as with desktop dsh
 - ❌ **Not a phone-automation agent** — accessibility screen reading/tapping is **one of the tools** handed to the agent, not the product itself
+- ❌ **Not a proot / Ubuntu-container solution** — no Linux container, no distro rootfs. The Node.js runtime and the whole toolchain ship as native Android (bionic) binaries inside the APK: install and go, with no container to initialise
 
 In one line: **looking for a way to run dsh on Android without Termux? This is it.**
 
