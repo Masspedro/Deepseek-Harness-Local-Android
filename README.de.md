@@ -165,7 +165,7 @@ Alternativ: Forke das Repository und lasse den Workflow **android-build** auf Gi
 
 **Wird Root benötigt?** Nein. Der Normal-Modus deckt die überwältigende Mehrheit der Anwendungsfälle ab; Root und Shizuku sind optionale Ausbaustufen.
 
-**Wie verhält sich das zum Termux-Ansatz?** Parallele Routen, kein Ersatz. Die Termux-Route **baut eine Linux-Umgebung** unter Android (manuelle Einrichtung / Ein-Klick-Skript / proot + Ubuntu) und betreibt dsh darin; dieses Projekt **baut die von dsh benötigte Laufzeit direkt ins APK**, sodass du installierst und loslegst — zum Preis eines Pakets von ~190 MB. **Beide betreiben dasselbe dsh** — entscheide danach, welchen Einrichtungsaufwand du für eine Live-Umgebung zahlen willst.
+**Wie verhält sich das zum Termux-Ansatz?** Parallele Routen, kein Ersatz. Die Termux-Route **baut eine Linux-Umgebung** unter Android (manuelle Einrichtung / Ein-Klick-Skript / proot + Ubuntu) und betreibt dsh darin; dieses Projekt **baut die von dsh benötigte Laufzeit direkt ins APK**, sodass du installierst und loslegst — zum Preis eines Pakets von ~130 MB. **Beide betreiben dasselbe dsh** — entscheide danach, welchen Einrichtungsaufwand du für eine Live-Umgebung zahlen willst.
 
 **Ist der Agent selbst nachimplementiert?** Nein. Agent-Logik, Plugin-System und WebUI stammen alle vom offiziellen [`@deepseek-ai/dsh`](https://github.com/deepseek-ai/deepseek-harness); dieses Projekt liefert nur die Laufzeitumgebung für Android (bionic-Node.js-Laufzeit, Vordergrunddienst, Berechtigungsstufen, Erweiterungszentrum). Deshalb wird es als **Port** und nicht als Framework bezeichnet.
 
