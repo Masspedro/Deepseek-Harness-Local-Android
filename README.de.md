@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml)
 ![i18n](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/i18n-check.yml/badge.svg)
-![Release](https://img.shields.io/badge/release-v1.2.97-blue)
+![Release](https://img.shields.io/badge/release-v1.2.120-blue)
 ![Plattform](https://img.shields.io/badge/platform-Android%208.0%2B-green)
 ![Lizenz](https://img.shields.io/badge/license-MIT-brightgreen)
 
@@ -12,7 +12,7 @@
   <img src="docs/promo/dsh-mobile-github.png" alt="DSH Mobile — DeepSeek Harness. Jetzt in deiner Hosentasche." width="100%">
 </p>
 
-[English](README.md) · [中文](README.zh-CN.md) · [Deutsch](#einführung)
+[English](README_EN.md) · [中文](README.md) · [Deutsch](#einführung)
 
 ---
 
@@ -39,8 +39,10 @@ Alle Werte stammen aus Tests auf echten Geräten und im Emulator, nicht aus der 
 | Kennzahl | Gemessen | Umgebung |
 |---|---|---|
 | **Kaltstart bis Engine bereit** | **< 10 s** | OnePlus 15T (Android 16), echtes Gerät; ~15 s auf Tablets |
+| **Ein Schritt der lokalen Schleife** | **p50 ~0,9–1 s** | Finden + Aktion + Verifikation komplett auf dem Gerät; das Finden selbst 1–2 ms |
 | **Speicher mit parallelen Diensten** | **< 400 MB** | Engine + mehrere Toolchains gleichzeitig |
 | **Android-Kompatibilität** | **8.0 → 16** | WebView ≥ Chrome 85 erforderlich (siehe unten) |
+| **APK-Größe** | **~130 MB** | Vollständige Node.js-Laufzeit + 19 Erweiterungs-Toolchains |
 | **Toolchains** | **19 One-Tap-Installationen** | Python/Go/Rust/Clang/OpenJDK/FFmpeg… |
 
 Zum Vergleich: Termux-Snapshot-basierte Alternativen brauchen beim ersten Start üblicherweise **mehrere Minuten** (Entpacken + manuelle Initialisierung); DSH Mobile liefert seine Laufzeit im APK aus — installieren und loslegen.
@@ -52,6 +54,17 @@ Gib dem Agenten Aufgaben: Dateien lesen und schreiben, Shell-Befehle ausführen,
 
 **Sofortige Vorschau dessen, was er baut**
 Der Agent startet einen lokalen HTTP-Server (mit dem mitgelieferten node) und übergibt dir einen `http://127.0.0.1:<Port>`-Link — antippen zum Live-Vorschauen, ein Tipp zurück zur Startseite. In der Praxis verifiziert mit Mini-Games, statischen Seiten und API-Diensten.
+
+**Lokale geschlossene Schleife: einmal planen, auf dem Gerät ausführen**
+Die Cloud plant **einmal**; das Entscheidungsprogramm geht an einen Executor auf dem Gerät, der **PICK → ACT → VERIFY → Retry** lokal abarbeitet — ohne Roundtrip pro Schritt. Das Finden dauert 1–2 ms; ein vollständiger Schritt liegt bei p50 ~0,9–1 s (Emulator).
+
+- **Loop-Gate**: die lokale Schleife direkt aus dem Gespräch steuern (`run` / `pick` / `status` / `memory` / `vision` / `frame`) — das Telefon führt aus und meldet zurück
+- **Beweise bei Fehlschlag**: ein blockierter Lauf eskaliert mit seinem Kandidatenpool zurück in die Cloud, damit sie mit Fakten neu plant, statt dass das Telefon blind wiederholt
+- **Zustandsprüfungen**: `checkedText` prüft, ob ein Schalter tatsächlich an/aus ist, statt aus Frame-Differenzen zu raten; jeder Schritt wird für Beweise per Screenshot festgehalten
+- **Visuelle Lokalisierung**: Wo kein Accessibility-Knotenbaum existiert (reine Grafik-Oberflächen), findet Template-Matching Ziele mit 2 px Genauigkeit in ~100 ms
+
+**Szenengedächtnis: wiederholte Aufgaben werden schneller**
+Eine erneute Ausführung derselben Aufgabe nutzt den **verifizierten** Pfad wieder (14–53 % schneller im Test); Fehler verderben das Gedächtnis nie — der nächste Lauf macht wieder volles Finden.
 
 **Agent-Fähigkeiten, die du nach Bedarf skalierst**
 Drei Berechtigungsstufen, jederzeit verfügbar — Normal (Sandbox, Standard) deckt den Alltag ab; im Shizuku-Modus kann der Agent Befehle auf adb-Ebene ausführen (Prozessverwaltung / Systemeigenschaften, ohne Root); der Root-Modus gewährt vollen Lese-/Schreibzugriff (doppelte Bestätigung + automatische Sicherung). Optionen, deren Fähigkeit noch nicht bereitsteht, werden automatisch ausgegraut.
@@ -69,7 +82,7 @@ Die Engine lauscht ausschließlich auf `127.0.0.1`; Sitzungen, Zugangsdaten und 
 Fehlerhafte Plugin-Konfigurationen werden automatisch auf den letzten gesunden Snapshot zurückgesetzt; die Engine startet nach einem Absturz mit exponentiellem Backoff neu; ein Vordergrunddienst hält lange Aufgaben vor der Systembereinigung am Leben.
 
 **Erweiterungszentrum: Umgebungen per One Tap**
-Das integrierte Erweiterungszentrum bietet **19 Umgebungserweiterungen** — Python, Go, Rust, Clang, OpenJDK, Git, Ruby, PHP, Perl, Lua, SQLite, FFmpeg, ImageMagick, OpenSSH, ADB, Vim und mehr — per One Tap herunterladen, mit rot/gelb/grün Zustandsverwaltung und live Fortschrittsbalken in der Zeile. Direktverbindung zu chinesischen Mirrors (TUNA → USTC → BFSU → Termux offiziell, mit automatischem Failover), automatische Auflösung des Abhängigkeitsabschlusses, SHA-256-Prüfung und atomares Veröffentlichen. Nach der Installation wird die Shebang-Interpreter-Kette automatisch repariert (`sh`/`env`, sowie absolute Auflösung von extension-übergreifendem `perl`/`python`), sodass Skripte wie `env python3` auch ohne PATH laufen. Jede Zeile bietet **⟳ Neu installieren** (überschreibender Neu-Download, der historische Teilinstallationen repariert); die Installationsprotokolle erfassen die Eintragsanzahl pro Paket und prüfen, ob alle deklarierten Executables vorhanden sind. Die `bin`-Abhängigkeiten aller 19 Erweiterungen werden von `scripts/audit-extension-closures.py` **auf ELF-Ebene auditiert** (jede `NEEDED`-Bibliothek muss vom Abhängigkeitsabschluss abgedeckt sein, sodass Lücken in den Upstream-Metadaten früh auffallen).
+Das integrierte Erweiterungszentrum bietet **19 Umgebungserweiterungen** — Python, Go, Rust, Clang, OpenJDK, Git, Ruby, PHP, Perl, Lua, SQLite, FFmpeg, ImageMagick, OpenSSH, ADB, Vim und mehr — per One Tap herunterladen (und auch wieder deinstallieren), mit rot/gelb/grün Zustandsverwaltung und live Fortschrittsbalken in der Zeile. Direktverbindung zu chinesischen Mirrors (TUNA → USTC → BFSU → Termux offiziell, mit automatischem Failover), automatische Auflösung des Abhängigkeitsabschlusses, SHA-256-Prüfung und atomares Veröffentlichen. Nach der Installation wird die Shebang-Interpreter-Kette automatisch repariert (`sh`/`env`, sowie absolute Auflösung von extension-übergreifendem `perl`/`python`), sodass Skripte wie `env python3` auch ohne PATH laufen. Jede Zeile bietet **⟳ Neu installieren** (überschreibender Neu-Download, der historische Teilinstallationen repariert); die Installationsprotokolle erfassen die Eintragsanzahl pro Paket und prüfen, ob alle deklarierten Executables vorhanden sind. Die `bin`-Abhängigkeiten aller 19 Erweiterungen werden von `scripts/audit-extension-closures.py` **auf ELF-Ebene auditiert** (jede `NEEDED`-Bibliothek muss vom Abhängigkeitsabschluss abgedeckt sein, sodass Lücken in den Upstream-Metadaten früh auffallen).
 
 **Kompilieren auf dem Smartphone**
 Die Toolchains Clang / Go / Rust / Java / Ruby sind auf echten Geräten verifiziert: Kernel-Header (ndk-sysroot) sowie CPATH / LIBRARY_PATH / RUSTFLAGS / GOTMPDIR werden automatisch injiziert, sodass `clang hello.c -o hello && ./hello` einfach funktioniert; zusammen mit der namensbasierten Prozessverwaltung `psx`/`killx` und einem binärsicheren `curl` erledigt der Agent echte Entwicklungsarbeit auf dem Smartphone. **Parallele Dienste bleiben unter 400 MB Speicherbedarf.**
@@ -82,7 +95,8 @@ Der Agent nutzt nicht nur das Erweiterungszentrum, sondern handelt eigenständig
 - **WebView muss Chrome 85+ sein (ab 2020-06)**: Die App selbst unterstützt Android 8.0 → 16, aber die Oberfläche wird im System-WebView gerendert, und das Engine-Frontend nutzt moderne Syntax (`??=`, Klassenfelder) — ein **Parse-Zeit**-Merkmal, das Polyfills nicht ersetzen können. Geräte mit einem System-WebView älter als Chrome 85 zeigen eine leere Seite (das Log lässt sich in den Einstellungen exportieren: es protokolliert den `SyntaxError` und die WebView-Version). **Unter Android 8.0+ ist der WebView eine unabhängig aktualisierbare Systemkomponente** (Google Play / Hersteller-Stores), ein Update auf 85+ genügt also; die wenigen chinesischen ROMs, deren WebView sich nie aktualisieren lässt, sind eine bekannte Einschränkung.
 - **Keine Desktop-Umgebung**: Linux-GUI-Desktop-Apps können nicht laufen; visuelle Ergebnisse werden über lokales HTTP + den integrierten WebView angezeigt
 - **Vorinstallierte Toolchain ist nur node/bash**: Clang, Python, Go und 16 weitere Umgebungen kommen über das integrierte **Erweiterungszentrum** per One Tap, oder der Agent installiert sie selbst (im Root-Modus mit dem Android SDK verifiziert)
-- **Tippen ist „halbblind"**: Das Screen-Reading arbeitet auf dem Accessibility-Knotenbaum (Text + Koordinaten + Klickbarkeit) und ist auf rein grafischen oder Spiel-Bildschirmen wirkungslos; komplexe UI-Automatisierung bleibt begrenzt
+- **Tippen ist „halbblind"**: Das Screen-Reading arbeitet auf dem Accessibility-Knotenbaum (Text + Koordinaten + Klickbarkeit) und ist auf rein grafischen oder Spiel-Bildschirmen wirkungslos — dort kann **visuelles Template-Matching** einspringen (2 px Genauigkeit auf knotenlosen Bildschirmen gemessen), braucht aber hinterlegte Templates; rein dynamische Grafik kann es weiterhin überfordern
+- **Android 13+ verlangt eine Bestätigung beim Aktivieren von Accessibility**: Bei per Sideload installierten Apps zeigt das System einen Dialog „Vollständige Kontrolle über dein Gerät erlauben", der von Hand bestätigt werden muss; das Schreiben der Einstellung über adb wird vom System zurückgesetzt. Folge der Anleitung in der App in die System-UI.
 - **Lange Aufgaben sind nicht unsterblich**: Der Vordergrunddienst vermeidet die Systembereinigung so weit wie möglich, aber ein erzwungenes Beenden oder ein extremer Energiesparmodus kann sie dennoch unterbrechen (die Engine startet automatisch neu; laufende Aufgaben müssen neu beauftragt werden)
 - **Rechteausweitung birgt Risiken**: Im Root-Modus hat die KI vollen Lese-/Schreibzugriff auf das Gerät, und Fehlbedienungen können das System beschädigen — siehe Haftungsausschluss unten
 
@@ -101,6 +115,9 @@ Fehlerhafte Plugin-Konfiguration → automatisches Rollback auf den letzten gesu
 
 **Bleibt im Hintergrund am Leben und meldet sich bei fertigen Aufgaben**
 Ein specialUse-Vordergrunddienst plus ein Supervisor mit exponentiellem Backoff fangen die Systembereinigung ab: Lange Aufgaben laufen auch mit ausgeschaltetem Display oder im Hintergrund weiter, und bei Abschluss geht eine Systembenachrichtigung raus. Bei Termux ist das Überleben aggressiver Energiesparrichtlinien chinesischer ROMs für jeden Nutzer ein eigenes Rätsel.
+
+**Eine lokale Ausführungsschleife statt „jeden Schritt die Cloud fragen"**
+Bildschirmlesen, Finden, Tippen und Verifikation schließen die Schleife auf dem Gerät; die Cloud plant nur einmal. Das Szenengedächtnis übernimmt wiederkehrende Aufgaben — das Telefon wird mit jeder Nutzung schneller. Diese Ausführungskette gibt es auf der Termux-Route schlicht nicht.
 
 ## 🆚 Routen, um einen Agent unter Android zu betreiben
 
@@ -137,7 +154,7 @@ Normaler Modus ist der Standard; Optionen, deren Fähigkeit noch nicht bereitste
 
 ## 📦 Installation
 
-**Release herunterladen (empfohlen)**: Hol dir die APK von [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (für Smartphones `arm64-v8a` wählen; aktuell **v1.2.47**), und installiere sie, nachdem du Installationen unbekannter Quellen erlaubt hast. Jede Version ab v1.0.0 lässt sich über die bestehende App installieren.
+**Release herunterladen (empfohlen)**: Hol dir die APK von [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (für Smartphones `arm64-v8a` wählen; aktuell **v1.2.120**), und installiere sie, nachdem du Installationen unbekannter Quellen erlaubt hast. Jede Version ab v1.0.0 lässt sich über die bestehende App installieren.
 
 **Aus dem Quelltext bauen** (JDK 17 + Android SDK, NDK r26+, CMake 3.22.1):
 
@@ -148,7 +165,7 @@ gradle assembleDebug -Pabi=arm64-v8a
 
 Alternativ: Forke das Repository und lasse den Workflow **android-build** auf GitHub Actions in der Cloud ein APK bauen.
 
-**Systemvoraussetzungen**: Android 8.0+ (**WebView ≥ Chrome 85**, siehe Grenzen) · arm64-v8a / x86_64 · **700 MB+ freier Speicher empfohlen** (APK ~190 MB plus ~450 MB entpackte Laufzeit).
+**Systemvoraussetzungen**: Android 8.0+ (**WebView ≥ Chrome 85**, siehe Grenzen) · arm64-v8a / x86_64 · **700 MB+ freier Speicher empfohlen** (APK ~130 MB plus die entpackte Laufzeit).
 
 ## 🚀 Schnellstart
 
@@ -156,6 +173,7 @@ Alternativ: Forke das Repository und lasse den Workflow **android-build** auf Gi
 2. Warte, bis die Laufzeit entpackt (mit echter Fortschrittsanzeige) und die Engine startet
 3. Starte ein Gespräch und gib dem Agenten Aufgaben; das Zahnradsymbol öffnet die Einstellungen; tippe auf jeden `127.0.0.1`-Link, den der Agent dir gibt, um sein Ergebnis anzusehen
 4. Spracheingabe und das schwebende Fenster liegen hinter Einstellungen → Andere → **Experimentelle Funktionen** (standardmäßig aus; bei Bedarf aktivieren)
+5. Damit der Agent den Bildschirm bedienen darf: aktiviere den Accessibility-Dienst **DSH Screen Tap** in den Systemeinstellungen (unter Android 13+ fragt das System „Vollständige Kontrolle über dein Gerät erlauben" — tippe auf **Allow**)
 
 ## ❓ FAQ
 
@@ -167,11 +185,11 @@ Alternativ: Forke das Repository und lasse den Workflow **android-build** auf Gi
 
 **Werden meine Daten hochgeladen?** Engine, Sitzungen und Arbeitsbereich liegen vollständig lokal; ob Daten das Gerät verlassen, hängt vom von dir konfigurierten Modell-Dienstendpunkt ab.
 
-**Warum ist die APK ~190 MB groß?** Sie enthält die vollständige bionic-Node.js-Laufzeit, den Termux-Toolchain-Abschluss (bash / ripgrep / SONAME-Bibliotheken) sowie dshs gesamten Abhängigkeitsbaum (79 Pakete ab 0.2.0) — der Preis für „ohne Termux, installieren und loslegen". Termux-Lösungen lassen all das extern und vom Nutzer installiert, sind deshalb kleiner, brauchen aber beim ersten Start Minuten an Einrichtung.
+**Warum ist die APK ~130 MB groß?** Sie enthält die vollständige bionic-Node.js-Laufzeit, den Termux-Toolchain-Abschluss (bash / ripgrep / SONAME-Bibliotheken) sowie dshs gesamten Abhängigkeitsbaum (79 Pakete ab 0.2.0) — der Preis für „ohne Termux, installieren und loslegen". Termux-Lösungen lassen all das extern und vom Nutzer installiert, sind deshalb kleiner, brauchen aber beim ersten Start Minuten an Einrichtung.
 
 **Wie zeigt mir der Agent eine Webseite?** Bitte ihn, einen lokalen HTTP-Server zu starten, und er übergibt dir einen `http://127.0.0.1:<Port>`-Link; tippe darauf, um die Vorschau zu öffnen.
 
-**Warum kann ich nicht tippen?** Android verlangt, dass Accessibility-Dienste in den Systemeinstellungen manuell aktiviert werden; die Schaltfläche in der App bringt dich lediglich dorthin.
+**Warum kann ich nicht tippen?** Android verlangt, dass Accessibility-Dienste in den Systemeinstellungen manuell aktiviert werden; die Schaltfläche in der App bringt dich lediglich dorthin. Unter Android 13+ erscheint bei der ersten Aktivierung zusätzlich ein Systemdialog („Vollständige Kontrolle über dein Gerät erlauben"), der mit **Allow** bestätigt werden muss.
 
 ## ⚠️ Haftungsausschluss
 

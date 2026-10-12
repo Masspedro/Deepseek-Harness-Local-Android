@@ -10,7 +10,7 @@
 
 
 [![CI](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml)
-![Release](https://img.shields.io/badge/release-v1.2.98-blue)
+![Release](https://img.shields.io/badge/release-v1.2.120-blue)
 ![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-green)
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 
@@ -41,8 +41,10 @@ All figures come from real-device / emulator testing, not theory:
 | Metric | Measured | Environment |
 |---|---|---|
 | **Cold start to engine ready** | **< 10 s** | OnePlus 15T (Android 16), real device; ~15 s on tablets |
+| **Local closed-loop step** | **p50 ~0.9–1 s** | pick + act + verify entirely on-device; picking itself 1–2 ms |
 | **Memory with parallel services** | **< 400 MB** | Engine + multiple toolchains running together |
 | **Android compatibility** | **8.0 → 16** | Requires WebView ≥ Chrome 85 (see below) |
+| **APK size** | **~130 MB** | Full Node.js runtime + 19 extension toolchains |
 | **Toolchains** | **19 one-tap installs** | Python/Go/Rust/Clang/OpenJDK/FFmpeg… |
 
 For reference, Termux-snapshot-based alternatives typically need **several minutes** on first launch (unpack + manual init); DSH Mobile ships its runtime inside the APK — install and go.
@@ -54,6 +56,17 @@ Hand the Agent tasks: read/write files, run shell commands, full-text search, ma
 
 **Instant preview of what it builds**
 The Agent starts a local HTTP server (with the bundled node) and hands you a `http://127.0.0.1:port` link — tap to preview live, one tap back home. Battle-tested with mini-games, static sites, and API services.
+
+**Local closed loop: plan once, execute on-device**
+The cloud plans **once**; the decision program is handed to an on-device executor that runs **PICK → ACT → VERIFY → retry** locally — no round trip per step. Matching takes 1–2 ms; a full step settles around 0.9–1 s (p50, emulator).
+
+- **Loop gate**: drive the local closed loop straight from the conversation (`run` / `pick` / `status` / `memory` / `vision` / `frame`) — the phone executes and reports back
+- **Evidence on failure**: a blocked run escalates back to the cloud with its candidate pool, so the cloud re-plans with facts instead of the phone retrying blindly
+- **State assertions**: `checkedText` asserts a toggle is actually checked/unchecked instead of guessing from frame diffs; every step is snapshotted for evidence
+- **Visual localization**: when a screen exposes no accessibility nodes (pure-graphics UIs), template matching locates targets at 2 px precision in ~100 ms
+
+**Scene memory: repeated tasks get faster**
+Running the same task again reuses the **verified** path (14–53% faster in testing); failures never pollute the memory, so the next run still does full picking.
 
 **Scalable Agent capabilities**
 Three privilege tiers on demand — Normal (sandbox, default) for everyday use; Shizuku mode grants adb-level commands (process management, system properties, no Root needed); Root mode grants full read/write (double confirmation + automatic backup). Options whose capability isn't ready are grayed out automatically.
@@ -68,7 +81,7 @@ Three privilege tiers on demand — Normal (sandbox, default) for everyday use; 
 The engine listens on `127.0.0.1` only; sessions, credentials, and workspaces live in the app's private storage — switch phones or uninstall, and your data goes exactly where you decide.
 
 **Extension Center: one-tap environments**
-The built-in Extension Center offers **19 environment extensions** — Python, Go, Rust, Clang, OpenJDK, Git, Ruby, PHP, Perl, Lua, SQLite, FFmpeg, ImageMagick, OpenSSH, ADB, Vim and more — one-tap download with red/yellow/green state management and a live inline progress bar. Direct China-mirror access (TUNA → USTC → BFSU → Termux official auto-failover), automatic dependency-closure resolution, SHA-256 verification and atomic publishing.
+The built-in Extension Center offers **19 environment extensions** — Python, Go, Rust, Clang, OpenJDK, Git, Ruby, PHP, Perl, Lua, SQLite, FFmpeg, ImageMagick, OpenSSH, ADB, Vim and more — one-tap download, **uninstall support**, red/yellow/green state management and a live inline progress bar. Direct China-mirror access (TUNA → USTC → BFSU → Termux official auto-failover), automatic dependency-closure resolution, SHA-256 verification and atomic publishing.
 
 **Cross-compiling on the phone**
 The Clang / Go / Rust / Java / Ruby toolchains are verified on real devices: kernel headers (ndk-sysroot) and CPATH / LIBRARY_PATH / RUSTFLAGS / GOTMPDIR are injected automatically — `clang hello.c -o hello && ./hello` just works; combined with name-based `psx`/`killx` process management and a binary-safe `curl`, the Agent does real development work on the phone. **Parallel services stay under 400 MB of memory.**
@@ -81,7 +94,8 @@ The Agent doesn't just use the Extension Center — it acts on its own: it insta
 - **WebView must be Chrome 85+ (2020-06 or later)**: the app itself supports Android 8.0 → 16, but the UI renders in the system WebView, and the engine frontend uses modern syntax (`??=`, class fields) — a **parse-time** feature that polyfills cannot patch. Devices whose system WebView is older than Chrome 85 show a blank page (export the log from Settings to confirm: it records the `SyntaxError` and the WebView version). **On Android 8.0+ the WebView is an independently updatable system component** (Google Play / OEM stores), so updating it to 85+ is all it takes; the few Chinese ROMs that can never update their WebView are a known limitation.
 - **No desktop environment**: Linux GUI desktop apps can't run; visual outputs are previewed via local HTTP + the built-in WebView
 - **Bundled toolchain is node/bash only**: Clang/Python/Go and 16 more environments come through the built-in **Extension Center** (one tap), or the Agent can install them itself (verified in Root mode with the Android SDK)
-- **Screen reading is "half-blind"**: `scr dump` reads the accessibility node tree (text + coordinates + clickability), which is useless for pure-graphics or game canvases; complex UI automation stays limited
+- **Screen reading is "half-blind"**: `scr dump` reads the accessibility node tree (text + coordinates + clickability), which is useless for pure-graphics or game canvases — those can fall back to **visual template matching** (2 px precision measured on node-less screens), but it needs pre-stored templates and pure dynamic graphics can still defeat it; complex UI automation stays limited
+- **Android 13+ asks for confirmation when enabling accessibility**: for sideloaded apps the system shows an "Allow full control of your device" dialog that must be accepted by hand; writing the setting over adb gets reverted by the system. Follow the in-app guide to the system UI.
 - **Long tasks are not immortal**: the foreground service maximally avoids system reclamation, but a force-stop or extreme battery saver can still interrupt (the engine auto-restarts; in-flight tasks must be re-dispatched)
 - **Escalation carries risk**: in Root mode the AI has full-device read/write and misoperations can damage the system — see the disclaimer below
 
@@ -97,6 +111,9 @@ dsh's "everything is a plugin" architecture is preserved as-is: hot plugin loadi
 
 **Survives background reclamation, notifies on completion**
 specialUse foreground service + exponential-backoff supervisor against system reclamation; long tasks keep running with the screen off, and a system notification fires when a task completes. Keeping a Termux session alive under aggressive Chinese-ROM battery savers is everyone's private superstition.
+
+**A local execution loop, not "ask the cloud every step"**
+Screen reading, picking, tapping and verification all close the loop on the device; the cloud only plans once. Scene memory takes over repeated tasks, so the phone gets faster the more you use it — an execution chain the Termux routes simply don't have.
 
 ## 🆚 Routes to Running an Agent on Android
 
@@ -132,7 +149,7 @@ Normal mode is the default; options whose capability isn't ready are grayed out 
 
 ## 📦 Installation
 
-**Download a Release (recommended)**: grab the APK from [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (pick `arm64-v8a` for phones; latest is **v1.2.98**), then install with unknown sources allowed. Any v1.0.0+ build can be installed over the top.
+**Download a Release (recommended)**: grab the APK from [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (pick `arm64-v8a` for phones; latest is **v1.2.120**), then install with unknown sources allowed. Any v1.0.0+ build can be installed over the top.
 
 > 📦 **Which file to pick**: normal users want **`dsh-mobile-*-arm64-v8a.apk`** (release-signed).
 > Names ending in **`-debug`** are debug-signed builds - for log capture, or for users already on a
@@ -149,7 +166,7 @@ gradle assembleDebug -Pabi=arm64-v8a
 
 Alternatively, fork the repo and run the **android-build** workflow on GitHub Actions for a cloud build.
 
-**Requirements**: Android 8.0+ (**WebView ≥ Chrome 85**, see Limits) · arm64-v8a / x86_64 · **700MB+ free storage recommended** (APK ~190MB plus ~450MB unpacked runtime).
+**Requirements**: Android 8.0+ (**WebView ≥ Chrome 85**, see Limits) · arm64-v8a / x86_64 · **700MB+ free storage recommended** (APK ~130MB plus the unpacked runtime).
 
 ## 🚀 Quick Start
 
@@ -157,6 +174,7 @@ Alternatively, fork the repo and run the **android-build** workflow on GitHub Ac
 2. Wait for runtime extraction (real progress) and engine startup
 3. Start chatting and hand the Agent tasks; tap the gear for settings; tap any `127.0.0.1` link the Agent gives you to preview its work
 4. Voice input and the floating window live behind Settings → Other → **Experimental features** (off by default; enable if you want them)
+5. To let the Agent operate the screen: enable the **DSH Screen Tap** accessibility service in system settings (on Android 13+ the system asks "Allow full control of your device" — tap **Allow**)
 
 ## ❓ FAQ
 
@@ -168,11 +186,11 @@ Alternatively, fork the repo and run the **android-build** workflow on GitHub Ac
 
 **Is my data uploaded?** The engine, sessions, and workspace are all local; whether data leaves the device depends on the model service endpoint you configure.
 
-**Why is the APK ~190MB?** It bundles the complete bionic Node.js runtime, the Termux toolchain closure (bash / ripgrep / SONAME libraries) and dsh's entire dependency tree (79 packages as of 0.2.0) — the price of "no Termux required, install and go". Termux-family routes keep all of that external and installed by the user, so their package is smaller but first use takes minutes of setup.
+**Why is the APK ~130MB?** It bundles the complete bionic Node.js runtime, the Termux toolchain closure (bash / ripgrep / SONAME libraries) and dsh's entire dependency tree (79 packages as of 0.2.0) — the price of "no Termux required, install and go". Termux-family routes keep all of that external and installed by the user, so their package is smaller but first use takes minutes of setup.
 
 **How does the Agent show me a web page?** Ask it to start a local HTTP server and give you a `http://127.0.0.1:port` link; tap to preview.
 
-**Why can't I enable touch injection?** Android requires accessibility services to be enabled manually in system settings; the in-app button just takes you there.
+**Why can't I enable touch injection?** Android requires accessibility services to be enabled manually in system settings; the in-app button just takes you there. On Android 13+ the first activation also shows a system confirmation dialog ("Allow full control of your device") that must be accepted with **Allow**.
 
 ## ⚠️ Disclaimer
 

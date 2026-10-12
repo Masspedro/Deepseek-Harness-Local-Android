@@ -9,7 +9,7 @@
 > 🌐 [English](README_EN.md) · [Deutsch](README.de.md)
 
 [![CI](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml)
-![Release](https://img.shields.io/badge/release-v1.2.106-blue)
+![Release](https://img.shields.io/badge/release-v1.2.120-blue)
 ![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-green)
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 
@@ -30,18 +30,32 @@ DSH Mobile 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harnes
 | 指标 | 实测值 | 环境 |
 |---|---|---|
 | **冷启动到引擎就绪** | **< 10 秒** | 一加 15T（Android 16）真机 |
+| **本地闭环单步** | **p50 约 0.9–1 秒** | 判别 + 动作 + 验证全程本地；判别本身 1–2ms |
 | **多服务并行内存** | **< 400 MB** | 引擎 + 多工具链同时运行 |
 | **兼容版本** | **Android 8.0 → 16** | 需 WebView ≥ Chrome 85 |
-| **APK 体积** | **124 MB** | 含完整 Node.js 运行时 + 19 项扩展的工具链闭包 |
-| **安装后占用** | **约 490 MB** | 运行时解压后（SONAME 别名用符号链接，省 90MB） |
+| **APK 体积** | **约 130 MB** | 含完整 Node.js 运行时 + 19 项扩展的工具链闭包 |
+| **安装后占用** | **约 500 MB** | 运行时解压后（SONAME 别名用符号链接，省 90MB） |
 
 对比：Termux 快照类方案首次启动通常需**数分钟**（解压 + 手动初始化）；本项目的运行时预置在 APK 内，装完即用。proot 系方案（Ubuntu 容器）APK 看着小，但首次使用要另下 500MB～2GB 的 rootfs。
 
 ## ✨ 核心能力
 
+### 🔁 本地闭环执行器：一次规划，本地逐步执行
+
+云端只做一次规划，把决策程序交给手机上的执行器，之后 **PICK（本地判别）→ ACT（执行动作）→ VERIFY（验证结果）→ 失败重试** 全程在设备上跑完，不用为每一步等一次云端往返。判别本身 1–2ms。
+
+- **loop gate**：在对话里直接驱动本地闭环（run / pick / status / memory / vision / frame）——AI 说"执行"，手机自己跑完再回报
+- **失败不硬扛**：卡住时携带候选池证据 escalate 回云端，交由云端换策略重规划，而不是无限重试
+- **状态断言**：`checkedText` 直接断言开关已勾选/未勾选，不再靠帧差猜测；每步自动截图留证
+- **视觉定位**：无节点树场景（纯图形界面）退回模板匹配定位，实测 2px 精度 / ~100ms
+
+### 🧠 场景记忆：重复任务越跑越快
+
+同一任务重复执行时直接复用**已验证**的路径，实测提速 14–53%；失败不会污染记忆，下次仍走完整判别。
+
 ### 🔌 扩展中心：19 项环境一键装
 
-内置扩展中心提供 **Python、Go、Rust、Clang、OpenJDK、Git、Ruby、PHP、Perl、Lua、SQLite、FFmpeg、ImageMagick、OpenSSH、ADB、Vim** 等 19 项环境扩展，一键下载、红/黄/绿三态管理、行内进度条实时可见。
+内置扩展中心提供 **Python、Go、Rust、Clang、OpenJDK、Git、Ruby、PHP、Perl、Lua、SQLite、FFmpeg、ImageMagick、OpenSSH、ADB、Vim** 等 19 项环境扩展，一键下载、**支持卸载**、红/黄/绿三态管理、行内进度条实时可见。
 
 - 国内镜像直连（清华 TUNA → 中科大 → 北外 → Termux 官方自动切换）
 - 依赖闭包自动解析、SHA-256 强校验、原子发布
@@ -120,6 +134,9 @@ App 支持 Android 8.0 → 16；界面渲染依赖系统 WebView（**需 Chrome 
 **后台不被杀，任务完成有通知**
 specialUse 前台服务 + 指数退避监督器扛住系统回收，长任务锁屏/后台持续运行，完成自动发系统通知。
 
+**本地执行闭环，不是"每步都问云端"**
+读屏、判别、点击、验证在设备上闭环完成，云端只负责规划一次；重复任务由场景记忆接管，越用越快——这套执行链是 Termux 路线上的 dsh 没有的。
+
 ## 🆚 Android 上跑 Agent 的几条路线
 
 | | Termux 手动配置 | proot + Ubuntu | APK 快照打包 | **DSH Mobile** |
@@ -138,7 +155,7 @@ specialUse 前台服务 + 指数退避监督器扛住系统回收，长任务锁
 
 ## 📦 安装
 
-**下载 Release（推荐）**：前往 [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) 下载 APK（手机选 `arm64-v8a`，最新版 **v1.2.106**），允许安装未知来源应用后安装。
+**下载 Release（推荐）**：前往 [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) 下载 APK（手机选 `arm64-v8a`，最新版 **v1.2.120**），允许安装未知来源应用后安装。
 
 > 📦 **Release 里有多种包，怎么选**：普通用户下 **`dsh-mobile-*-arm64-v8a.apk`**（正式签名）；
 > 文件名带 **`-debug`** 的是调试签名版，供抓日志调试、或之前就装 debug 渠道的用户继续升级用；
@@ -162,12 +179,14 @@ gradle assembleDebug -Pabi=arm64-v8a
 2. 等待运行时解压（真实进度）与引擎启动
 3. 进入对话派任务；齿轮图标进设置；点击 Agent 给的 `127.0.0.1` 链接预览成果
 4. 语音输入、悬浮窗等入口在设置 → 其他 → **实验性功能**开关之后（默认关闭）
+5. 想让 Agent 操作手机屏幕：在系统设置中开启 **DSH Screen Tap** 无障碍服务（Android 13+ 会弹窗询问「允许完全控制设备」，需点 **Allow**）
 
 ## ⛔ 边界（请知悉）
 
 - **WebView 需 Chrome 85+**：引擎前端用了 `??=` 等新语法，属解析期特性，polyfill 补不了。Android 8.0+ 的 WebView 是可独立升级的系统组件，升到 85+ 即可；少数无法升级的老机型为已知限制
 - **没有桌面环境**：不能运行 Linux GUI 桌面应用；视觉产物通过本地 HTTP + 内置 WebView 预览
-- **模拟点击是"半盲"的**：读屏基于无障碍节点树，对纯图形/游戏画面无效
+- **模拟点击是"半盲"的**：读屏基于无障碍节点树，对纯图形/游戏画面无效；这类场景可退回**视觉模板匹配**定位（无节点树场景实测 2px 精度），但需预存模板，纯动态图形仍可能失败
+- **Android 13+ 开启无障碍需系统确认**：侧载安装的应用，系统会弹出「允许完全控制设备」对话框，必须手动点 Allow 才生效；adb 直接写入设置会被系统清掉（真机请走 UI 指引）
 - **长任务非绝对不死**：用户强杀/极端省电模式仍会中断（引擎会自动重启，进行中任务需重新派发）
 - **提权伴随风险**：Root 模式 AI 具全盘读写能力，误操作可能损坏系统——详见下方免责声明
 
@@ -181,11 +200,11 @@ gradle assembleDebug -Pabi=arm64-v8a
 
 **数据会上传吗？** 引擎/会话/工作区全在本机；数据是否出设备取决于你配置的模型服务地址。
 
-**APK 为什么有 124MB？** 内置了完整的 Node.js bionic 运行时、Termux 工具链闭包（bash / ripgrep / 各 SONAME 库）以及 dsh 的整棵依赖树（79 个包）。这是「不依赖 Termux、装完即用」的代价。Termux 系方案把这部分留给用户自行安装，所以包体小，但首次使用要花数分钟配置。
+**APK 为什么有 130MB？** 内置了完整的 Node.js bionic 运行时、Termux 工具链闭包（bash / ripgrep / 各 SONAME 库）以及 dsh 的整棵依赖树（79 个包）。这是「不依赖 Termux、装完即用」的代价。Termux 系方案把这部分留给用户自行安装，所以包体小，但首次使用要花数分钟配置。
 
 **Agent 怎么展示网页？** 让它起本地 HTTP 服务并给你 `http://127.0.0.1:端口` 链接，点开即预览。
 
-**无障碍点不进去？** Android 要求无障碍服务必须在系统设置中手动开启，应用内按钮只负责跳转。
+**无障碍点不进去？** Android 要求无障碍服务必须在系统设置中手动开启，应用内按钮只负责跳转。Android 13+ 首次开启还会弹出系统确认框（「允许完全控制设备」），必须点 Allow 才会生效。
 
 ## ⚠️ 免责声明
 
