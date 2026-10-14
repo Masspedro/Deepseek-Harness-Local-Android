@@ -4,10 +4,13 @@
 Run locally:  python3 scripts/check-i18n.py
 In CI:        .github/workflows/i18n-check.yml (pull_request + push)
 
-The app ships English as the DEFAULT locale (res/values/strings.xml) and keeps
-the original Chinese under res/values-zh-rCN/. These checks guard that split:
-no CJK may leak into the default locale, into layout literals, or into Kotlin
-string literals, and every locale must stay in sync with the base one.
+The app ships English as the DEFAULT locale (res/values/strings.xml) and
+translates into German (res/values-de/) and Simplified Chinese
+(res/values-zh-rCN/). The in-app switcher offers exactly these three
+languages, with English as the default (v1.2.120; the old "follow system"
+option was removed). These checks guard that split: no CJK may leak into
+the default locale, into layout literals, or into Kotlin string literals,
+and every locale must stay in sync with the base one.
 
 Exit code 0 = all checks passed.
 """
@@ -21,7 +24,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP = os.path.join(ROOT, "app", "src", "main")
 
 BASE_VALUES = os.path.join(APP, "res", "values")
-LOCALE_DIRS = ["values-zh-rCN"]
+LOCALE_DIRS = ["values-de", "values-zh-rCN"]
 
 # CJK ideographs, Kangxi/compat, CJK symbols & punctuation, fullwidth forms.
 CJK = re.compile(r"[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef]")
@@ -117,6 +120,34 @@ def load_strings(values_dir):
                 (it.text or "") for it in child
             )
     return out
+
+
+def check_duplicate_keys():
+    """Every locale (incl. the default) must not declare a key twice.
+
+    A duplicate crashes aapt at build time ("Found item String/x more than one
+    time") *after* the resource-merge step — usually inside CI, minutes after
+    commit. Parity checks compare sets and therefore stay blind to it, so the
+    guard runs first and names the file plus the offending keys.
+    """
+    for values_dir in [BASE_VALUES] + [
+        os.path.join(APP, "res", d) for d in LOCALE_DIRS
+    ]:
+        p = os.path.join(values_dir, "strings.xml")
+        if not os.path.isfile(p):
+            continue
+        root = ET.parse(p).getroot()
+        seen = {}
+        for child in root:
+            if child.tag not in ("string", "string-array"):
+                continue
+            name = child.get("name")
+            seen[name] = seen.get(name, 0) + 1
+        dups = sorted(n for n, c in seen.items() if c > 1)
+        if dups:
+            fail("duplicate string key(s) in %s: %s" % (rel(p), ", ".join(dups)))
+    notes.append("A2. Duplicate string keys: none found in %d locale file(s)"
+                 % (1 + len(LOCALE_DIRS)))
 
 
 def check_base_locale_english():
@@ -349,6 +380,7 @@ def check_catalogs():
 
 def main():
     check_xml()
+    check_duplicate_keys()
     check_base_locale_english()
     check_layouts()
     check_kotlin_literals()

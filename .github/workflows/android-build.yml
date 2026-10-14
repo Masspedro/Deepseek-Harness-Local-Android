@@ -1,25 +1,36 @@
 name: android-build
 
 # dsh-android 构建流水线
-# v0.1.0-m0.2 · 2026-08-27
+# v1.2.120 · 2026-10-13 — 全量触发 + 结果监视
 #
 # 双架构矩阵（arm64-v8a 真机 / x86_64 模拟器）：
 #   collect-runtime —— 从 Termux 仓库收集对应架构 node 运行时 → runtime.zip
 #   build-apk       —— 注入 runtime.zip 进 assets → gradle -Pabi=... 出 APK
-#   release         —— tag 触发时双架构 APK 一并发布
+#   release         —— 构建成功后，双架构 APK 自动发到本仓库 Releases（v1.2.120）
+#   build-monitor   —— 汇总各 legs 结果到 Step Summary，任一失败即整红
 #
+# 监视（v1.2.120）：每次 push / PR / dispatch / 定时都跑，build-monitor 汇总
+# 两只 legs 的结果写入 Step Summary，失败即整红；Gradle 日志按需留存 7 天。
 # 注意：collect-runtime 脚本包名已对照 Termux Packages 索引核实过。
+# ⚠️ Fork 本仓库后 GitHub 会把本 workflow 置为 disabled_fork：
+#    需在 Actions → android-build 页面点一次 “Enable workflow” 才会运行。
+# 触发一览：push(任意分支/tag v*) · pull_request(任意目标分支) · 每日 01:30 Asia/Shanghai · 手动 dispatch
 
 on:
   push:
-    branches: [main]
+    branches: ["**"]
     tags: ["v*"]
   pull_request:
-    branches: [main]
+  schedule:
+    - cron: "30 17 * * *"   #  nightly · 01:30 Asia/Shanghai
   workflow_dispatch:
 
 permissions:
-  contents: write   # Release 上传需要
+  contents: read   # release 段仍注释；启用时在该 job 内单独提权
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   collect-runtime:
@@ -126,7 +137,17 @@ jobs:
           gradle-version: "8.9"
 
       - name: 构建 APK（${{ matrix.abi }}）
-        run: gradle -p . assembleDebug -Pabi=${{ matrix.abi }} --stacktrace
+        run: |
+          set -o pipefail   # 否则管道 exit code 取 tee 的 0，Gradle 失败会被吞
+          gradle -p . assembleDebug -Pabi=${{ matrix.abi }} --stacktrace 2>&1 | tee build-${{ matrix.abi }}.log
+
+      - name: Gradle-Log hochladen（Fehlerfall）
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-log-${{ matrix.abi }}
+          path: build-${{ matrix.abi }}.log
+          retention-days: 7
 
       # 防呆自检：真机 16KB 页内核上 p_align=4096 的 so 会 dlopen 失败
       # （v0.1.0-m1 真机「卡在启动中」事故根因）。所有 LOAD 段必须 >=16384。
@@ -182,20 +203,86 @@ jobs:
   #   1) 本地：gradle assembleDebug -Pabi=arm64-v8a
   #   2) apksigner sign --ks keystore/dsh-release.keystore ... 然后 gh release create 上传
   #
-  # 保留此段以便将来需要时恢复（届时务必先解决签名问题）。
-  #
-  # release:
-  #   if: startsWith(github.ref, 'refs/tags/v')
-  #   runs-on: ubuntu-24.04
-  #   needs: [build-apk]
-  #   steps:
-  #     - uses: actions/download-artifact@v4
-  #       with:
-  #         pattern: dsh-android-debug-apk-*
-  #         merge-multiple: true
-  #         path: apk/
-  #
-  #     - uses: softprops/action-gh-release@v2
-  #       with:
-  #         files: apk/*.apk
-  #         generate_release_notes: true
+  # —— 但本 Fork（jahdaganj02ki-sketch）的策略不同：这里 fork 自身就是分发渠道，
+  #    debug 签名的自动构建产物直接进 Releases（见下方 release job）。上游仓库
+  #    仍按上述人工两步走。
+
+  # ---- 自动发布（v1.2.120）：main 构建成功后，双架构 APK 落到 Releases ----
+  # 触发条件：push / dispatch / 定时，且 build-apk 成功；PR 不发（Fork 的
+  # GITHUB_TOKEN 在 PR 上下文无写权限）。
+  # ⚠️ 仅限 Fork 仓库：上游仓库的人工发布流程（release 签名 + 人工两步）不可被
+  #    自动流程替代 —— CI 产物是 debug 签名，发到上游会让用户下到无法覆盖升级的包。
+  #    故这里用 github.repository 硬门禁，合入上游后此 job 直接跳过。
+  # 版本：app/build.gradle.kts 的 versionName + 本次 run_number，保证每个成功
+  # 的构建版本号唯一（tag = v<versionName>-<run_number>），互不覆盖。
+  release:
+    if: >-
+      github.repository == 'jahdaganj02ki-sketch/Deepseek-Harness-Local-Android'
+      && github.event_name != 'pull_request'
+      && needs.build-apk.result == 'success'
+    needs: [build-apk]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 读取版本号
+        id: ver
+        run: |
+          V=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
+          C=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts)
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "versionCode=$C" >> "$GITHUB_OUTPUT"
+          echo "tag=v$V-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: 下载双架构 APK 工件
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dsh-android-debug-apk-*
+          merge-multiple: true
+          path: apk/
+
+      - name: 发布 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: v${{ steps.ver.outputs.version }} · build ${{ github.run_number }}
+          files: apk/*.apk
+          generate_release_notes: true
+          body: |
+            自动构建：v${{ steps.ver.outputs.version }} (versionCode ${{ steps.ver.outputs.versionCode }}) · build ${{ github.run_number }}
+
+            架构：arm64-v8a（真机）+ x86_64（模拟器）
+            签名：debug（此 Fork 的自动分发渠道）
+
+            - 已通过：运行时闭包校验、so 16KB 页对齐、APK ABI 校验、i18n 一致性
+            - 安装注意：与 release 签名包签名不同，不能互相覆盖安装
+
+  # ---------------------------------------------------------------------------
+  # v1.2.120：构建监视 —— 汇总两只 legs 的结果到 Step Summary，任一腿失败即整红。
+  # 这样「构建挂了」不必逐 job 点开找：run 页面顶部就是一张表。
+  # ---------------------------------------------------------------------------
+  build-monitor:
+    name: Build monitor (Zusammenfassung)
+    needs: [collect-runtime, build-apk]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Ergebnis-Tabelle
+        run: |
+          {
+            echo "## Build-Monitor — ${{ github.workflow }} @ ${{ github.ref_name }} (${{ github.event_name }})"
+            echo "| Leg | Ergebnis |"
+            echo "|---|---|"
+            echo "| collect-runtime (aarch64 + x86_64) | ${{ needs.collect-runtime.result }} |"
+            echo "| build-apk (arm64-v8a + x86_64) | ${{ needs.build-apk.result }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fehlschlag durchstellen
+        if: needs.collect-runtime.result != 'success' || needs.build-apk.result != 'success'
+        run: |
+          echo "::error::Build leg failed (collect-runtime=${{ needs.collect-runtime.result }}, build-apk=${{ needs.build-apk.result }})"
+          exit 1
