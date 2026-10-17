@@ -419,4 +419,9 @@ You can still continue without updating, but the interface will not display.</st
     <string name="lan_dialog_copied_code">Code %1$s copied</string>
     <string name="lan_dialog_copied_host">Address copied</string>
     <string name="lan_dialog_hint">Open the address on a device in the same network, then enter this code. The code is regenerated every time you turn this on.</string>
+    <string name="code_toast_fallback">Code %1$s copied</string>
+    <string name="code_copied_hint">Code copied</string>
+    <string name="code_copy">Copy</string>
+    <string name="code_copied_toast">Copied %1$s</string>
+    <string name="overlay_exit_daemon">Exit daemon</string>
 </resources>

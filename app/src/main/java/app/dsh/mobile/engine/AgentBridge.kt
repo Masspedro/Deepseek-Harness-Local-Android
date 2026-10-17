@@ -1388,7 +1388,7 @@ document.getElementById('api').textContent = checks.map(function(c){
             sum2 / n - mean * mean
         }
         if (variance < 120.0) {
-            return 400 to """{"ok":false,"error":"cropped area is too flat (variance=${"%.0f".format(variance)}) — 可能裁到了纯色背景，请用 /screenshot 核对坐标"}"""
+            return 400 to """{"ok":false,"error":"cropped area is too flat (variance=${"%.0f".format(variance)}) — likely a solid-colour background; verify the coordinates with /screenshot"}"""
         }
         val png = app.dsh.mobile.VisionTracker.encodePng(arr, cw, ch)
             ?: return 500 to """{"ok":false,"error":"png encode failed"}"""

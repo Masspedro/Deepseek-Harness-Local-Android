@@ -216,8 +216,6 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="webview_gate_update">So aktualisieren Sie</string>
     <string name="webview_gate_continue">Trotzdem fortfahren</string>
     <string name="ticker_working">In Arbeit …</string>
-    <string name="setting_experimental">Experimentelle Funktionen</string>
-    <string name="setting_experimental_sub">Standardmäßig aus. Wenn aktiviert, erscheinen diese Einträge: Schwebe-Fenster, Mikrofon-Berechtigung, Sprachdienste, lokale Erkenner-App.</string>
     <string name="app_language_sub">Anzeigesprache der App-Oberfläche (das WebUI folgt dem System)</string>
     <string name="app_language_sub_current">Anzeigesprache · aktuell: %1$s</string>
     <string name="lang_zh">Chinesisch</string>
@@ -407,7 +405,7 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="lan_dialog_title">LAN-WebUI ist aktiv</string>
     <string name="lan_dialog_code_label">Zugriffscode (antippen zum Kopieren)</string>
     <string name="lan_dialog_hint">Öffne die Adresse in einem Browser am Computer und gib den Code ein. Der Code wird nur einmal angezeigt.</string>
-    <string name="lan_dialog_copied_code">Code kopiert</string>
+    <string name="lan_dialog_copied_code">Code %1$s kopiert</string>
     <string name="lan_dialog_copied_host">Adresse kopiert</string>
 
     <!-- v1.3.0: Benachrichtigungen -->
@@ -430,4 +428,9 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <!-- v1.3.0: Plugin-Verwaltung -->
     <string name="plugin_uninstall">Deinstallieren</string>
     <string name="plugin_uninstalling">Wird deinstalliert…</string>
+    <string name="code_toast_fallback">Code %1$s kopiert</string>
+    <string name="code_copied_hint">Code kopiert</string>
+    <string name="code_copy">Kopieren</string>
+    <string name="code_copied_toast">%1$s kopiert</string>
+    <string name="overlay_exit_daemon">Daemon beenden</string>
 </resources>

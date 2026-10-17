@@ -65,7 +65,7 @@ object CodeToast {
                 android.util.Log.w("CodeToast", "addContentView failed: ${it.message}")
                 // 最后兜底：Toast（至少要有反馈）
                 runCatching {
-                    Toast.makeText(activity, "验证码 " + code + " 已复制", Toast.LENGTH_LONG).show()
+                    Toast.makeText(activity, activity.getString(R.string.code_toast_fallback, code), Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -102,7 +102,7 @@ object CodeToast {
         }
 
         card.addView(TextView(ctx).apply {
-            text = "验证码已复制"
+            text = ctx.getString(R.string.code_copied_hint)
             setTextColor(0xFF9AA0A6.toInt())
             textSize = 12f
         })
@@ -121,7 +121,7 @@ object CodeToast {
             }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
 
             addView(TextView(ctx).apply {
-                text = "复制"
+                text = ctx.getString(R.string.code_copy)
                 setTextColor(0xFF7DD3FC.toInt())
                 textSize = 15f
                 val p = dp(ctx, 12).toInt()
@@ -132,7 +132,7 @@ object CodeToast {
                         val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         cm.setPrimaryClip(ClipData.newPlainText("DSH LAN code", code))
                     }
-                    Toast.makeText(ctx, "已复制 " + code, Toast.LENGTH_SHORT).show()
+                    Toast.makeText(ctx, ctx.getString(R.string.code_copied_toast, code), Toast.LENGTH_SHORT).show()
                     dismiss()
                 }
             })

@@ -1192,7 +1192,7 @@ class DshAccessibilityService : AccessibilityService() {
                 // ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT(=3) 被系统节流拒绝——
                 // 这是"每帧截图"路线的根本障碍，正解是 MediaProjection 帧流。
                 Log.w("DshA11y", "screenshotArgb failed: errorCode=$errorCode " +
-                    "(3=INTERVAL_TIME_SHORT 节流; 1=INTERNAL; 2=NO_ACCESSIBILITY_ACCESS; 4=INVALID_DISPLAY)")
+                    "(3=INTERVAL_TIME_SHORT: throttled; 1=INTERNAL; 2=NO_ACCESSIBILITY_ACCESS; 4=INVALID_DISPLAY)")
                 latch.countDown()
             }
         }

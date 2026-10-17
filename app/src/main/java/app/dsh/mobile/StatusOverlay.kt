@@ -527,7 +527,7 @@ object StatusOverlay {
         val v = root ?: return
         if (daemonBtn == null) {
             val b = android.widget.Button(ctx)
-            b.text = "退出 daemon"
+            b.text = ctx.getString(R.string.overlay_exit_daemon)
             b.textSize = 11f
             b.setPadding(dp(ctx, 8), dp(ctx, 2), dp(ctx, 8), dp(ctx, 2))
             b.setOnClickListener {
