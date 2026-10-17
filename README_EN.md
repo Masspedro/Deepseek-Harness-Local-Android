@@ -72,6 +72,12 @@ The engine listens on `127.0.0.1` only; sessions, credentials, and workspaces li
 **Extension Center: one-tap environments**
 The built-in Extension Center offers **19 environment extensions** — Python, Go, Rust, Clang, OpenJDK, Git, Ruby, PHP, Perl, Lua, SQLite, FFmpeg, ImageMagick, OpenSSH, ADB, Vim and more — one-tap download, **uninstall support**, red/yellow/green state management and a live inline progress bar. Direct China-mirror access (TUNA → USTC → BFSU → Termux official auto-failover), automatic dependency-closure resolution, SHA-256 verification and atomic publishing.
 
+**Open the WebUI from your computer (LAN)**
+Settings → Extensions → **LAN WebUI access**. Once enabled, a browser on the same network opens `http://<phone-IP>:3090` and gets the **native dsh WebUI running on the phone** — the same UI, not a reimplementation. A random **6-digit code** is generated each time (copied to the clipboard, shown once), and a persistent notification with a **Stop** button stays in the status bar; stopping really kills the proxy process (works in Normal mode too). The proxy only patches its own responses (secure-context APIs, loopback checks, `/api` same-origin, WebSocket upgrades) and never touches engine files. For a terminal or file transfer, the OpenSSH extension still gives you SSH. See [docs/LAN_WEBUI.en.md](docs/LAN_WEBUI.en.md).
+
+**Community plugins, one tap**
+Settings → Extensions → **Community plugins**: search npm for dsh-ecosystem plugins and install/uninstall them with a single tap, entirely inside the app. Results are filtered for compatibility, installs show progress and the failure reason, and plugins show up in the WebUI's plugin panel immediately. The two stores complement each other: **plugins extend what the Agent can do; extensions provide the command-line environment.**
+
 **Cross-compiling on the phone**
 The Clang / Go / Rust / Java / Ruby toolchains are verified on real devices: kernel headers (ndk-sysroot) and CPATH / LIBRARY_PATH / RUSTFLAGS / GOTMPDIR are injected automatically — `clang hello.c -o hello && ./hello` just works; combined with name-based `psx`/`killx` process management and a binary-safe `curl`, the Agent does real development work on the phone. **Parallel services stay under 400 MB of memory.**
 
