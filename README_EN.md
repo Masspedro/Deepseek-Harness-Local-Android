@@ -20,7 +20,7 @@
 
 ## Introduction
 
-DSH Mobile is the **complete Android port of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)** — DeepSeek's open-source Agent framework. A complete Node.js Agent engine runs inside the app sandbox, listening on the `127.0.0.1` loopback — sessions, credentials, and workspaces **stay on your phone**. Install and go; your data never leaves the device.
+DSH Mobile is the **complete Android port of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)** — DeepSeek's open-source Agent framework. A complete Node.js Agent engine runs inside the app sandbox, listening on the `127.0.0.1` loopback — sessions, credentials, and workspaces **stay on your phone**. Install and go; whether model requests leave the device depends on the model service endpoint you configure.
 
 ## 🎯 What This Is · What This Is Not
 
@@ -41,48 +41,57 @@ All figures come from real-device / emulator testing, not theory:
 
 | Metric | Measured | Environment |
 |---|---|---|
-| **Cold start to engine ready** | **< 10 s** | OnePlus 15T (Android 16), real device; ~15 s on tablets |
+| **Cold start to engine ready** | **< 10 s** | OnePlus 15T (Android 16), real device |
 | **Memory with parallel services** | **< 400 MB** | Engine + multiple toolchains running together |
 | **Android compatibility** | **8.0 → 16** | Requires WebView ≥ Chrome 85 (see below) |
-| **APK size** | **~130 MB** | Full Node.js runtime + 19 extension toolchains |
-| **Toolchains** | **19 one-tap installs** | Python/Go/Rust/Clang/OpenJDK/FFmpeg… |
+| **APK size** | **~144 MB** | Full Node.js runtime + toolchain closure for 19 extensions |
+| **Installed size** | **~500 MB** | After runtime extraction |
 
-For reference, Termux-snapshot-based alternatives typically need **several minutes** on first launch (unpack + manual init); DSH Mobile ships its runtime inside the APK — install and go.
+The runtime and toolchain ship in the APK, so you can start the upstream dsh engine without first setting up Termux or a proot/Ubuntu container.
 
 ## ✨ What It Can Do on a Phone
 
-**Full Agent task execution**
-Hand the Agent tasks: read/write files, run shell commands, full-text search, manage projects — bionic bash / ripgrep / pnpm / curl ship in the APK with an ELF-verified dependency closure. Real execution power, not a chat-only shell.
+**Run the full Agent engine on your phone**
+The official dsh engine (pinned to `0.2.0-rc.2`) runs in the Android app sandbox with its bionic Node.js runtime and toolchain bundled in the APK. No Root, Termux, PC, or proot/Ubuntu container is required. The Agent can work with files, run shell commands, search text, and manage projects; its engine endpoint listens on `127.0.0.1`.
 
-**Instant preview of what it builds**
-The Agent starts a local HTTP server (with the bundled node) and hands you a `http://127.0.0.1:port` link — tap to preview live, one tap back home. Battle-tested with mini-games, static sites, and API services.
+**Preview results where they run**
+The Agent can start a local HTTP service and return a `http://127.0.0.1:port` link. Tap it to preview a page or service on the phone, without moving the project to a computer first.
 
-**Scalable Agent capabilities**
-Three privilege tiers on demand — Normal (sandbox, default) for everyday use; Shizuku mode grants adb-level commands (process management, system properties, no Root needed); Root mode grants full read/write (double confirmation + automatic backup). Options whose capability isn't ready are grayed out automatically.
+**Make the phone a real Agent workstation**
+The Extension Center offers **19 environment extensions** — including Python, Go, Rust, Clang, OpenJDK, Git, Ruby, PHP, Perl, Lua, SQLite, FFmpeg, ImageMagick, OpenSSH, ADB, and Vim. Install or remove them on demand, with three-state status and inline progress. Dependency closures are resolved automatically, packages are SHA-256 checked and atomically published, and install-time shebang repair helps scripts find their interpreters. Downloads can use direct China mirrors (TUNA → USTC → BFSU → Termux official). The Agent can also install and activate extensions itself; self-installing the Android SDK command-line tools was verified in Root mode.
 
-- **Voice input: speak and send, foreground or background**: tap the mic on the floating ball to open a bottom input panel. The system recognizer is preferred; if the device has none, install our open-source offline recognizer plugin [dsh-asr-service](https://github.com/Soodok/dsh-asr-service) or configure your own cloud API in settings. Recognized text streams into the panel, stays editable, and one tap sends it straight into the current conversation with a "sent to <session>" confirmation. The send chain is driven entirely by Android-side timing (no requestAnimationFrame, no JS timers), so **sends work instantly even when the app is backgrounded**. Writes into the WebUI's rich-text editor go through its native paste pipeline with a read-back check, so text is never duplicated. Haptics distinguish start/stop.
-- **Floating window: see what the AI is doing**: a draggable status ball tinted by engine state (idle gray / working cyan); expanded it shows the AI's last action and when it happened, and switches to a listening state during voice input.
-- **Keep-alive: self-restart, no background freeze**: an accessibility-service watchdog checks the engine's foreground service every minute and restarts it if the system reclaimed it (respecting the notification's Exit button); WebView timers keep running in background so voice-sent messages get model responses immediately.
-- **Operate the phone screen (not blind)**: once the accessibility service is enabled, the Agent can **read screen content** (texts + coordinates) and tap precisely by text or coordinates — automating other apps
-- **Task-completion push**: the Agent sends an Android system notification when a long task finishes — never miss a background job
+**Bring the dsh plugin ecosystem along**
+Settings → Extensions → **Community plugins** lets you search npm for dsh ecosystem plugins and install or uninstall them in the app. Compatibility-filtered results, progress, and failure reasons make plugin setup visible; installed plugins appear in the WebUI panel. **Plugins extend Agent capabilities; environment extensions provide command-line tools.**
 
-**Strictly local data**
-The engine listens on `127.0.0.1` only; sessions, credentials, and workspaces live in the app's private storage — switch phones or uninstall, and your data goes exactly where you decide.
+**Operate apps with a verified local loop**
+Enable the accessibility service and the Agent can control the phone through **21 action primitives**, including taps, text input, swipes, scrolling and search, gestures, launch/intent, repeat, conditions, and collection. Each step follows **PICK → ACT → VERIFY → RETRY**. Screen understanding layers accessibility nodes, OCR, icon recognition, and frame differences; on failure, it can change its anchor, action, or route and return the failure evidence instead of blindly repeating a tap. Conditional `when` branches, optimistic execution, and scenario memory help it handle variation and reuse successful paths.
 
-**Extension Center: one-tap environments**
-The built-in Extension Center offers **19 environment extensions** — Python, Go, Rust, Clang, OpenJDK, Git, Ruby, PHP, Perl, Lua, SQLite, FFmpeg, ImageMagick, OpenSSH, ADB, Vim and more — one-tap download, **uninstall support**, red/yellow/green state management and a live inline progress bar. Direct China-mirror access (TUNA → USTC → BFSU → Termux official auto-failover), automatic dependency-closure resolution, SHA-256 verification and atomic publishing.
+The timings are measured: a single closed-loop step takes about **1.45 s** (1.13 s to tap + 69 ms to verify); compact verification takes about **5 ms** and is roughly **1/7** the size of a full JSON dump. The OCR chain takes **326–393 ms**, about **4× faster** than the prior 1370–1588 ms measurement; settle adapts to page state (**355–1566 ms**) rather than waiting a fixed 900 ms. A combined multi-function task completed in **7 calls / 64.7 s**; all **7 noisy test pages** passed, and cross-app browser → Settings → return-to-app tasks run reliably. Fast mode thinks on the first accessibility step only. Human-like curved, slightly varied swipe paths and small randomized tap offsets complement the visual checks.
 
-**Open the WebUI from your computer (LAN)**
-Settings → Extensions → **LAN WebUI access**. Once enabled, a browser on the same network opens `http://<phone-IP>:3090` and gets the **native dsh WebUI running on the phone** — the same UI, not a reimplementation. A random **6-digit code** is generated each time (copied to the clipboard, shown once), and a persistent notification with a **Stop** button stays in the status bar; stopping really kills the proxy process (works in Normal mode too). The proxy only patches its own responses (secure-context APIs, loopback checks, `/api` same-origin, WebSocket upgrades) and never touches engine files. For a terminal or file transfer, the OpenSSH extension still gives you SSH. See [docs/LAN_WEBUI.en.md](docs/LAN_WEBUI.en.md).
+**Accessibility and background at a glance**
+A draggable floating status ball shows engine state and the latest action. From the third consecutive accessibility action, a notification updates with the current step; it disappears after 10 seconds without activity. The Agent can also send task-completion notifications. On exit, the app stops the engine and its separate child processes, closes the screen, and destroys the WebView to release about **380 MB** of runtime memory. See [docs/ACCESSIBILITY.en.md](docs/ACCESSIBILITY.en.md) and [docs/NOTIFICATIONS.en.md](docs/NOTIFICATIONS.en.md).
 
-**Community plugins, one tap**
-Settings → Extensions → **Community plugins**: search npm for dsh-ecosystem plugins and install/uninstall them with a single tap, entirely inside the app. Results are filtered for compatibility, installs show progress and the failure reason, and plugins show up in the WebUI's plugin panel immediately. The two stores complement each other: **plugins extend what the Agent can do; extensions provide the command-line environment.**
+**Voice input that still works in the background**
+Tap the floating-ball microphone to open an editable bottom panel; recognized text appears live and can be corrected before sending to the current conversation. Recognition prefers the system service, then a cloud OpenAI-compatible API; the open-source offline plugin [dsh-asr-service](https://github.com/Soodok/dsh-asr-service) is also available. Android-side timing drives the send path, so it works with the app in the background. WebUI input is read back and de-duplicated. On some devices, a brief 1–2 frame visual remnant may still appear at send time due to system composition. See [docs/VOICE_INPUT.en.md](docs/VOICE_INPUT.en.md).
 
-**Cross-compiling on the phone**
-The Clang / Go / Rust / Java / Ruby toolchains are verified on real devices: kernel headers (ndk-sysroot) and CPATH / LIBRARY_PATH / RUSTFLAGS / GOTMPDIR are injected automatically — `clang hello.c -o hello && ./hello` just works; combined with name-based `psx`/`killx` process management and a binary-safe `curl`, the Agent does real development work on the phone. **Parallel services stay under 400 MB of memory.**
+**Use the native WebUI from a computer over LAN**
+Settings → Extensions → **LAN WebUI access** exposes the phone's running WebUI at `http://<phone-IP>:3090` on the local network. Each enable generates a random **6-digit code**, copies it automatically, and displays it once. A persistent notification reminds you while access is on; its Stop button really stops the proxy, including in Normal mode, and exiting the engine stops it too. The app-layer proxy supplies the secure-context features the browser needs (random UUID, loopback checks, `/api` same-origin, and WebSocket upgrade) without modifying engine files. The upstream engine refuses `0.0.0.0` binding; LAN access is an explicit app-level switch. See [docs/LAN_WEBUI.en.md](docs/LAN_WEBUI.en.md).
 
-**Agent self-extension**
-The Agent doesn't just use the Extension Center — it acts on its own: it installs environments through the local bridge and activates them automatically (then reminds you to restart the engine). In Root mode it has even bootstrapped the Android SDK command-line tools by itself.
+**Keep data and permissions under your control**
+The engine listens only on `127.0.0.1`; sessions, credentials, and workspaces stay in the phone's private storage — whether model requests leave the device depends on the model endpoint you configure.
+
+- Sessions and workspaces live under **`Android/data/app.dsh.mobile/files/dshdata`** on external storage — visible in a file manager and easy to copy as a backup
+- Upgrading from an older build **migrates** data automatically (copy → verify entry count → delete the old copy; on a count mismatch the original is kept)
+- If the external directory is unavailable the app falls back to private storage (uninstalling then loses data)
+- ⚠️ **Note**: `Android/data/` is app-specific external storage and is **removed when you uninstall**. Copy it out regularly if you need it long-term; `profiles/` (which holds credentials) always stays in private storage.
+
+The capability bridge listens only on `127.0.0.1:3083`, uses a random token generated at each launch, and injects it only into the engine environment; another app without the token gets `unauthorised`. Normal mode stays in the app sandbox, Shizuku adds adb-level commands, and Root enables full-device access. In Normal mode, a `su` gate blocks child-process escalation.
+
+**Make narrow-screen UI feel native**
+Client-side plugins let the sidebar take the full row in portrait while the conversation flow yields; landscape and wide layouts remain unchanged. Settings reflows vertically with a horizontally scrollable top navigation, and the right-side change/code-diff panel becomes a full-screen overlay on narrow screens. All three use the engine's official `dsh.client` mechanism: no engine-source edits, no overwrite on engine upgrades, and uninstall to restore. Four plugin test suites passed **30, 26, 36, and 28 assertions**. See [docs/NARROW_UI.en.md](docs/NARROW_UI.en.md).
+
+**Three privilege tiers, chosen explicitly**
+Normal mode is the sandbox default; options whose capability isn't ready are greyed out, and switching tiers restarts the engine. Shizuku offers adb-level access without Root; Root provides full-device read/write. Choose the smallest permission level that fits the task.
 
 ## 📚 Feature deep-dives
 
@@ -152,7 +161,7 @@ specialUse foreground service + exponential-backoff supervisor against system re
 | Prerequisite | None | Install & start [Shizuku](https://shizuku.rikka.app/) | Rooted device |
 | Safeguards | su gate blocks escalation | su gate blocks escalation | Double high-risk confirmation + automatic pre-start backup |
 
-Normal mode is the default; options whose capability isn't ready are grayed out and non-clickable; switching modes restarts the engine automatically.
+Normal mode is the default; choose Shizuku or Root only when the task requires a wider device boundary.
 
 ## 📦 Installation
 
@@ -173,7 +182,7 @@ gradle assembleDebug -Pabi=arm64-v8a
 
 Alternatively, fork the repo and run the **android-build** workflow on GitHub Actions for a cloud build.
 
-**Requirements**: Android 8.0+ (**WebView ≥ Chrome 85**, see Limits) · arm64-v8a / x86_64 · **700MB+ free storage recommended** (APK ~130MB plus the unpacked runtime).
+**Requirements**: Android 8.0+ (**WebView ≥ Chrome 85**, see Limits) · arm64-v8a / x86_64 · **700MB+ free storage recommended** (APK ~144MB plus the unpacked runtime).
 
 ## 🚀 Quick Start
 
@@ -187,13 +196,13 @@ Alternatively, fork the repo and run the **android-build** workflow on GitHub Ac
 
 **Does it require Root?** No. Normal mode covers the vast majority of use cases; Root/Shizuku are optional advanced tiers.
 
-**How does this relate to the Termux approach?** Parallel routes, not replacements. The Termux route **builds a Linux environment** on Android (manual setup / one-click script / proot + Ubuntu) and runs dsh inside it; this project **packs dsh's runtime into the APK** so you install and go, at the cost of a ~130 MB package. **Both run the same dsh** — choose by how much setup cost you're willing to pay for a live environment.
+**How does this relate to the Termux approach?** Parallel routes, not replacements. The Termux route **builds a Linux environment** on Android (manual setup / one-click script / proot + Ubuntu) and runs dsh inside it; this project **packs dsh's runtime into the APK** so you install and go, at the cost of a ~144 MB package. **Both run the same dsh** — choose by how much setup cost you're willing to pay for a live environment.
 
 **Does it reimplement the agent itself?** No. Agent logic, plugin system, and WebUI all come from the official [`@deepseek-ai/dsh`](https://github.com/deepseek-ai/deepseek-harness); this project only provides the Android-side runtime (bionic Node.js runtime, foreground service, privilege tiers, Extension Center). That is why it is described as a **port**, not a framework.
 
 **Is my data uploaded?** The engine, sessions, and workspace are all local; whether data leaves the device depends on the model service endpoint you configure.
 
-**Why is the APK ~130MB?** It bundles the complete bionic Node.js runtime, the Termux toolchain closure (bash / ripgrep / SONAME libraries) and dsh's entire dependency tree (79 packages as of 0.2.0) — the price of "no Termux required, install and go". Termux-family routes keep all of that external and installed by the user, so their package is smaller but first use takes minutes of setup.
+**Why is the APK ~144MB?** It bundles the complete bionic Node.js runtime, the toolchain closure for 19 extensions, and dsh's dependency tree — the price of "no Termux required, install and go". Termux-family routes keep that setup external and installed by the user, so their package is smaller but first use requires environment setup.
 
 **How does the Agent show me a web page?** Ask it to start a local HTTP server and give you a `http://127.0.0.1:port` link; tap to preview.
 
