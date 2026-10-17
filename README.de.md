@@ -85,7 +85,8 @@ Zu jeder Fähigkeit gibt es ein eigenes Dokument (Design-Abwägungen, Messwerte,
 
 | Dokument | Inhalt |
 |---|---|
-| [Barrierefreiheit & Gerätesteuerung](docs/LOCAL_CLOSED_LOOP.md) | lokale geschlossene Schleife, 21 Aktionsprimitive, Szenengedächtnis |
+| [Barrierefreiheit & Gerätesteuerung](docs/ACCESSIBILITY.en.md) | Lesen/Tippen/Eingeben/Wischen über 21 Primitive; mehrschichtige Vision, Verifikation pro Schritt; gemessen ~1,45 s/Schritt |
+| [Designnotizen zur geschlossenen Schleife](docs/LOCAL_CLOSED_LOOP.md) | Design und Entwicklung der Entscheidungs-Engine auf dem Gerät |
 | [UI-Plugins für schmale Bildschirme](docs/NARROW_UI.en.md) | Seitenleiste über volle Breite / Einstellungen neu angeordnet / rechtes Panel bildschirmfüllend |
 | [LAN-WebUI](docs/LAN_WEBUI.en.md) | Reverse-Proxy, 6-stelliger Code, dauerhafte Erinnerung und Stopp-Kette |
 | [Spracheingabe](docs/VOICE_INPUT.en.md) | zwei Erkennungskanäle, Sende-Deduplizierung, Panel-Parking, bekanntes Problem |

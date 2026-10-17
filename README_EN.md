@@ -84,7 +84,8 @@ Every capability has its own document (design trade-offs, measured numbers, trou
 
 | Document | What's inside |
 |---|---|
-| [Accessibility & phone control](docs/LOCAL_CLOSED_LOOP.md) | local closed-loop executor, 21 action primitives, scene memory, on-device decisions |
+| [Accessibility control](docs/ACCESSIBILITY.en.md) | read/tap/type/swipe/long-press/drag via 21 primitives; layered vision, per-step verification; measured ~1.45 s/step |
+| [Closed-loop design notes](docs/LOCAL_CLOSED_LOOP.md) | design and evolution of the on-device decision engine |
 | [Narrow-screen UI plugins](docs/NARROW_UI.en.md) | full-width sidebar / settings reflow / full-screen right panel (three client plugins) |
 | [LAN WebUI](docs/LAN_WEBUI.en.md) | reverse proxy, 6-digit code, persistent reminder and stop chain |
 | [Voice input](docs/VOICE_INPUT.en.md) | dual recognition channels, send de-dup, panel parking, known issue |
