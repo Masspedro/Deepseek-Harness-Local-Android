@@ -823,3 +823,16 @@ CI `i18n-check` 失败（23 条）。项目门禁（`scripts/check-i18n.py`）�
 ### 顺带处理
 - x86_64 调试构建会把 `assets/runtime.zip` 换成 x86_64 版；本轮已恢复
   `runtime.zip`=arm64 并核对 MANIFEST sha256 一致（`14dca972…`），随后才重打 arm64 包。
+
+## 2026-10-18 CI 定时任务 OOM 修复
+
+- 现象：nightly（schedule）run `39063013662`（commit f63db71）arm64 leg 红，
+  `:app:compressDebugAssets` 报 `java.lang.OutOfMemoryError: Java heap space`；
+  同一提交的 push run `39043818023` 却是绿的 → 资源边界偶发。
+- 原因：`gradle.properties` 的 `org.gradle.jvmargs=-Xmx2048m` 对 ~126MB runtime.zip
+  的资产压缩环节余量不足。
+- 修复（commit `7073ada`）：改为 `-Xmx4096m -XX:MaxMetaspaceSize=1024m`。
+- 验证：push run `39077258447`（commit 7073ada）全绿——
+  collect-runtime ×2、build-apk ×2（arm64-v8a / x86_64）、Build monitor 均 success；
+  i18n-check `39077258387` success。
+- 注意：旧的失败 run 仍在 Actions 历史里（API 未删除），main 最新提交的 CI 是绿的。
