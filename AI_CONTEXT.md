@@ -763,3 +763,27 @@ CI `i18n-check` 失败（23 条）。项目门禁（`scripts/check-i18n.py`）�
 - 改 strings 后必须跑 `python scripts/check-i18n.py`（本地 0 错误再推）；
 - 该门禁会强制三语一致（值/占位符/键集），新增字符串必须同时补 en/zh/de；
 - 用户可见文案不要内联在 Kotlin 里；匹配屏上文本的关键词才走白名单。
+
+## 2026-10-17 v1.3.0 补丁：启动动画（同版本覆盖发布）
+
+### 需求
+用户反馈「刚启动时会有一段时间黑屏」+「提示要1分钟太吓人，改成请等待几秒」+「进入页面不要硬切」。
+
+### 实现
+- `activity_main.xml` 末尾新增全屏启动层 `@id/splash`（**elevation 30dp**，否则被工具栏的
+  4dp elevation 盖住）：logo + 应用名 + 状态文案 + 进度条 + 提示语；clickable/focusable 吞误触。
+- `MainActivity`：
+  · `setupSplash()`：logo 淡入(420ms)+缩放 0.82→1，之后 1↔1.05 呼吸循环；
+  · `renderProgress()` 同步真实解压百分比到遮罩进度条；
+  · `render(state)` 更新阶段文案（准备运行环境 → 启动引擎 → 加载界面），
+    Failed/Backoff/Stopped 时兜底淡出；
+  · `onPageFinished` → `dismissSplash()`：最短展示 700ms，再等 180ms 让页面画出首帧，
+    然后「淡出 460ms + 放大到 1.04」渐变进入（解决"硬切生硬"）；
+  · WebView 底色 #101418，淡出时不会闪白。
+- 文案三语：`splash_preparing/starting/loading/hint`，hint 改为「请稍等几秒…」。
+
+### 发布方式（用户要求）
+- **不新增版本**：versionName 仍 1.3.0；因设备上测试过 239，为避免降级拒绝，
+  versionCode 提到 **240**（对外仍显示 1.3.0）。
+- 已重建 release+debug 并**替换 GitHub Release 资产**（release 150,762,553 / debug 151,947,526 字节）。
+- 真机验证：启动层正常显示（工具栏不再盖住）、文案正确、页面加载后渐变进入。
