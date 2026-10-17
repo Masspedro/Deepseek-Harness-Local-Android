@@ -787,3 +787,39 @@ CI `i18n-check` 失败（23 条）。项目门禁（`scripts/check-i18n.py`）�
   versionCode 提到 **240**（对外仍显示 1.3.0）。
 - 已重建 release+debug 并**替换 GitHub Release 资产**（release 150,762,553 / debug 151,947,526 字节）。
 - 真机验证：启动层正常显示（工具栏不再盖住）、文案正确、页面加载后渐变进入。
+
+## 2026-10-17 v1.3.0 补丁：横屏启动卡死（issue #17）
+
+### 现象
+用户反馈 + 截图：选择横屏（桌面布局）进入后停在启动遮罩「正在加载界面… / 请稍等几秒…」，
+界面无响应（Xiaomi Pad 7 / Android 16 / WebView 154）。
+
+### 根因（已由代码与截图确认）
+`MainActivity.onPageFinished` 里，`desktopMode` 分支在调用 `dismissSplash()` **之前**就
+`return` 了 → 全屏、`clickable=true`、elevation 30dp 的遮罩永不淡出，盖在 WebView 上吞掉
+所有触摸。竖屏路径不经过该分支，故不受影响。
+
+### 修复（commit 75f796d）
+- `dismissSplash()` 移到模式分支**之前**，横竖屏都会执行；
+- 新增 45s 兜底看门狗（`splashWatchdog`）：任何加载路径异常都不能让遮罩永久遮挡；
+- `onDestroy` 移除看门狗回调。
+
+### 验证（模拟器 x86_64 dsh36，debug 241）
+- `dsh_ui.xml` 写入 `orientation=landscape` → 启动 10s 内遮罩消失，uiautomator 可见完整
+  桌面布局（DeepSeek Harness / 新建会话 / 收起侧边栏…），截图
+  `C:\Users\Qt\AppData\Local\Temp\emu_landscape_ok.png`；
+- 改回 `orientation=portrait` 重启 → 页面加载完成后遮罩同样正常消失。
+- 真机（192.168.101.21:9000）已用 `adb push + pm install -r` 装上 241 正式包
+  （versionCode=241 / versionName=1.3.0）；安装时设备锁屏，**未做真机手动复测**。
+
+### 发布（同版本覆盖）
+- versionCode 240 → **241**，versionName 仍 **1.3.0**；
+- 已删除旧 Release 资产并上传新包：
+  release id `650756213`（150,762,553B）、debug id `650763724`（151,947,526B）；
+- issue #17 已回复（comment `6235397136`）并标记 closed/completed；
+- 本地提交 `75f796d`；`git push` 仍被重置（API/资产上传正常，git 直连 github.com
+  `Recv failure: Connection was reset`），**待网络恢复后补推**。
+
+### 顺带处理
+- x86_64 调试构建会把 `assets/runtime.zip` 换成 x86_64 版；本轮已恢复
+  `runtime.zip`=arm64 并核对 MANIFEST sha256 一致（`14dca972…`），随后才重打 arm64 包。
