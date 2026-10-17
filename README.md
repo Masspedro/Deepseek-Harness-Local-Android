@@ -51,6 +51,14 @@ DSH Mobile 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harnes
 
 **Agent 自我扩展**：AI 不只会用扩展中心，还会在会话里通过本地接口自主安装环境并自动激活；Root 模式下已实测成功自装 Android SDK 命令行工具。
 
+### 🧩 社区插件：一键安装
+
+设置 → 扩展 → **社区插件**：搜索 npm 上的 dsh 生态插件，**一键安装 / 卸载**，全程在应用内完成。
+
+- 输入关键词搜索，结果按兼容性过滤；
+- 安装带进度与失败原因，装完即出现在 WebUI 的插件面板；
+- 与「扩展中心」互补：**插件扩展 Agent 的能力**，**扩展提供命令行环境**。
+
 ### 🖥️ 完整 Agent 任务执行
 
 派任务给 Agent：读写文件、执行 shell 命令、全文检索、管理项目——bionic bash / ripgrep / pnpm / curl 随包内置，依赖闭包经 ELF 校验，是真实执行力，不是只能聊天的壳。
@@ -77,14 +85,6 @@ DSH Mobile 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harnes
 - 需要终端/传文件时，也可以装 OpenSSH 扩展走 SSH。
 
 详见 [docs/LAN_WEBUI.md](docs/LAN_WEBUI.md)。
-
-### 🧩 社区插件：一键安装
-
-设置 → 扩展 → **社区插件**：搜索 npm 上的 dsh 生态插件，**一键安装 / 卸载**，全程在应用内完成。
-
-- 输入关键词搜索，结果按兼容性过滤；
-- 安装带进度与失败原因，装完即出现在 WebUI 的插件面板；
-- 与「扩展中心」互补：**插件扩展 Agent 的能力**，**扩展提供命令行环境**。
 
 ### 🎙️ 语音输入
 
