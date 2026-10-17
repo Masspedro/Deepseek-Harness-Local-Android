@@ -51,6 +51,33 @@ For reference, Termux-snapshot-based alternatives typically need **several minut
 
 ## ✨ What It Can Do on a Phone
 
+**Full Agent task execution**
+Hand the Agent tasks: read/write files, run shell commands, full-text search, manage projects — bionic bash / ripgrep / pnpm / curl ship in the APK with an ELF-verified dependency closure. Real execution power, not a chat-only shell.
+
+**Instant preview of what it builds**
+The Agent starts a local HTTP server (with the bundled node) and hands you a `http://127.0.0.1:port` link — tap to preview live, one tap back home. Battle-tested with mini-games, static sites, and API services.
+
+**Scalable Agent capabilities**
+Three privilege tiers on demand — Normal (sandbox, default) for everyday use; Shizuku mode grants adb-level commands (process management, system properties, no Root needed); Root mode grants full read/write (double confirmation + automatic backup). Options whose capability isn't ready are grayed out automatically.
+
+- **Voice input: speak and send, foreground or background**: tap the mic on the floating ball to open a bottom input panel. The system recognizer is preferred; if the device has none, install our open-source offline recognizer plugin [dsh-asr-service](https://github.com/Soodok/dsh-asr-service) or configure your own cloud API in settings. Recognized text streams into the panel, stays editable, and one tap sends it straight into the current conversation with a "sent to <session>" confirmation. The send chain is driven entirely by Android-side timing (no requestAnimationFrame, no JS timers), so **sends work instantly even when the app is backgrounded**. Writes into the WebUI's rich-text editor go through its native paste pipeline with a read-back check, so text is never duplicated. Haptics distinguish start/stop.
+- **Floating window: see what the AI is doing**: a draggable status ball tinted by engine state (idle gray / working cyan); expanded it shows the AI's last action and when it happened, and switches to a listening state during voice input.
+- **Keep-alive: self-restart, no background freeze**: an accessibility-service watchdog checks the engine's foreground service every minute and restarts it if the system reclaimed it (respecting the notification's Exit button); WebView timers keep running in background so voice-sent messages get model responses immediately.
+- **Operate the phone screen (not blind)**: once the accessibility service is enabled, the Agent can **read screen content** (texts + coordinates) and tap precisely by text or coordinates — automating other apps
+- **Task-completion push**: the Agent sends an Android system notification when a long task finishes — never miss a background job
+
+**Strictly local data**
+The engine listens on `127.0.0.1` only; sessions, credentials, and workspaces live in the app's private storage — switch phones or uninstall, and your data goes exactly where you decide.
+
+**Extension Center: one-tap environments**
+The built-in Extension Center offers **19 environment extensions** — Python, Go, Rust, Clang, OpenJDK, Git, Ruby, PHP, Perl, Lua, SQLite, FFmpeg, ImageMagick, OpenSSH, ADB, Vim and more — one-tap download, **uninstall support**, red/yellow/green state management and a live inline progress bar. Direct China-mirror access (TUNA → USTC → BFSU → Termux official auto-failover), automatic dependency-closure resolution, SHA-256 verification and atomic publishing.
+
+**Cross-compiling on the phone**
+The Clang / Go / Rust / Java / Ruby toolchains are verified on real devices: kernel headers (ndk-sysroot) and CPATH / LIBRARY_PATH / RUSTFLAGS / GOTMPDIR are injected automatically — `clang hello.c -o hello && ./hello` just works; combined with name-based `psx`/`killx` process management and a binary-safe `curl`, the Agent does real development work on the phone. **Parallel services stay under 400 MB of memory.**
+
+**Agent self-extension**
+The Agent doesn't just use the Extension Center — it acts on its own: it installs environments through the local bridge and activates them automatically (then reminds you to restart the engine). In Root mode it has even bootstrapped the Android SDK command-line tools by itself.
+
 ## 📚 Feature deep-dives
 
 Every capability has its own document (design trade-offs, measured numbers, troubleshooting):
