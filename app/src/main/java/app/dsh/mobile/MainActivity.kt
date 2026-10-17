@@ -84,6 +84,8 @@ class MainActivity : Activity() {
     /** 是否已经淡出（幂等） */
     private var splashDismissed = false
     private val splashMinMs = 700L
+    /** 兜底看门狗：任何加载路径异常都不能让遮罩永久吞掉触摸（issue #17） */
+    private var splashWatchdog: Runnable? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun attachBaseContext(newBase: android.content.Context) {
@@ -364,6 +366,10 @@ class MainActivity : Activity() {
                 if (view == null) return
                 // 环境自检：把 WebView 版本与关键 API 存在性写进日志，用户报障时一眼定位
                 view.evaluateJavascript(WEBVIEW_SELFCHECK_JS, null)
+                // v1.3.1 补丁（issue #17「选择横屏进入卡死」）：收遮罩必须放在
+                // 模式分支**之前**。此前 desktopMode 分支先 return，遮罩永不淡出，
+                // 全屏可点击的遮罩把后续所有触摸都吃掉 = 看起来卡死。
+                dismissSplash()
                 // 桌面模式：视口改写为固定 1280px（响应式走桌面分支，侧栏完整展开）。
                 if (desktopMode) {
                     view.evaluateJavascript(DESKTOP_VIEWPORT_JS, null)
@@ -375,8 +381,6 @@ class MainActivity : Activity() {
                 // 彻底锁死（既不 clamp 到 100%，也不许用户手动改）。setInitialScale 易被 meta
                 // 干扰（maximum-scale=1 会把它 clamp 回 100%），故弃用。
                 view.evaluateJavascript(portraitViewportJs(pageScale / 100f), null)
-                // v1.3.1：首屏加载完成 → 淡出启动遮罩（页面这时才真的可以操作）
-                dismissSplash()
                 // 竖屏「对话流被挤压」修复已改为**引擎侧客户端插件**
                 // （assets/android-plugins/narrow-sidebar/，v1.2.175）：
                 // 用户要求「不要直接改源代码，要做成插件形式」——外部注入 JS 会和
@@ -543,6 +547,12 @@ class MainActivity : Activity() {
         splashProgress = findViewById(R.id.splashProgress)
         splashShownAt = System.currentTimeMillis()
         splashDismissed = false
+        // 兜底：无论引擎/WebView 走哪条路径，45s 后强制收遮罩。宁可露出工具栏，
+        // 也不能让一张不透明的全屏 View 永久拦截触摸（issue #17 的教训）。
+        splashWatchdog?.let { v.removeCallbacks(it) }
+        val watchdog = Runnable { dismissSplash() }
+        splashWatchdog = watchdog
+        v.postDelayed(watchdog, 45_000L)
         // WebView 底色与主题一致：遮罩淡出时不会闪出白底
         runCatching { webView.setBackgroundColor(0xFF101418.toInt()) }
         val logo = splashLogo ?: return
@@ -606,6 +616,8 @@ class MainActivity : Activity() {
      * （不能让用户卡在遮罩里看不到工具栏与错误）。保证最短展示 700ms，避免一闪而过。
      */
     private fun dismissSplash() {
+        splashWatchdog?.let { wd -> splash?.removeCallbacks(wd) }
+        splashWatchdog = null
         val v = splash ?: return
         if (splashDismissed) return
         splashDismissed = true
@@ -1171,6 +1183,8 @@ class MainActivity : Activity() {
         // 注销语音发送能力：本 Activity 已销毁，服务侧再发会拿到明确的「需打开 App」提示
         // （而不是把文字注入到一个已销毁的 WebView）
         stopHangWatchdog()
+        splashWatchdog?.let { wd -> splash?.removeCallbacks(wd) }
+        splashWatchdog = null
         VoiceBridge.registerSender(null)
         // 释放未完成的文件选择请求，否则 WebView 侧回调悬空
         pendingFileCallback?.let { runCatching { it.onReceiveValue(null) } }
