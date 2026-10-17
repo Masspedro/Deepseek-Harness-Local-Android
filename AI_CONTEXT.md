@@ -736,3 +736,30 @@ const rightbar = rightbar === 0 || available < 300 ? 0 : Math.min(available, …
 5. `git add app/ README*.md RELEASE_NOTES*.md AI_CONTEXT.md`（**不要 `git add -A scripts/`**，
    probes 里有凭证/大文件）；`git push`（需 token，网络不稳时重试）；
 6. GitHub API 建 release + `uploads.github.com` 传两个 APK（144MB 约 30s/个）。
+
+## 2026-10-17 i18n 门禁修复（v1.3.0 已发布后补丁）
+
+### 背景
+CI `i18n-check` 失败（23 条）。项目门禁（`scripts/check-i18n.py`）禁 CJK 进入 Kotlin 字面量、
+要求 values / values-zh-rCN / values-de 三向键集与占位符一致、catalog 与 zh catalog 条目顺序一致。
+
+### 修复（23 → 0）
+1. **用户可见文案改资源**：`CodeToast` 4 条（`code_toast_fallback`/`code_copied_hint`/`code_copy`/
+   `code_copied_toast`）、悬浮窗 `overlay_exit_daemon`；三语（en/zh/de）同步补齐。
+2. **日志/错误去中文**：`DshAccessibilityService` 截图错误码说明、`AgentBridge` 裁剪过平提示。
+3. **德语清理**：删除已废弃的 `setting_experimental(_sub)`；`lan_dialog_copied_code` 补回 `%1$s`。
+4. **catalog.zh-rCN.json** 补 `asr-service`（id 顺序与默认 catalog 对齐，共 21 条）。
+5. **白名单**（有意保留的中文）：PageStateDetector 6 个加载关键词（匹配屏上文本）、
+   ScreenOcr 全角 `＠` 替换、SceneMemory 面向 AI 的诊断摘要、CredentialProbe 3 个品牌名。
+
+### 已发布资产的更新
+- 因修复包含**中文扩展目录新增 asr-service**（用户可见），已重建 v1.3.0 双包并**替换 Release 资产**
+  （同版本号/同 tag，先删除旧资产再上传；release 143.8MB / debug 145.2MB）。
+- 校验：包内 `assets/extensions/catalog.zh-rCN.json` 含 asr-service（21 条）；
+  `aapt2 dump resources` 确认 `code_copied_hint` 有 `(de) "Code kopiert"`。
+- CI：`i18n-check` for d4ad230 = success。
+
+### 教训
+- 改 strings 后必须跑 `python scripts/check-i18n.py`（本地 0 错误再推）；
+- 该门禁会强制三语一致（值/占位符/键集），新增字符串必须同时补 en/zh/de；
+- 用户可见文案不要内联在 Kotlin 里；匹配屏上文本的关键词才走白名单。
