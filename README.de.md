@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml)
 ![i18n](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/i18n-check.yml/badge.svg)
-![Release](https://img.shields.io/badge/release-v1.2.120-blue)
+![Release](https://img.shields.io/badge/release-v1.3.0-blue)
 ![Plattform](https://img.shields.io/badge/platform-Android%208.0%2B-green)
 ![Lizenz](https://img.shields.io/badge/license-MIT-brightgreen)
 
@@ -48,6 +48,17 @@ Alle Werte stammen aus Tests auf echten Geräten und im Emulator, nicht aus der 
 Zum Vergleich: Termux-Snapshot-basierte Alternativen brauchen beim ersten Start üblicherweise **mehrere Minuten** (Entpacken + manuelle Initialisierung); DSH Mobile liefert seine Laufzeit im APK aus — installieren und loslegen.
 
 ## ✨ Was es auf einem Smartphone kann
+
+### 🆕 Neu in v1.3.0
+
+- **Accessibility-Schleife**: PICK → ACT → VERIFY → RETRY mit 21 Aktionsprimitiven, `when`-Zweigen und optimistischer Ausführung; das Szenengedächtnis spielt erfolgreiche Wege erneut ab.
+- **Schneller**: kompakte Verifikation (~5 ms), OCR-Kette ~4× schneller (1,4–1,6 s → 0,33–0,39 s), Seitenzustandserkennung weckt die Schleife erst, wenn die Seite wirklich bereit ist.
+- **Menschlicher**: geschwungene, leicht zitternde Wischpfade; bei langen Accessibility-Sequenzen zeigt eine Systembenachrichtigung „Gerät wird bedient · Schritt N" den Fortschritt.
+- **Hochformat-UI**: eine ausgeklappte Seitenleiste nimmt die volle Breite ein, die Chat-Spalte weicht; der Einstellungsdialog zeigt seine Navigation als horizontal scrollbare Leiste; das rechte „Änderungen"-Panel wird auf schmalen Bildschirmen bildschirmfüllend — alles als **Client-Plugins** (keine Änderungen am Engine-Quellcode, keine Konflikte mit anderen UI-Plugins).
+- **Einfachere Einstellungen**: die Schalter „Experimentelle Funktionen" und „Accessibility max+" entfallen; die Einträge sind immer sichtbar.
+- **Sauberes Beenden**: „Beenden" in der Benachrichtigung schließt jetzt die UI und zerstört den WebView (~380 MB frei) und stoppt außerdem den LAN-Proxy sowie den lokalen Inferenzprozess.
+- **LAN-WebUI**: integrierter Reverse-Proxy auf Port 3090 (6-stelliger Code, einmal angezeigt) mit dauerhafter Benachrichtigung „LAN-WebUI ist aktiv" und Stopp-Schaltfläche.
+
 
 **Vollständige Ausführung von Agent-Aufgaben**
 Gib dem Agenten Aufgaben: Dateien lesen und schreiben, Shell-Befehle ausführen, Volltextsuche, Projekte verwalten — bionic bash / ripgrep / pnpm / curl sind mit geprüftem ELF-Abhängigkeitsabschluss im APK enthalten. Echte Ausführungskraft, keine reine Chat-Hülle.
@@ -140,7 +151,7 @@ Normaler Modus ist der Standard; Optionen, deren Fähigkeit noch nicht bereitste
 
 ## 📦 Installation
 
-**Release herunterladen (empfohlen)**: Hol dir die APK von [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (für Smartphones `arm64-v8a` wählen; aktuell **v1.2.120**), und installiere sie, nachdem du Installationen unbekannter Quellen erlaubt hast. Jede Version ab v1.0.0 lässt sich über die bestehende App installieren.
+**Release herunterladen (empfohlen)**: Hol dir die APK von [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (für Smartphones `arm64-v8a` wählen; aktuell **v1.3.0**), und installiere sie, nachdem du Installationen unbekannter Quellen erlaubt hast. Jede Version ab v1.0.0 lässt sich über die bestehende App installieren.
 
 **Aus dem Quelltext bauen** (JDK 17 + Android SDK, NDK r26+, CMake 3.22.1):
 
@@ -158,7 +169,7 @@ Alternativ: Forke das Repository und lasse den Workflow **android-build** auf Gi
 1. Wähle beim ersten Start Anzeigeausrichtung und Berechtigungsmodus (im Zweifel **Normal**)
 2. Warte, bis die Laufzeit entpackt (mit echter Fortschrittsanzeige) und die Engine startet
 3. Starte ein Gespräch und gib dem Agenten Aufgaben; das Zahnradsymbol öffnet die Einstellungen; tippe auf jeden `127.0.0.1`-Link, den der Agent dir gibt, um sein Ergebnis anzusehen
-4. Spracheingabe und das schwebende Fenster liegen hinter Einstellungen → Andere → **Experimentelle Funktionen** (standardmäßig aus; bei Bedarf aktivieren)
+4. Spracheingabe und das schwebende Fenster sind immer verfügbar — kein Schalter nötig
 5. Damit der Agent den Bildschirm bedienen darf: aktiviere den Accessibility-Dienst **DSH Screen Tap** in den Systemeinstellungen (unter Android 13+ fragt das System „Vollständige Kontrolle über dein Gerät erlauben" — tippe auf **Allow**)
 
 ## ❓ FAQ

@@ -11,6 +11,7 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -56,6 +57,18 @@ class MainActivity : Activity() {
     private var appliedLocale: String = ""
 
     private val uiScope = CoroutineScope(Dispatchers.Main)
+
+    /**
+     * 显式退出回调（v1.3.0 审查：实例感知注销）。
+     *
+     * Android 允许 recreate() 时**旧实例的 onDestroy 晚于新实例的 onCreate**；
+     * 若 onDestroy 无条件置 null，会把新实例刚注册的回调清掉（退出后界面不关）。
+     * 注销时比对实例引用即可避免。
+     */
+    private val exitCallback: () -> Unit = {
+        Log.i("MainActivity", "explicit exit → finishing task to release WebView")
+        finishAndRemoveTask()
+    }
 
     /** 待回传的文件选择结果（onShowFileChooser → onActivityResult 之间持有；null 表示无进行中请求） */
     private var pendingFileCallback: android.webkit.ValueCallback<Array<Uri>>? = null
@@ -120,6 +133,10 @@ class MainActivity : Activity() {
         VoiceBridge.registerSender { text -> sendVoiceText(text) }
 
         val app = application as DshApp
+        // v1.2.187/188：用户从通知栏「退出」→ 结束界面并销毁 WebView，释放 ~380MB。
+        // 用回调而不是"标记位"：Activity 不在时回调为 null，不会留下残留状态
+        // （标记方案曾导致"退出后重开 App 秒退"，审查 P0）。
+        app.supervisor.onExplicitExit = exitCallback
         uiScope.launch {
             app.supervisor.state.collectLatest { render(it) }
         }
@@ -345,6 +362,11 @@ class MainActivity : Activity() {
                 // 彻底锁死（既不 clamp 到 100%，也不许用户手动改）。setInitialScale 易被 meta
                 // 干扰（maximum-scale=1 会把它 clamp 回 100%），故弃用。
                 view.evaluateJavascript(portraitViewportJs(pageScale / 100f), null)
+                // 竖屏「对话流被挤压」修复已改为**引擎侧客户端插件**
+                // （assets/android-plugins/narrow-sidebar/，v1.2.175）：
+                // 用户要求「不要直接改源代码，要做成插件形式」——外部注入 JS 会和
+                // 其它 UI 插件抢 DOM，且引擎升级后哈希类名一变就失效；插件走
+                // dsh-client-modules 的官方发现机制，卸载时自清理，互不干扰。
             }
 
             override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
@@ -515,6 +537,10 @@ class MainActivity : Activity() {
     }
 
     private fun render(state: EngineSupervisor.State) {
+        // ⚠️ v1.2.187（用户反馈「状态栏退出不彻底，后台仍以 380MB 运行、耗电」）：
+        // 用户在通知栏点「退出」后，引擎停了但 Activity 还活着 —— WebView 与它
+        // 的渲染进程继续占着 ~380MB。收到**显式退出**信号就结束任务栈：
+        // finishAndRemoveTask → onDestroy → webView.destroy()，内存随之释放。
         // 显式退出（Stopped）后按钮文案变「启动」，提示用户点这里重新拉起引擎
         findViewById<TextView>(R.id.btnRestart).text =
             if (state is EngineSupervisor.State.Stopped) getString(R.string.btn_start_engine)
@@ -990,6 +1016,13 @@ class MainActivity : Activity() {
         // 首启跳 Onboarding 时本 Activity 立即销毁，webView 尚未初始化——
         // lateinit 直接访问会崩（Android 11 新用户首启闪退实测）。
         uiScope.cancel()
+        // 注销显式退出回调（避免持有已销毁 Activity）。
+        // ⚠️ 实例感知：只在**当前注册的就是自己**时才清，否则 recreate 的时序
+        //（旧 onDestroy 晚于新 onCreate）会把新实例的回调误清掉。
+        runCatching {
+            val sup = (application as DshApp).supervisor
+            if (sup.onExplicitExit === exitCallback) sup.onExplicitExit = null
+        }
         // 注销语音发送能力：本 Activity 已销毁，服务侧再发会拿到明确的「需打开 App」提示
         // （而不是把文字注入到一个已销毁的 WebView）
         stopHangWatchdog()

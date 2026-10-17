@@ -207,10 +207,11 @@ class PluginStoreActivity : Activity() {
             ).apply { marginStart = dp(12) }
         }
         if (isInstalled) {
-            // 已装：绿色只读标记（主人实测「装完退出重进又能装」——现在查真实安装记录）
+            // 已装：绿色可点击 → 卸载（v1.2.120，主人反馈「能装不能卸」）
             btn.setTextColor(0xFF4ADE80.toInt())
-            btn.isClickable = false
-            btn.isEnabled = false
+            btn.isClickable = true
+            btn.isEnabled = true
+            btn.setOnClickListener { runUninstall(p.pkg, btn) }
         } else {
             btn.setOnClickListener { runInstall(p.pkg, btn) }
         }
@@ -244,4 +245,30 @@ class PluginStoreActivity : Activity() {
             }
         }
     }
+
+    /** 执行卸载并刷新按钮状态（v1.2.120） */
+    private fun runUninstall(pkg: String, btn: TextView) {
+        btn.text = getString(R.string.plugin_uninstalling)
+        btn.isEnabled = false
+        btn.setTextColor(0xFF8A94A3.toInt())
+        PluginCenter.uninstall(this, pkg) { ok, msg ->
+            runOnUiThread {
+                if (ok) {
+                    // 卸成功：回到"安装"可点击态
+                    btn.text = getString(R.string.plugin_install)
+                    btn.setTextColor(0xFF7DD3FC.toInt())
+                    btn.isEnabled = true
+                    btn.isClickable = true
+                    btn.setOnClickListener { runInstall(pkg, btn) }
+                    installed = installed - pkg
+                } else {
+                    btn.text = getString(R.string.plugin_failed, msg.take(28))
+                    btn.setTextColor(0xFFF87171.toInt())
+                    btn.isEnabled = true
+                    btn.isClickable = true
+                }
+            }
+        }
+    }
+
 }

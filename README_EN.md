@@ -10,7 +10,7 @@
 
 
 [![CI](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml)
-![Release](https://img.shields.io/badge/release-v1.2.120-blue)
+![Release](https://img.shields.io/badge/release-v1.3.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-green)
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 
@@ -50,6 +50,17 @@ All figures come from real-device / emulator testing, not theory:
 For reference, Termux-snapshot-based alternatives typically need **several minutes** on first launch (unpack + manual init); DSH Mobile ships its runtime inside the APK — install and go.
 
 ## ✨ What It Can Do on a Phone
+
+### 🆕 What's new in v1.3.0
+
+- **Accessibility loop**: PICK → ACT → VERIFY → RETRY with 21 action primitives, `when` branches and optimistic execution; scene memory replays successful paths.
+- **Faster**: compact verify (~5 ms), OCR chain ~4× faster (1.4–1.6 s → 0.33–0.39 s), and a page-state detector that wakes the loop only when the page is really ready.
+- **More human**: curved, slightly jittery swipe paths; a system notification ("Operating the device · step N") shows progress during long accessibility sequences.
+- **Portrait UI**: an expanded sidebar takes the full width while the chat column steps aside; the settings dialog turns its nav into a horizontally scrollable bar; the right-hand "changes" panel goes full-screen on narrow screens — all implemented as **client plugins** (no engine source edits, no conflicts with other UI plugins).
+- **Simpler settings**: the "Experimental features" and "Accessibility max+" switches are gone; those entry points are always visible.
+- **Clean exit**: tapping Exit in the notification now finishes the UI and destroys the WebView (~380 MB released), and stops the LAN proxy and the local inference process as well.
+- **LAN WebUI**: built-in reverse proxy on port 3090 (6-digit code, shown once) with a persistent "LAN WebUI is on" notification and a Stop button.
+
 
 **Full Agent task execution**
 Hand the Agent tasks: read/write files, run shell commands, full-text search, manage projects — bionic bash / ripgrep / pnpm / curl ship in the APK with an ELF-verified dependency closure. Real execution power, not a chat-only shell.
@@ -135,7 +146,7 @@ Normal mode is the default; options whose capability isn't ready are grayed out 
 
 ## 📦 Installation
 
-**Download a Release (recommended)**: grab the APK from [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (pick `arm64-v8a` for phones; latest is **v1.2.120**), then install with unknown sources allowed. Any v1.0.0+ build can be installed over the top.
+**Download a Release (recommended)**: grab the APK from [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (pick `arm64-v8a` for phones; latest is **v1.3.0**), then install with unknown sources allowed. Any v1.0.0+ build can be installed over the top.
 
 > 📦 **Which file to pick**: normal users want **`dsh-mobile-*-arm64-v8a.apk`** (release-signed).
 > Names ending in **`-debug`** are debug-signed builds - for log capture, or for users already on a
@@ -159,7 +170,7 @@ Alternatively, fork the repo and run the **android-build** workflow on GitHub Ac
 1. On first launch, pick the display orientation and privilege mode (choose **Normal** if unsure)
 2. Wait for runtime extraction (real progress) and engine startup
 3. Start chatting and hand the Agent tasks; tap the gear for settings; tap any `127.0.0.1` link the Agent gives you to preview its work
-4. Voice input and the floating window live behind Settings → Other → **Experimental features** (off by default; enable if you want them)
+4. Voice input and the floating window are always available — no switch needed
 5. To let the Agent operate the screen: enable the **DSH Screen Tap** accessibility service in system settings (on Android 13+ the system asks "Allow full control of your device" — tap **Allow**)
 
 ## ❓ FAQ

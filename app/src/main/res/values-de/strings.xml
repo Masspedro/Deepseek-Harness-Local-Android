@@ -399,4 +399,35 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="voice_opening_session">Unterhaltung wird geöffnet …</string>
     <string name="voice_session_timeout">Unterhaltung hat sich nicht geöffnet, erneut versuchen</string>
     <string name="voice_send_failed">Senden fehlgeschlagen: %1$s</string>
+
+    <!-- v1.3.0: LAN WebUI -->
+    <string name="setting_lan_web">LAN-WebUI-Zugriff</string>
+    <string name="setting_lan_web_sub">Ermöglicht Browsern im selben Netzwerk den Zugriff auf die WebUI dieses Telefons (Port 3090).</string>
+    <string name="lan_web_consent">Beim Aktivieren wird ein zufälliger 6-stelliger Code erzeugt (in die Zwischenablage kopiert und nur einmal angezeigt). Jeder im selben Netzwerk kann mit diesem Code die WebUI öffnen und den Agenten steuern. Nur in vertrauenswürdigen Netzwerken aktivieren.</string>
+    <string name="lan_dialog_title">LAN-WebUI ist aktiv</string>
+    <string name="lan_dialog_code_label">Zugriffscode (antippen zum Kopieren)</string>
+    <string name="lan_dialog_hint">Öffne die Adresse in einem Browser am Computer und gib den Code ein. Der Code wird nur einmal angezeigt.</string>
+    <string name="lan_dialog_copied_code">Code kopiert</string>
+    <string name="lan_dialog_copied_host">Adresse kopiert</string>
+
+    <!-- v1.3.0: Benachrichtigungen -->
+    <string name="notif_a11y_active_title">DSH bedient das Gerät</string>
+    <string name="notif_a11y_active_text">Schritt %1$d · %2$s</string>
+    <string name="notif_a11y_open_app">App öffnen</string>
+    <string name="notif_a11y_op_tap">tippen</string>
+    <string name="notif_a11y_op_swipe">wischen</string>
+    <string name="notif_a11y_op_scroll">scrollen</string>
+    <string name="notif_a11y_op_input">eingeben</string>
+    <string name="notif_a11y_op_key">Taste drücken</string>
+    <string name="notif_a11y_op_launch">App öffnen</string>
+    <string name="notif_a11y_op_loop">Sequenz ausführen</string>
+    <string name="notif_a11y_op_other">bedienen</string>
+    <string name="notif_lan_title">LAN-WebUI ist aktiv</string>
+    <string name="notif_lan_text">%1$s · zum Beenden „Stoppen" tippen</string>
+    <string name="notif_lan_action_off">Stoppen</string>
+    <string name="notif_lan_channel">LAN-WebUI</string>
+
+    <!-- v1.3.0: Plugin-Verwaltung -->
+    <string name="plugin_uninstall">Deinstallieren</string>
+    <string name="plugin_uninstalling">Wird deinstalliert…</string>
 </resources>

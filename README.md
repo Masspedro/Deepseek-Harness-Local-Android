@@ -9,7 +9,7 @@
 > 🌐 [English](README_EN.md) · [Deutsch](README.de.md)
 
 [![CI](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml)
-![Release](https://img.shields.io/badge/release-v1.2.120-blue)
+![Release](https://img.shields.io/badge/release-v1.3.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-green)
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 
@@ -70,7 +70,16 @@ DSH Mobile 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harnes
 
 装上 **OpenSSH 扩展**后，可从电脑用 SSH 连上手机里的环境：终端操作、`scp` / `sftp` 传文件、跑长任务。配合 Shizuku/Root 模式，远程也能用 Agent 的设备能力。
 
-> ⚠️ **dsh 的 WebUI 本身不支持局域网访问** —— 这是上游的安全设计：dsh 源码里明确拒绝绑定 `0.0.0.0`（"would expose remote code execution to the network"），且前端在非 localhost 环境会因 `crypto.randomUUID` 不可用、`isLoopbackHostname` 判定为假而失去设置类功能。**电脑浏览器无法直接打开手机上的 WebUI**；需要图形界面请在手机上看，或用 SSH 做终端操作。
+> 🆕 **v1.3.0：内置局域网 WebUI 代理** —— 设置 → 扩展 → **局域网访问 WebUI**。
+> 开启后，同一网络下的电脑浏览器直接访问 `http://<手机IP>:3090` 即可打开**手机里的原生 WebUI**。
+> 代理在独立端口上补齐了非安全上下文所需的能力（`crypto.randomUUID`、回环判定、`/api` 同源检查、WebSocket 升级），**不修改引擎文件**。
+>
+> 安全设计：
+> - 每次开启随机生成 **6 位验证码**，自动复制到剪贴板，且只在应用内显示一次；
+> - 通知栏会出现**常驻通知**「局域网 WebUI 已开启」，带「关闭」按钮 —— 不会忘记关；
+> - 关闭后代理进程真正停止；引擎退出时也会一并停掉。
+>
+> 上游本身仍拒绝绑定 `0.0.0.0`（这是 dsh 的安全设计），本代理是应用层的显式开关，只在你自己开启时生效。
 
 ### 🎙️ 语音输入
 
@@ -105,9 +114,18 @@ Agent 通过本机桥（`127.0.0.1:3083`）操作手机，**全部能力 token �
 
 默认普通模式；能力未就绪的选项自动置灰；切换后引擎自动重启生效。
 
-### 🧪 实验性功能
+### 🆕 v1.3.0 主要更新
 
-设置 → 其他 → **实验性功能**（默认关闭）。开启后显示悬浮窗、麦克风权限、语音服务、本地识别应用等入口。
+- **无障碍闭环**：PICK → ACT → VERIFY → RETRY，21 种动作原语 + `when` 条件分支 + 乐观执行；场景记忆可复用成功路径
+- **更快**：verify 走 compact 快路径（单次约 5ms）；OCR 链提速约 4 倍（1.4–1.6s → 0.33–0.39s）；页面状态检测器在真正加载完成时立即唤起 loop
+- **更像人**：滑动轨迹带弧度与轻微抖动；AI 长串操作时通知栏显示「正在操作设备 · 第 N 步」
+- **竖屏 UI**：侧栏展开占满宽度、对话流让位；设置面板导航变顶部横滑条；右侧「查看更改」面板窄屏全屏 —— 均为**客户端插件**实现，不改引擎源码、不与其它 UI 插件冲突
+- **设置简化**：移除「实验性功能」与「无障碍功能 max+」两个开关，原能力（悬浮窗/麦克风/语音服务/本地识别）常驻可见
+- **退出彻底**：通知栏「退出」后结束界面并销毁 WebView（释放约 380MB），同时停止局域网代理与本地推理进程
+
+### 🫧 悬浮窗
+
+悬浮窗常驻显示（不再需要开关）：状态球随引擎状态变色，展开显示 AI 最近一次动作与时间。
 
 ## 🌟 这些是 Termux 路线给不了的
 
@@ -138,7 +156,7 @@ specialUse 前台服务 + 指数退避监督器扛住系统回收，长任务锁
 
 ## 📦 安装
 
-**下载 Release（推荐）**：前往 [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) 下载 APK（手机选 `arm64-v8a`，最新版 **v1.2.120**），允许安装未知来源应用后安装。
+**下载 Release（推荐）**：前往 [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) 下载 APK（手机选 `arm64-v8a`，最新版 **v1.3.0**），允许安装未知来源应用后安装。
 
 > 📦 **Release 里有多种包，怎么选**：普通用户下 **`dsh-mobile-*-arm64-v8a.apk`**（正式签名）；
 > 文件名带 **`-debug`** 的是调试签名版，供抓日志调试、或之前就装 debug 渠道的用户继续升级用；
@@ -161,7 +179,7 @@ gradle assembleDebug -Pabi=arm64-v8a
 1. 首启选择显示方向与权限模式（不确定就选「普通」）
 2. 等待运行时解压（真实进度）与引擎启动
 3. 进入对话派任务；齿轮图标进设置；点击 Agent 给的 `127.0.0.1` 链接预览成果
-4. 语音输入、悬浮窗等入口在设置 → 其他 → **实验性功能**开关之后（默认关闭）
+4. 语音输入、悬浮窗等入口默认可见，无需开关
 5. 想让 Agent 操作手机屏幕：在系统设置中开启 **DSH Screen Tap** 无障碍服务（Android 13+ 会弹窗询问「允许完全控制设备」，需点 **Allow**）
 
 ## ⛔ 边界（请知悉）
