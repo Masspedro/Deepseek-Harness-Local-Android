@@ -709,3 +709,30 @@ const rightbar = rightbar === 0 || available < 300 ? 0 : Math.min(available, …
 - `compileDebugKotlin` 通过；`assembleRelease` 通过（v1.2.189 / versionCode 237）。
 - 插件语法 `node --check` 全通过；四套插件测试全绿。
 - `check-i18n.py` 错误数 20 = 基线（本轮零新增）。
+
+## 2026-10-17 v1.3.0 正式发布
+
+- **源码**：`main` 已推送至 `ed55935`（合并了远程 PR #11 三语/方向三态/CI）。
+- **Release**：https://github.com/Soodok/Deepseek-Harness-Local-Android/releases/tag/v1.3.0
+  · `dsh-mobile-v1.3.0-arm64-v8a.apk`（143.8 MB，versionCode 238）
+  · `dsh-mobile-v1.3.0-arm64-v8a-debug.apk`（144.9 MB）
+  · 说明：`RELEASE_NOTES_v1.3.0.md`（1783 字符，含无障碍/UI/WebUI/语音/稳定/已知问题）
+  · draft=false, prerelease=false
+- **README 三语**已更新：版本徽章/下载版本、LAN 段落改写（内置代理+验证码+常驻通知）、
+  移除实验性开关说明、新增 v1.3.0 更新摘要；德语资源补齐 25 个键。
+
+### ⚠️ 安全事件（已处理，需人工跟进）
+- 推送被 GitHub Push Protection 拦截：本地历史中的
+  `scripts/probes/_cred_new.yaml` 与 `scripts/probes/_headless_cmd.sh` **含真实 DeepSeek API Key**。
+- 处理：删除这三个探针凭证文件（含 `_cred_backup.yaml`）；重写从未推送的本地历史
+  （压缩为单个 v1.3.0 提交后合并到远程 main）；全工作区扫描确认无 `sk-` 残留。
+- **待人工**：到 DeepSeek 控制台**吊销并重发该 key**（它曾以明文存在于本地与旧提交对象中）。
+
+### 发版流程备忘（下次照做）
+1. 改 `app/build.gradle.kts` 的 versionCode/versionName；
+2. `gradle assembleRelease -Pabi=arm64-v8a` → `apksigner sign --ks keystore/dsh-release.keystore …`；
+3. `gradle assembleDebug -Pabi=arm64-v8a`（Release 按惯例带 debug 包）；
+4. 分片 push（10MB）+ `pm install -r` 真机验证；
+5. `git add app/ README*.md RELEASE_NOTES*.md AI_CONTEXT.md`（**不要 `git add -A scripts/`**，
+   probes 里有凭证/大文件）；`git push`（需 token，网络不稳时重试）；
+6. GitHub API 建 release + `uploads.github.com` 传两个 APK（144MB 约 30s/个）。
