@@ -113,4 +113,66 @@
             android:background="?android:attr/selectableItemBackground"
             android:contentDescription="@string/settings_title" />
     </LinearLayout>
+
+    <!-- ==================== 启动动画（v1.3.1） ====================
+         冷启动时运行时解压 + 引擎启动需要时间，之前这段时间是一块空黑屏（用户反馈）。
+         这里用一层品牌遮罩盖住：logo 淡入 + 轻微呼吸、真实解压百分比、
+         状态文案随引擎阶段变化；WebView 首屏加载完成后淡出。
+         clickable/focusable：遮罩期间吞掉误触，避免用户点到下面还没就绪的界面。 -->
+    <LinearLayout
+        android:id="@+id/splash"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:background="#FF101418"
+        android:elevation="30dp"
+        android:clickable="true"
+        android:focusable="true">
+
+        <ImageView
+            android:id="@+id/splashLogo"
+            android:layout_width="104dp"
+            android:layout_height="104dp"
+            android:src="@drawable/ic_launcher"
+            android:contentDescription="@string/app_name" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="@string/app_name"
+            android:textColor="#FFF2F5F9"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.02" />
+
+        <TextView
+            android:id="@+id/splashStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="@string/splash_preparing"
+            android:textColor="#FF9CA3AF"
+            android:textSize="13sp" />
+
+        <ProgressBar
+            android:id="@+id/splashProgress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="180dp"
+            android:layout_height="3dp"
+            android:layout_marginTop="22dp"
+            android:indeterminate="true"
+            android:progressTint="#FF7DD3FC"
+            android:progressBackgroundTint="#26FFFFFF" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="@string/splash_hint"
+            android:textColor="#FF5A6472"
+            android:textSize="11sp"
+            android:gravity="center" />
+    </LinearLayout>
 </FrameLayout>

@@ -73,6 +73,18 @@ class MainActivity : Activity() {
     /** 待回传的文件选择结果（onShowFileChooser → onActivityResult 之间持有；null 表示无进行中请求） */
     private var pendingFileCallback: android.webkit.ValueCallback<Array<Uri>>? = null
 
+    // ---------- 启动动画（v1.3.1） ----------
+    /** 全屏启动遮罩；null = 已淡出/未初始化 */
+    private var splash: android.view.View? = null
+    private var splashLogo: android.view.View? = null
+    private var splashStatus: android.widget.TextView? = null
+    private var splashProgress: android.widget.ProgressBar? = null
+    /** 遮罩出现时间：用于保证最短展示时长（避免一闪而过） */
+    private var splashShownAt = 0L
+    /** 是否已经淡出（幂等） */
+    private var splashDismissed = false
+    private val splashMinMs = 700L
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun attachBaseContext(newBase: android.content.Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
@@ -91,6 +103,7 @@ class MainActivity : Activity() {
         // 记录本页生效的语言（onResume 里比对，设置页改过就重建本页）
         appliedLocale = LocaleHelper.get(this)
 
+        setupSplash()
         statusBar = findViewById(R.id.statusBar)
         // 先赋值字段再配置：setupWebView 内部读取的是 this.webView，
         // 若写在 apply{} 里会在赋值完成前执行而触发 UninitializedPropertyAccessException。
@@ -362,6 +375,8 @@ class MainActivity : Activity() {
                 // 彻底锁死（既不 clamp 到 100%，也不许用户手动改）。setInitialScale 易被 meta
                 // 干扰（maximum-scale=1 会把它 clamp 回 100%），故弃用。
                 view.evaluateJavascript(portraitViewportJs(pageScale / 100f), null)
+                // v1.3.1：首屏加载完成 → 淡出启动遮罩（页面这时才真的可以操作）
+                dismissSplash()
                 // 竖屏「对话流被挤压」修复已改为**引擎侧客户端插件**
                 // （assets/android-plugins/narrow-sidebar/，v1.2.175）：
                 // 用户要求「不要直接改源代码，要做成插件形式」——外部注入 JS 会和
@@ -500,6 +515,126 @@ class MainActivity : Activity() {
             bar.isIndeterminate = false
             bar.progress = (frac * 10000).toInt()
         }
+        // 启动遮罩里的进度条同步真实解压百分比（就绪后转为不确定动画）
+        splashProgress?.let { p ->
+            if (frac == null) {
+                p.isIndeterminate = true
+            } else {
+                p.isIndeterminate = false
+                p.progress = (frac * 10000).toInt()
+            }
+        }
+    }
+
+    // ==================== 启动遮罩（v1.3.1） ====================
+
+    /**
+     * 初始化启动遮罩：logo 淡入 + 缩放入场，随后进入缓慢呼吸。
+     *
+     * 设计取舍：动画只用 ViewPropertyAnimator（零依赖、不引第三方库）；
+     * 遮罩不是纯装饰——它同时承载**真实解压进度**与引擎阶段文案，
+     * 让冷启动那段时间「有东西看、也知道在干什么」。
+     */
+    private fun setupSplash() {
+        val v = findViewById<android.view.View>(R.id.splash) ?: return
+        splash = v
+        splashLogo = findViewById(R.id.splashLogo)
+        splashStatus = findViewById(R.id.splashStatus)
+        splashProgress = findViewById(R.id.splashProgress)
+        splashShownAt = System.currentTimeMillis()
+        splashDismissed = false
+        // WebView 底色与主题一致：遮罩淡出时不会闪出白底
+        runCatching { webView.setBackgroundColor(0xFF101418.toInt()) }
+        val logo = splashLogo ?: return
+        logo.alpha = 0f
+        logo.scaleX = 0.82f
+        logo.scaleY = 0.82f
+        logo.animate()
+            .alpha(1f)
+            .scaleX(1f)
+            .scaleY(1f)
+            .setDuration(420L)
+            .setInterpolator(android.view.animation.DecelerateInterpolator())
+            .withEndAction {
+                // 引擎还没好时，用极缓的呼吸动画表示"在动"
+                logo.animate()
+                    .scaleX(1.05f).scaleY(1.05f)
+                    .setDuration(1_400L)
+                    .setInterpolator(android.view.animation.AccelerateDecelerateInterpolator())
+                    .withEndAction {
+                        logo.animate()
+                            .scaleX(1f).scaleY(1f)
+                            .setDuration(1_400L)
+                            .setInterpolator(android.view.animation.AccelerateDecelerateInterpolator())
+                            .withEndAction { if (splash != null) setupSplashPulseAgain() }
+                            .start()
+                    }
+                    .start()
+            }
+            .start()
+    }
+
+    /** 呼吸动画循环（单独方法，便于在遮罩淡出时停止）。 */
+    private fun setupSplashPulseAgain() {
+        val logo = splashLogo ?: return
+        if (splash == null || splashDismissed) return
+        logo.animate()
+            .scaleX(1.05f).scaleY(1.05f)
+            .setDuration(1_400L)
+            .setInterpolator(android.view.animation.AccelerateDecelerateInterpolator())
+            .withEndAction {
+                if (splash == null || splashDismissed) return@withEndAction
+                logo.animate()
+                    .scaleX(1f).scaleY(1f)
+                    .setDuration(1_400L)
+                    .setInterpolator(android.view.animation.AccelerateDecelerateInterpolator())
+                    .withEndAction { setupSplashPulseAgain() }
+                    .start()
+            }
+            .start()
+    }
+
+    /** 更新遮罩上的阶段文案。 */
+    private fun setSplashStatus(resId: Int) {
+        splashStatus?.setText(resId)
+    }
+
+    /**
+     * 淡出启动遮罩（幂等）。
+     *
+     * 触发点：WebView 首屏 onPageFinished（页面真的可用了），或引擎进入失败/停止态
+     * （不能让用户卡在遮罩里看不到工具栏与错误）。保证最短展示 700ms，避免一闪而过。
+     */
+    private fun dismissSplash() {
+        val v = splash ?: return
+        if (splashDismissed) return
+        splashDismissed = true
+        val wait = (splashMinMs - (System.currentTimeMillis() - splashShownAt)).coerceAtLeast(0L)
+        v.postDelayed({
+            // ⚠️ v1.3.0 补丁（用户反馈「直接硬切有点生硬」）：onPageFinished 时页面往往
+            // 还没画出第一帧，立刻淡出会先露出一块空 WebView = 看起来像硬切。
+            // 这里再等 ~180ms 让首帧落地，然后做「淡出 + 轻微放大」的过渡，
+            // 视觉上是从启动图"化开"进入页面，而不是被替换。
+            v.postDelayed({
+                splashLogo?.animate()?.cancel()
+                v.animate()
+                    .alpha(0f)
+                    .scaleX(1.04f)
+                    .scaleY(1.04f)
+                    .setDuration(460L)
+                    .setInterpolator(android.view.animation.DecelerateInterpolator())
+                    .withEndAction {
+                        v.visibility = android.view.View.GONE
+                        v.scaleX = 1f
+                        v.scaleY = 1f
+                        splash = null
+                        splashLogo = null
+                        splashStatus = null
+                        splashProgress = null
+                    }
+                    .start()
+            }, 180L)
+        }, wait)
     }
 
     /**
@@ -550,6 +685,16 @@ class MainActivity : Activity() {
             if (state is EngineSupervisor.State.Installing || state is EngineSupervisor.State.Starting)
                 View.VISIBLE else View.GONE
         if (state !is EngineSupervisor.State.Starting) stopStartTicker()
+        // 启动遮罩：阶段文案 + 失败/停止时兜底（不能让用户卡在遮罩里看不到错误）
+        when (state) {
+            is EngineSupervisor.State.Installing -> setSplashStatus(R.string.splash_preparing)
+            is EngineSupervisor.State.Starting -> setSplashStatus(R.string.splash_starting)
+            is EngineSupervisor.State.Healthy, is EngineSupervisor.State.SafeMode ->
+                setSplashStatus(R.string.splash_loading)
+            is EngineSupervisor.State.Failed, is EngineSupervisor.State.Backoff,
+            is EngineSupervisor.State.Stopped -> dismissSplash()
+            else -> Unit
+        }
         statusBar.text = when (state) {
             is EngineSupervisor.State.Idle -> getString(R.string.status_idle)
             is EngineSupervisor.State.Installing -> getString(R.string.status_installing)
