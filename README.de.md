@@ -49,46 +49,17 @@ Zum Vergleich: Termux-Snapshot-basierte Alternativen brauchen beim ersten Start 
 
 ## ✨ Was es auf einem Smartphone kann
 
-### 🆕 Neu in v1.3.0
+## 📚 Funktionsdetails
 
-- **Accessibility-Schleife**: PICK → ACT → VERIFY → RETRY mit 21 Aktionsprimitiven, `when`-Zweigen und optimistischer Ausführung; das Szenengedächtnis spielt erfolgreiche Wege erneut ab.
-- **Schneller**: kompakte Verifikation (~5 ms), OCR-Kette ~4× schneller (1,4–1,6 s → 0,33–0,39 s), Seitenzustandserkennung weckt die Schleife erst, wenn die Seite wirklich bereit ist.
-- **Menschlicher**: geschwungene, leicht zitternde Wischpfade; bei langen Accessibility-Sequenzen zeigt eine Systembenachrichtigung „Gerät wird bedient · Schritt N" den Fortschritt.
-- **Hochformat-UI**: eine ausgeklappte Seitenleiste nimmt die volle Breite ein, die Chat-Spalte weicht; der Einstellungsdialog zeigt seine Navigation als horizontal scrollbare Leiste; das rechte „Änderungen"-Panel wird auf schmalen Bildschirmen bildschirmfüllend — alles als **Client-Plugins** (keine Änderungen am Engine-Quellcode, keine Konflikte mit anderen UI-Plugins).
-- **Einfachere Einstellungen**: die Schalter „Experimentelle Funktionen" und „Accessibility max+" entfallen; die Einträge sind immer sichtbar.
-- **Sauberes Beenden**: „Beenden" in der Benachrichtigung schließt jetzt die UI und zerstört den WebView (~380 MB frei) und stoppt außerdem den LAN-Proxy sowie den lokalen Inferenzprozess.
-- **LAN-WebUI**: integrierter Reverse-Proxy auf Port 3090 (6-stelliger Code, einmal angezeigt) mit dauerhafter Benachrichtigung „LAN-WebUI ist aktiv" und Stopp-Schaltfläche.
+Zu jeder Fähigkeit gibt es ein eigenes Dokument (Design-Abwägungen, Messwerte, Fehlersuche):
 
-
-**Vollständige Ausführung von Agent-Aufgaben**
-Gib dem Agenten Aufgaben: Dateien lesen und schreiben, Shell-Befehle ausführen, Volltextsuche, Projekte verwalten — bionic bash / ripgrep / pnpm / curl sind mit geprüftem ELF-Abhängigkeitsabschluss im APK enthalten. Echte Ausführungskraft, keine reine Chat-Hülle.
-
-**Sofortige Vorschau dessen, was er baut**
-Der Agent startet einen lokalen HTTP-Server (mit dem mitgelieferten node) und übergibt dir einen `http://127.0.0.1:<Port>`-Link — antippen zum Live-Vorschauen, ein Tipp zurück zur Startseite. In der Praxis verifiziert mit Mini-Games, statischen Seiten und API-Diensten.
-
-**Agent-Fähigkeiten, die du nach Bedarf skalierst**
-Drei Berechtigungsstufen, jederzeit verfügbar — Normal (Sandbox, Standard) deckt den Alltag ab; im Shizuku-Modus kann der Agent Befehle auf adb-Ebene ausführen (Prozessverwaltung / Systemeigenschaften, ohne Root); der Root-Modus gewährt vollen Lese-/Schreibzugriff (doppelte Bestätigung + automatische Sicherung). Optionen, deren Fähigkeit noch nicht bereitsteht, werden automatisch ausgegraut.
-
-**Das Smartphone steuern (nicht „blind")**
-Sobald du den Accessibility-Dienst aktivierst, kann der Agent **Bildschirminhalte lesen** (Text + Koordinaten) und gezielt nach Text oder Koordinaten tippen, um andere Apps zu automatisieren. (Accessibility muss in den Systemeinstellungen manuell eingeschaltet werden.)
-
-**Push-Benachrichtigung bei erledigten Aufgaben**
-Der Agent verschickt eine Android-Systembenachrichtigung, wenn eine lange Aufgabe fertig ist — so verpasst du im Hintergrund nichts.
-
-**Daten bleiben strikt lokal**
-Die Engine lauscht ausschließlich auf `127.0.0.1`; Sitzungen, Zugangsdaten und Arbeitsbereiche liegen im privaten Verzeichnis der App — beim Gerätewechsel oder Deinstallieren verschwinden sie genau dorthin, wo du es entscheidest.
-
-**Selbstheilung, wenn etwas kaputtgeht**
-Fehlerhafte Plugin-Konfigurationen werden automatisch auf den letzten gesunden Snapshot zurückgesetzt; die Engine startet nach einem Absturz mit exponentiellem Backoff neu; ein Vordergrunddienst hält lange Aufgaben vor der Systembereinigung am Leben.
-
-**Erweiterungszentrum: Umgebungen per One Tap**
-Das integrierte Erweiterungszentrum bietet **19 Umgebungserweiterungen** — Python, Go, Rust, Clang, OpenJDK, Git, Ruby, PHP, Perl, Lua, SQLite, FFmpeg, ImageMagick, OpenSSH, ADB, Vim und mehr — per One Tap herunterladen (und auch wieder deinstallieren), mit rot/gelb/grün Zustandsverwaltung und live Fortschrittsbalken in der Zeile. Direktverbindung zu chinesischen Mirrors (TUNA → USTC → BFSU → Termux offiziell, mit automatischem Failover), automatische Auflösung des Abhängigkeitsabschlusses, SHA-256-Prüfung und atomares Veröffentlichen. Nach der Installation wird die Shebang-Interpreter-Kette automatisch repariert (`sh`/`env`, sowie absolute Auflösung von extension-übergreifendem `perl`/`python`), sodass Skripte wie `env python3` auch ohne PATH laufen. Jede Zeile bietet **⟳ Neu installieren** (überschreibender Neu-Download, der historische Teilinstallationen repariert); die Installationsprotokolle erfassen die Eintragsanzahl pro Paket und prüfen, ob alle deklarierten Executables vorhanden sind. Die `bin`-Abhängigkeiten aller 19 Erweiterungen werden von `scripts/audit-extension-closures.py` **auf ELF-Ebene auditiert** (jede `NEEDED`-Bibliothek muss vom Abhängigkeitsabschluss abgedeckt sein, sodass Lücken in den Upstream-Metadaten früh auffallen).
-
-**Kompilieren auf dem Smartphone**
-Die Toolchains Clang / Go / Rust / Java / Ruby sind auf echten Geräten verifiziert: Kernel-Header (ndk-sysroot) sowie CPATH / LIBRARY_PATH / RUSTFLAGS / GOTMPDIR werden automatisch injiziert, sodass `clang hello.c -o hello && ./hello` einfach funktioniert; zusammen mit der namensbasierten Prozessverwaltung `psx`/`killx` und einem binärsicheren `curl` erledigt der Agent echte Entwicklungsarbeit auf dem Smartphone. **Parallele Dienste bleiben unter 400 MB Speicherbedarf.**
-
-**Agent erweitert sich selbst**
-Der Agent nutzt nicht nur das Erweiterungszentrum, sondern handelt eigenständig: Er installiert in einer Sitzung Umgebungen über die lokale Bridge und aktiviert sie automatisch (und erinnert dich anschließend daran, die Engine neu zu starten). Im Root-Modus hat er sich sogar die Android-SDK-Kommandozeilenwerkzeuge selbst installiert.
+| Dokument | Inhalt |
+|---|---|
+| [Barrierefreiheit & Gerätesteuerung](docs/LOCAL_CLOSED_LOOP.md) | lokale geschlossene Schleife, 21 Aktionsprimitive, Szenengedächtnis |
+| [UI-Plugins für schmale Bildschirme](docs/NARROW_UI.en.md) | Seitenleiste über volle Breite / Einstellungen neu angeordnet / rechtes Panel bildschirmfüllend |
+| [LAN-WebUI](docs/LAN_WEBUI.en.md) | Reverse-Proxy, 6-stelliger Code, dauerhafte Erinnerung und Stopp-Kette |
+| [Spracheingabe](docs/VOICE_INPUT.en.md) | zwei Erkennungskanäle, Sende-Deduplizierung, Panel-Parking, bekanntes Problem |
+| [Benachrichtigungen & Hintergrund](docs/NOTIFICATIONS.en.md) | KI-Fortschritt, Aufgabenende, LAN-Erinnerung, sauberes Beenden |
 
 ## ⛔ Grenzen (bitte beachten)
 

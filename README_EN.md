@@ -51,43 +51,19 @@ For reference, Termux-snapshot-based alternatives typically need **several minut
 
 ## ✨ What It Can Do on a Phone
 
-### 🆕 What's new in v1.3.0
+## 📚 Feature deep-dives
 
-- **Accessibility loop**: PICK → ACT → VERIFY → RETRY with 21 action primitives, `when` branches and optimistic execution; scene memory replays successful paths.
-- **Faster**: compact verify (~5 ms), OCR chain ~4× faster (1.4–1.6 s → 0.33–0.39 s), and a page-state detector that wakes the loop only when the page is really ready.
-- **More human**: curved, slightly jittery swipe paths; a system notification ("Operating the device · step N") shows progress during long accessibility sequences.
-- **Portrait UI**: an expanded sidebar takes the full width while the chat column steps aside; the settings dialog turns its nav into a horizontally scrollable bar; the right-hand "changes" panel goes full-screen on narrow screens — all implemented as **client plugins** (no engine source edits, no conflicts with other UI plugins).
-- **Simpler settings**: the "Experimental features" and "Accessibility max+" switches are gone; those entry points are always visible.
-- **Clean exit**: tapping Exit in the notification now finishes the UI and destroys the WebView (~380 MB released), and stops the LAN proxy and the local inference process as well.
-- **LAN WebUI**: built-in reverse proxy on port 3090 (6-digit code, shown once) with a persistent "LAN WebUI is on" notification and a Stop button.
+Every capability has its own document (design trade-offs, measured numbers, troubleshooting):
 
-
-**Full Agent task execution**
-Hand the Agent tasks: read/write files, run shell commands, full-text search, manage projects — bionic bash / ripgrep / pnpm / curl ship in the APK with an ELF-verified dependency closure. Real execution power, not a chat-only shell.
-
-**Instant preview of what it builds**
-The Agent starts a local HTTP server (with the bundled node) and hands you a `http://127.0.0.1:port` link — tap to preview live, one tap back home. Battle-tested with mini-games, static sites, and API services.
-
-**Scalable Agent capabilities**
-Three privilege tiers on demand — Normal (sandbox, default) for everyday use; Shizuku mode grants adb-level commands (process management, system properties, no Root needed); Root mode grants full read/write (double confirmation + automatic backup). Options whose capability isn't ready are grayed out automatically.
-
-- **Voice input: speak and send, foreground or background**: tap the mic on the floating ball to open a bottom input panel. The system recognizer is preferred; if the device has none, install our open-source offline recognizer plugin [dsh-asr-service](https://github.com/Soodok/dsh-asr-service) or configure your own cloud API in settings. Recognized text streams into the panel, stays editable, and one tap sends it straight into the current conversation with a "sent to <session>" confirmation. The send chain is driven entirely by Android-side timing (no requestAnimationFrame, no JS timers), so **sends work instantly even when the app is backgrounded**. Writes into the WebUI's rich-text editor go through its native paste pipeline with a read-back check, so text is never duplicated. Haptics distinguish start/stop.
-- **Floating window: see what the AI is doing**: a draggable status ball tinted by engine state (idle gray / working cyan); expanded it shows the AI's last action and when it happened, and switches to a listening state during voice input.
-- **Keep-alive: self-restart, no background freeze**: an accessibility-service watchdog checks the engine's foreground service every minute and restarts it if the system reclaimed it (respecting the notification's Exit button); WebView timers keep running in background so voice-sent messages get model responses immediately.
-- **Operate the phone screen (not blind)**: once the accessibility service is enabled, the Agent can **read screen content** (texts + coordinates) and tap precisely by text or coordinates — automating other apps
-- **Task-completion push**: the Agent sends an Android system notification when a long task finishes — never miss a background job
-
-**Strictly local data**
-The engine listens on `127.0.0.1` only; sessions, credentials, and workspaces live in the app's private storage — switch phones or uninstall, and your data goes exactly where you decide.
-
-**Extension Center: one-tap environments**
-The built-in Extension Center offers **19 environment extensions** — Python, Go, Rust, Clang, OpenJDK, Git, Ruby, PHP, Perl, Lua, SQLite, FFmpeg, ImageMagick, OpenSSH, ADB, Vim and more — one-tap download, **uninstall support**, red/yellow/green state management and a live inline progress bar. Direct China-mirror access (TUNA → USTC → BFSU → Termux official auto-failover), automatic dependency-closure resolution, SHA-256 verification and atomic publishing.
-
-**Cross-compiling on the phone**
-The Clang / Go / Rust / Java / Ruby toolchains are verified on real devices: kernel headers (ndk-sysroot) and CPATH / LIBRARY_PATH / RUSTFLAGS / GOTMPDIR are injected automatically — `clang hello.c -o hello && ./hello` just works; combined with name-based `psx`/`killx` process management and a binary-safe `curl`, the Agent does real development work on the phone. **Parallel services stay under 400 MB of memory.**
-
-**Agent self-extension**
-The Agent doesn't just use the Extension Center — it acts on its own: it installs environments through the local bridge and activates them automatically (then reminds you to restart the engine). In Root mode it has even bootstrapped the Android SDK command-line tools by itself.
+| Document | What's inside |
+|---|---|
+| [Accessibility & phone control](docs/LOCAL_CLOSED_LOOP.md) | local closed-loop executor, 21 action primitives, scene memory, on-device decisions |
+| [Narrow-screen UI plugins](docs/NARROW_UI.en.md) | full-width sidebar / settings reflow / full-screen right panel (three client plugins) |
+| [LAN WebUI](docs/LAN_WEBUI.en.md) | reverse proxy, 6-digit code, persistent reminder and stop chain |
+| [Voice input](docs/VOICE_INPUT.en.md) | dual recognition channels, send de-dup, panel parking, known issue |
+| [Notifications & background](docs/NOTIFICATIONS.en.md) | AI progress, task completion, LAN reminder, clean exit |
+| [Complex-scenario field notes](docs/COMPLEX_SCENARIOS.md) | noisy pages, cross-app tasks, failure recovery, measured |
+| [Fast-path picker](docs/FAST_PATH_PICKER.md) | on-device UI element selection and discrimination |
 
 ## ⛔ Limits (please be aware)
 
