@@ -37,10 +37,19 @@ class EngineSupervisor(private val ctx: Context) {
         data object Starting : State
 
         /** 正常健康；tokenUrl = 0.2.0+ WebUI 认证地址（engine.log 的 dsh web: 输出） */
-        data class Healthy(val port: Int, val tokenUrl: String? = null) : State
+        data class Healthy(
+            val port: Int,
+            val tokenUrl: String? = null,
+            /** 本次启动前自动摘掉的第三方插件；仅在恢复后的首个 Healthy 状态携带。 */
+            val recoveredPlugin: String? = null,
+        ) : State
 
         /** 安全模式：配置被隔离后以空配置拉起，功能受限但可用 */
-        data class SafeMode(val port: Int, val tokenUrl: String? = null) : State
+        data class SafeMode(
+            val port: Int,
+            val tokenUrl: String? = null,
+            val recoveredPlugin: String? = null,
+        ) : State
         data class Backoff(val delayMs: Long, val attempt: Int) : State
         data class Failed(val reason: String) : State
         data object Stopped : State
@@ -90,6 +99,8 @@ class EngineSupervisor(private val ctx: Context) {
     }
 
     private var process: EngineProcess? = null
+    /** 启动前摘掉的插件名；恢复成功后的首个 Healthy 状态会带上它，随后清空。 */
+    @Volatile private var recoveredPlugin: String? = null
     /** 本次引擎启动时 engine.log 的长度：extractTokenUrl 只搜此偏移之后的日志段 */
     @Volatile private var logOffsetAtSpawn = 0L
     private var loopJob: Job? = null
@@ -323,38 +334,89 @@ class EngineSupervisor(private val ctx: Context) {
                 step("user-data")
 
                 _state.value = State.Starting
-                val proc = withContext(Dispatchers.IO) { spawnEngine() }
+                // 旧 marker 可能来自上一次被强杀的引擎；本次 fork 前先清掉，
+                // 否则一个 stale 的 degraded 结果会把正常插件误摘掉。
+                withContext(Dispatchers.IO) { PluginRecovery.prepareForBoot(ctx) }
+                val bootId = java.util.UUID.randomUUID().toString()
+                val proc = withContext(Dispatchers.IO) { spawnEngine(bootId) }
                 process = proc
                 step("spawn")
 
                 val healthy = pollHealth(EngineConfig.DEFAULT_PORT, proc)
                 step("health-poll")
                 if (healthy) {
-                    withContext(Dispatchers.IO) {
-                        guardian.resetCrashStreak()
-                        guardian.snapshotLastGood()
+                    var pluginRecoveryRequested = false
+                    // HTTP 已监听不代表 Cordis Loader 的关键 entry 已成功激活。
+                    // 等待内置 probe 写出本次 boot 的 marker；缺失只记诊断，不阻断慢设备。
+                    val health = withContext(Dispatchers.IO) { awaitPluginHealth(proc, bootId) }
+                    if (health != null) {
+                        Log.i(
+                            TAG,
+                            "plugin health: ok=${health.ok} missing=${health.missingServices.joinToString(",")} " +
+                                "failed=${health.failedEntries.joinToString(",") { "${it.id}:${it.name}" }}",
+                        )
+                    } else {
+                        Log.w(TAG, "plugin health marker missing or unreadable; keeping engine available")
                     }
-                    backoffIndex = 0
-                    // 引擎 healthy = 待重启标记解除（激活/停用/卸载的扩展自此刻生效）
-                    app.dsh.mobile.engine.ExtensionManager.clearPendingRestart()
-                    val safe = guardian.inSafeMode()
-                    val tokenUrl = extractTokenUrl()
-                    val t1 = System.currentTimeMillis()
-                    val restartMs = restartStartedAt?.let { " (total restart took ${t1 - it}ms)" } ?: ""
-                    restartStartedAt = null
-                    Log.i(TAG, (if (safe) "engine healthy in SAFE MODE on :${EngineConfig.DEFAULT_PORT}" else "engine healthy on :${EngineConfig.DEFAULT_PORT}") + restartMs)
-                    _state.value =
-                        if (safe) State.SafeMode(EngineConfig.DEFAULT_PORT, tokenUrl)
-                        else State.Healthy(EngineConfig.DEFAULT_PORT, tokenUrl)
-                    // Shizuku 模式：引擎就绪后启动 ADB 级访问桥（shz 包装器回呼用）；其他模式自动关停
-                    withContext(Dispatchers.IO) {
-                        ShizukuHttpBridge.start(ctx, EngineConfig.DEFAULT_PORT)
+                    if (health?.ok == true) {
+                        withContext(Dispatchers.IO) { PluginRecovery.onHealthy(ctx) }
                     }
-                    // 阻塞等待进程退出（被杀/崩溃）。Healthy 后退出视为资源类偶发，
-                    // 不计入 guardian（那是普通退避该管的事，与配置无关）。
-                    val status = proc.exitFuture.get()
-                    if (userStop) break
-                    Log.w(TAG, "engine exited, raw status=0x${status.toString(16)}")
+                    if (health != null && !health.ok) {
+                        val action = withContext(Dispatchers.IO) { PluginRecovery.quarantineOne(ctx, health) }
+                        if (action != null) {
+                            recoveredPlugin = action.packageName
+                            pluginRecoveryRequested = true
+                            Log.e(
+                                TAG,
+                                "plugin recovery: disabled ${action.packageName}; reason=${action.reason}; " +
+                                    "restart=${action.attempt}/${3}",
+                            )
+                            // 不把 degraded engine 暴露给 WebView；只重启一次本轮，
+                            // PluginRecovery 的持久化上限负责阻止无限重启风暴。
+                            proc.stop(graceMs = 1_500)
+                            deterministicFailure = null
+                            backoffIndex = 0
+                        } else {
+                            Log.e(TAG, "plugin recovery: no safe candidate; leaving profile unchanged")
+                        }
+                    }
+                    if (pluginRecoveryRequested) {
+                        // 这次是有界的插件修复重启，不进入 ProfileGuardian 的配置定罪计数。
+                    } else {
+                        // 端口已监听但健康探针明确报告 degraded 时，不能把坏 profile
+                        // 快照成 last-good；否则后续崩溃回滚会再次恢复同一坏插件。
+                        if (health?.ok != false) {
+                            withContext(Dispatchers.IO) {
+                                guardian.resetCrashStreak()
+                                guardian.snapshotLastGood()
+                            }
+                        } else {
+                            Log.w(TAG, "plugin health degraded; keeping previous last-good snapshot")
+                        }
+                        backoffIndex = 0
+                        // 引擎 healthy = 待重启标记解除（激活/停用/卸载的扩展自此刻生效）
+                        app.dsh.mobile.engine.ExtensionManager.clearPendingRestart()
+                        val safe = guardian.inSafeMode()
+                        val tokenUrl = extractTokenUrl()
+                        val notice = recoveredPlugin
+                        recoveredPlugin = null
+                        val t1 = System.currentTimeMillis()
+                        val restartMs = restartStartedAt?.let { " (total restart took ${t1 - it}ms)" } ?: ""
+                        restartStartedAt = null
+                        Log.i(TAG, (if (safe) "engine healthy in SAFE MODE on :${EngineConfig.DEFAULT_PORT}" else "engine healthy on :${EngineConfig.DEFAULT_PORT}") + restartMs)
+                        _state.value =
+                            if (safe) State.SafeMode(EngineConfig.DEFAULT_PORT, tokenUrl, notice)
+                            else State.Healthy(EngineConfig.DEFAULT_PORT, tokenUrl, notice)
+                        // Shizuku 模式：引擎就绪后启动 ADB 级访问桥（shz 包装器回呼用）；其他模式自动关停
+                        withContext(Dispatchers.IO) {
+                            ShizukuHttpBridge.start(ctx, EngineConfig.DEFAULT_PORT)
+                        }
+                        // 阻塞等待进程退出（被杀/崩溃）。Healthy 后退出视为资源类偶发，
+                        // 不计入 guardian（那是普通退避该管的事，与配置无关）。
+                        val status = proc.exitFuture.get()
+                        if (userStop) break
+                        Log.w(TAG, "engine exited, raw status=0x${status.toString(16)}")
+                    }
                 } else if (proc.exitFuture.isDone) {
                     // 启动期内进程自己死了——唯一进入自愈判定的信号
                     deterministicFailure = failureSignature(lastExitStatus)
@@ -379,6 +441,13 @@ class EngineSupervisor(private val ctx: Context) {
                 } else {
                     deterministicFailure = failureSignature(null)
                 }
+            } catch (e: EngineArchMismatchException) {
+                // 确定性故障（v1.3.3，issue #23）：APK 里带的 runtime 就是错的架构，
+                // 重试多少次都必然失败 —— 直接进 Failed 并说清原因，别让用户看着
+                // 「连续 14 次启动失败」的模糊文案反复重装。
+                Log.e(TAG, "runtime architecture mismatch — stopping (retrying cannot help)", e)
+                _state.value = State.Failed(ctx.getString(R.string.error_runtime_arch_mismatch))
+                return
             } catch (e: Exception) {
                 if (userStop) break
                 Log.e(TAG, "supervision failure", e)
@@ -449,11 +518,28 @@ class EngineSupervisor(private val ctx: Context) {
         }
     }
 
+    /** 等待本次引擎写出插件健康标记；marker 本身不包含凭证或用户路径。 */
+    private suspend fun awaitPluginHealth(
+        proc: EngineProcess,
+        bootId: String,
+    ): PluginRecovery.Health? = withContext(Dispatchers.IO) {
+        val deadline = System.currentTimeMillis() + 20_000L
+        while (System.currentTimeMillis() < deadline && !proc.exitFuture.isDone) {
+            val health = PluginRecovery.readHealth(ctx, bootId)
+            if (health != null) {
+                Log.i(TAG, "plugin health marker received (ok=${health.ok})")
+                return@withContext health
+            }
+            Thread.sleep(200L)
+        }
+        null
+    }
+
     /** 最近一次子进程退出码；仅在进程已退出后可读，避免阻塞 */
     private val lastExitStatus: Int?
         get() = process?.exitFuture?.takeIf { it.isDone }?.get()
 
-    private fun spawnEngine(): EngineProcess {
+    private fun spawnEngine(bootId: String): EngineProcess {
         // 【v1.2.32】启动前孤儿清理：App 被强杀/force-stop 后，引擎 node 可能成孤儿
         // 继续占着 3080（普通模式与 App 同 uid；Root 模式需 su）。此时新引擎必然
         // EADDRINUSE 无限重启（用户实测 62 次）。pkill 只匹配我们的引擎路径，
@@ -483,7 +569,7 @@ class EngineSupervisor(private val ctx: Context) {
             nodeBin = EngineConfig.nodeBin(ctx),
             entryJs = EngineConfig.dshEntry(ctx),
             cwd = EngineConfig.workspaces(ctx),
-            env = EngineConfig.buildEnv(ctx, EngineConfig.DEFAULT_PORT),
+            env = EngineConfig.buildEnv(ctx, EngineConfig.DEFAULT_PORT, bootId),
             logFile = logFile(),
             suPath = suPath,
             patchPath = runCatching { EngineConfig.ensureAndroidOverlay(ctx).absolutePath }.getOrNull(),

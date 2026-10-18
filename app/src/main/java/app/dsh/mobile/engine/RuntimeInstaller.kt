@@ -26,7 +26,6 @@ import java.util.zip.ZipInputStream
 class RuntimeInstaller(private val ctx: Context) {
 
     data class Manifest(val version: String, val url: String?, val sha256: String?)
-
     private val root get() = EngineConfig.engineRoot(ctx)
     private val stampFile get() = File(root, ".runtime-version")
 
@@ -88,7 +87,83 @@ class RuntimeInstaller(private val ctx: Context) {
         val dshAi = File(root, "lib/node_modules/@deepseek-ai")
         val fileCount = dshAi.walkTopDown().filter { it.isFile }.count()
         if (fileCount < MIN_DSH_AI_FILES) return false
+        // 5) **架构必须匹配**（v1.3.3，issue #23）
+        //
+        // 前四项都通过、但 node 是另一个 CPU 架构的二进制时，会发生最坏的情况：
+        //   · 文件在、可执行位在 → 探针判「安装完整」→ 写入版本戳 → 永远走快路径
+        //   · 真正的失败发生在 execve：linker 直接拒绝跨架构 ELF
+        //     （`EXEC format error`，exit=1，Android 没有 binfmt/qemu 用户态模拟）
+        //   · 于是每轮启动都是「已安装 → 启动 → 立刻死」的确定循环，**永不自我修复**
+        //     只能清数据/重装 —— 对用户就是「装完就是坏的」。
+        // 所以架构是完整性的一部分，不是附加检查。
+        val want = expectedElfMachine()
+        if (want > 0) {
+            val got = elfMachine(EngineConfig.nodeBin(ctx))
+            if (got != want) {
+                Log.e(TAG, "runtime node architecture mismatch: e_machine=$got, device expects $want")
+                return false
+            }
+        }
         return true
+    }
+
+    /** ELF e_machine 取值（System V ABI） */
+    private val EM_ARM = 40
+    private val EM_X86_64 = 62
+    private val EM_AARCH64 = 183
+
+    /** 本机主 ABI 对应的 e_machine；无法判定返回 -1（此时跳过校验，不误伤） */
+    private fun expectedElfMachine(): Int {
+        for (abi in android.os.Build.SUPPORTED_ABIS) {
+            when (abi) {
+                "arm64-v8a" -> return EM_AARCH64
+                "x86_64" -> return EM_X86_64
+                "armeabi-v7a", "armeabi" -> return EM_ARM
+            }
+        }
+        return -1
+    }
+
+    /** 读 ELF 头的 e_machine；读不到 / 不是 ELF 返回 -1 */
+    private fun elfMachine(file: File): Int = runCatching {
+        file.inputStream().use { elfMachine(it) }
+    }.getOrDefault(-1)
+
+    /** 从流里读 ELF e_machine（只读头 20 字节，不整体载入） */
+    private fun elfMachine(ins: java.io.InputStream): Int = runCatching {
+        val head = ByteArray(20)
+        var read = 0
+        while (read < head.size) {
+            val n = ins.read(head, read, head.size - read)
+            if (n <= 0) return -1
+            read += n
+        }
+        // 0x7F 'E' 'L' 'F'
+        if (head[0] != 0x7F.toByte() || head[1] != 'E'.code.toByte() ||
+            head[2] != 'L'.code.toByte() || head[3] != 'F'.code.toByte()
+        ) return -1
+        // e_machine @ 18，little-endian（Android 全部小端）
+        (head[18].toInt() and 0xFF) or ((head[19].toInt() and 0xFF) shl 8)
+    }.getOrDefault(-1)
+
+    /** 解压前校验源 runtime.zip 里的 bin/node 架构，不匹配就抛确定性错误 */
+    private fun assertAssetArch(zip: File) {
+        val want = expectedElfMachine()
+        if (want <= 0) return
+        val got = runCatching {
+            java.util.zip.ZipFile(zip).use { zf ->
+                val entry = zf.getEntry("bin/node") ?: return@use -1
+                zf.getInputStream(entry).use { elfMachine(it) }
+            }
+        }.getOrDefault(-1)
+        if (got != want) {
+            // ⚠️ 不能只是返回 false 让它重装：APK 内的包就是错的，重装 100 次也一样，
+            // 反而把用户拖进「重装→启动→再死」的循环。这里抛确定性异常，
+            // 由监督器转成明确的 Failed 状态（见 EngineArchMismatchException 的消费点）。
+            throw EngineArchMismatchException(
+                "runtime node architecture mismatch: bundled e_machine=$got, device expects $want",
+            )
+        }
     }
 
     private fun install(manifest: Manifest, onProgress: (Float) -> Unit) {
@@ -132,6 +207,10 @@ class RuntimeInstaller(private val ctx: Context) {
                     }
                 }
             }
+
+            // v1.3.3（issue #23）：解压前断言架构。必须在**删除旧 runtime 之前**做 ——
+            // 否则发现架构不对时旧环境已经被拆了，用户从「启动失败」退化成「什么都没了」。
+            assertAssetArch(assetZip)
 
             // v1.2.21 事故修复：原 root.deleteRecursively() 会把 engine/ 整个删光，
             // extensions/（用户下载的全家扩展）一起陪葬；且删除 70MB 目录耗时较长，
@@ -379,3 +458,12 @@ class RuntimeInstaller(private val ctx: Context) {
         }
     }
 }
+
+/**
+ * 随包 runtime 的 CPU 架构与本机不符（v1.3.3，issue #23）。
+ *
+ * 这是**确定性**故障：APK 里带的 `bin/node` 就是另一个架构的 ELF，重装多少次都一样。
+ * 所以它必须与「解压失败 / 空间不足」这类可重试错误区分开 —— 监督器收到它应直接
+ * 进入 Failed 并给出明确文案，而不是继续指数退避重试把用户拖在「装完就是坏的」循环里。
+ */
+class EngineArchMismatchException(message: String) : Exception(message)

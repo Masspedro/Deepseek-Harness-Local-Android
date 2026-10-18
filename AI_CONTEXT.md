@@ -965,3 +965,38 @@ CI `i18n-check` 失败（23 条）。项目门禁（`scripts/check-i18n.py`）�
    属性自愈扩展到所有模式并分层（自己修优先，再走 shizuku/su + restorecon）。
 3. **横屏启动不再卡死**（issue #17）：遮罩在模式分支前解除 + 45s 兜底看门狗。
 4. **CI**：Gradle 堆 2G → 4G（修 nightly compressDebugAssets OOM）。
+
+## 2026-10-18 Issue #20/#21 插件导致工作区能力缺失：已实现并验证
+
+### 版本记录
+- 未递增 versionCode/versionName：本任务明确禁止修改 `app/build.gradle.kts` 的版本号；仅构建并验证 x86_64 Debug APK。
+
+### 已确认的故障证据
+- `runtime.zip` 内 `dsh-host-directory-picker-auto` 的 `inject = ["webServer", "loader"]`；Android `process.platform === "android"` 解析为 `browse`，随后 `ctx.loader.create()` 动态加载 browse host/client 两个 entry，任一 entry 无 fiber 时抛错并先卸载已创建 entry。
+- `dsh-api-workspace-controller` 的 `DirectoryPickerController` 注入 `directoryPicker` 并注册 `directoryPickerController`；`WorkspaceController` 注入 `typert`、`workspaceRegistry` 并注册 `workspaceController`。
+- `dsh-workspace` 的 `WorkspaceRegistry` 注入 `storageDomain`、`sessionPersistence`，其初始化会打开持久化 domain、恢复 pending mutation、索引 session headers；初始化抛错/依赖不可用时服务不 active。
+- Cordis `ctx.provide()` 对重复服务名直接抛 `service "<name>" has been registered at <...>`；Loader import 失败会记录 error 并留下无 fiber entry，插件 init 失败的 Fiber 状态为 failed（state=3），但 HTTP 端口仍可 healthy。Gateway `prepareInvocation` 对缺失 receiver 抛 `gateway/service-unavailable`，对应现场 `directoryPickerController is unavailable`。
+- profile 合成顺序已由 runtime 源码确认：bundle layers → `profiles/web/cordis.patch.yml` → `$DSH_HOME/cordis.patch.yml` → `--patch` overlays；`applyEntryPatches` 按 id 顺序覆盖，且覆盖行的 whole `config`，后层优先。`name` 是匹配守卫，不是可被 id patch 改写的字段；因此最后 Android overlay 同时重申关键 row 的 id/name/config/inject，并由 health probe 报告关键 row name mismatch。
+
+### 持久化位置与安装写入
+- `PluginCenter.install()` 执行 `dsh plugin --profile web add <pkg>`。
+- plugin-manager 的直接安装/卸载会写 `profiles/web/package.json` 与 `profiles/web/pnpm-lock.yaml`；安装成功后 reconcile 将带 `dsh.bundle.patch` 的依赖加入 `dsh.profile.bundles`，并从包内 `cordis.patch.yml`（或 manifest 声明的 patch 数组）加载层。
+- profile 还包含 `profiles/web/cordis.patch.yml`、`cordis.yml`、`pnpm-workspace.yaml`、`node_modules/<plugin>/`；插件停用只从 `dsh.profile.bundles` 摘除，包和 lockfile 保留，可重新启用。清数据会同时清掉上述 profile 与 plugin state，故能恢复。
+
+### 本次实现
+- `EngineConfig.kt`：`--patch` 最后层重申 typert-loader/gateway、directory-picker、workspace/workspace-controller、storage-domain/session-persistence、webserver，补全关键 config/inject，防普通插件 patch 禁用或改写关键 host rows。
+- `android-plugins/plugin-health.mjs`：启动期等待 Loader settle（有界 15s），检查 required services、无 fiber/failed fiber entries、关键 row name mismatch，写 `$DSH_HOME/.android-plugin-health.json`；marker 带 bootId 且 root 模式显式 chmod 0644，不含凭证或用户内容。
+- `PluginRecovery.kt`：读取本次 boot marker，按失败 entry 的 id/name 反查用户 bundle patch；精确归因后备份 `profiles/web/package.json` 到 `dsh-home/plugin-recovery/`，原子更新 `dsh.profile.bundles` 摘掉一个第三方 bundle；连续自动处理上限 3 次，无法精确归因时不猜测、不修改 profile。
+- `EngineSupervisor.kt` / `EngineProcess.kt`：每次 fork 生成 bootId，Root wrapper 转发 `DSH_HOME`/bootId；marker degraded 时不覆盖 last-good snapshot；插件自愈重启不进入 ProfileGuardian 配置定罪计数，健康后清零自愈额度。
+- `MainActivity.kt` / `EngineService.kt` + 三语 strings：首个恢复后的 ready 状态明确显示被停用插件名。
+
+### 验证证据
+- `.abi` 仍为 `x86_64`，未改动 runtime ABI；`gradle assembleDebug -Pabi=x86_64 --console=plain` 两次通过，最后一次 `BUILD SUCCESSFUL in 8s`。
+- `python scripts/check-i18n.py`：三语 391 keys 同步、Kotlin CJK=0、新增文案通过。
+- `node --check app/src/main/assets/android-plugins/plugin-health.mjs` 通过；`git diff --check` 通过。
+- 模拟器 `emulator-5554`（Android 16 x86_64）安装 debug APK 后，正常启动 marker：`ok=true, missingServices=[], failedEntries=[]`；监督日志：`plugin health marker received (ok=true)`、`plugin health: ok=true missing= failed=`、`engine healthy on :3080`。
+- 可回滚重复服务插件验证：临时 `fake-bad` bundle 注入 `ctx.provide("directoryPicker")`，真实 engine.log 记录 Cordis 原始错误 `service "directoryPicker" has been registered at <BrowseDirectoryPicker>`；随后 marker `ok=false`，监督日志记录 failed entry，`PluginRecovery` 输出 `auto-disabled third-party plugin fake-bad (attempt=1/3...)`，重启后 marker 恢复 `ok=true`，profile bundles 已自动摘除 `fake-bad`；测试结束已恢复原 profile 并删除临时 node_modules。
+
+### 未验证/遗留
+- 未在真实 Lark/Feishu 包上复现；当前已对 Cordis 重复服务、Loader import/init 失败、关键服务缺失和 patch name mismatch 做代码路径与合成插件验证。
+- 若 workspaceRegistry 本身持久化数据损坏而没有第三方 bundle 精确 row 归因，修复会只留 marker/engine.log，不会猜测删除插件；需后续针对 storages/workspace.json 设计独立数据修复策略。

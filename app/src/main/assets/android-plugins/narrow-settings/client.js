@@ -397,12 +397,15 @@ window.__ModuleLoader__.load({
         window.removeEventListener("orientationchange", schedule);
       });
 
+      // 设置面板的结构属性只在打开/关闭或面板重建时变化；忽略消息流里的 class/style/data 高频刷新。
+      // 视口变化仍由 resize/orientationchange 处理，DOM 重建仍由 childList 处理。
       try {
         var mo = new MutationObserver(schedule);
         mo.observe(document.documentElement, {
           childList: true,
           subtree: true,
           attributes: true,
+          attributeFilter: ["aria-label", "title"],
         });
         cleanups.push(function () { mo.disconnect(); });
       } catch (e) {

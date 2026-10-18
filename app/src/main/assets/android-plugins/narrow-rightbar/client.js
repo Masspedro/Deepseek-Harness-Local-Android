@@ -223,13 +223,15 @@ window.__ModuleLoader__.load({
         window.removeEventListener("orientationchange", schedule);
       });
 
-      // 属性变化（打开/关闭面板）也会触发 MutationObserver
+      // 只关注面板打开态的语义属性；消息流的 class/style/data 高频变化不能触发全树重判。
+      // childList 负责面板重建，resize/orientationchange 负责视口变化。
       try {
         var mo = new MutationObserver(schedule);
         mo.observe(document.documentElement, {
           childList: true,
           subtree: true,
           attributes: true,
+          attributeFilter: ["data-sidebar-right-open", "data-sidebar-right-panel"],
         });
         cleanups.push(function () { mo.disconnect(); });
       } catch (e) {

@@ -9,6 +9,7 @@
     <string name="status_installing">Installing runtime…</string>
     <string name="status_starting">Starting engine…</string>
     <string name="status_healthy">Engine ready · http://127.0.0.1:3080</string>
+    <string name="status_plugin_recovered">Recovered: disabled broken plugin %1$s · engine ready</string>
     <string name="status_safe_mode">Safe mode: plugin configs quarantined, engine running with an empty config (workspaces and sessions unaffected)</string>
     <string name="status_backoff">Process exited unexpectedly, restarting in %1$d s (attempt %2$d)</string>
     <string name="status_backoff_hint">Engine exited: %1$s - restarting in %2$d s (attempt #%3$d)</string>
@@ -435,4 +436,5 @@ You can still continue without updating, but the interface will not display.</st
     <string name="splash_starting">Starting the engine…</string>
     <string name="splash_loading">Loading the interface…</string>
     <string name="splash_hint">Please wait a few seconds…</string>
+    <string name="error_runtime_arch_mismatch">This build contains a runtime for a different CPU architecture and cannot run on this device. Please install the correct APK (arm64-v8a for phones).</string>
 </resources>

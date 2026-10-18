@@ -294,13 +294,20 @@ window.__ModuleLoader__.load({
         window.removeEventListener("orientationchange", schedule);
       });
 
-      // DOM 变化（侧栏展开/折叠、面板切换）
+      // DOM 变化（侧栏展开/折叠、面板切换）。
+      //
+      // ⚠️ 性能边界（v1.3.3，issue #22）：旧版监听 subtree 下的**所有属性**。
+      // AI 工作时引擎会持续更新消息/动画节点，任何无关 class/style/data 变化都会
+      // 让插件每帧重新 locate + getComputedStyle；三个窄屏插件叠加后，WebView
+      // 在后台也会持续吃 CPU。这里只关心侧栏按钮的状态属性；DOM 增删仍由
+      // childList 覆盖，视口变化由 resize/orientationchange 覆盖。
       try {
         var mo = new MutationObserver(schedule);
         mo.observe(document.documentElement, {
           childList: true,
           subtree: true,
           attributes: true,
+          attributeFilter: ["aria-label", "title"],
         });
         cleanups.push(function () {
           mo.disconnect();

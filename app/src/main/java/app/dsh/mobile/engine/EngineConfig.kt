@@ -507,10 +507,67 @@ object EngineConfig {
             |        name: danger-full-access
             |        description: Full file access without approval prompts.
             |
-            |# Registers DSH_ANDROID_PRIV_MODE as a managed shell variable. The value
-            |# cannot arrive by process inheritance: shell-env rebuilds the DSH_*
-            |# namespace per shell call and injects only registered contributions.
-            |# A relative name is resolved against this overlay's directory.
+            |# Critical host services are repeated in this last overlay deliberately.
+            |# Profile bundle patches and the user's profile patch are applied before
+            |# --patch, and a later row with the same id replaces the complete row.
+            |# This prevents an installed plugin from disabling the directory picker,
+            |# workspace controller, loader, or web server by accident. The complete
+            |# config is repeated because patching replaces, rather than merges, config.
+            |- id: typert
+            |  name: '@deepseek-ai/dsh-typert-registry'
+            |  disabled: false
+            |
+            |- id: typert-loader
+            |  name: '@deepseek-ai/dsh-typert-loader'
+            |  disabled: false
+            |
+            |- id: typert-gateway
+            |  name: '@deepseek-ai/dsh-api-gateway'
+            |  disabled: false
+            |
+            |- id: directory-picker
+            |  name: '@deepseek-ai/dsh-host-directory-picker-auto'
+            |  inject: [webServer, loader]
+            |  disabled: false
+            |
+            |- id: session-persistence-jsonl
+            |  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+            |  config:
+            |    root: !!js dshHomePath('sessions')
+            |  disabled: false
+            |
+            |- id: storage-domain
+            |  name: '@deepseek-ai/dsh-storage-domain'
+            |  config:
+            |    backend: json
+            |  disabled: false
+            |
+            |- id: workspace-controller
+            |  name: '@deepseek-ai/dsh-api-workspace-controller'
+            |  disabled: false
+            |
+            |- id: workspace
+            |  name: '@deepseek-ai/dsh-workspace'
+            |  disabled: false
+            |
+            |- id: webserver
+            |  name: '@deepseek-ai/dsh-host-webserver'
+            |  inject: [webStartup]
+            |  disabled: false
+            |  config:
+            |    host: !!js ctx.webStartup.host ?? '127.0.0.1'
+            |    port: !!js ctx.webStartup.port ?? 3080
+            |    compression: gzip
+            |    compressionLevel: 1
+            |    compressionThresholdBytes: 1024
+            |
+            |# This probe is intentionally last: Cordis keeps failed imports as
+            |# entries without a fiber, while the HTTP port can still be healthy.
+            |# The app consumes its marker and can quarantine only a user bundle.
+            |- insert:
+            |    - id: android-plugin-health
+            |      name: ./android-plugins/plugin-health.mjs
+            |
             |- insert:
             |    - id: android-priv-mode
             |      name: ./android-plugins/priv-mode.mjs
@@ -566,7 +623,7 @@ object EngineConfig {
         // sit beside it. Deploy from assets (kept in sync by the same idempotent check).
         runCatching {
             // 单文件插件（.mjs）：overlay 直接指向文件
-            listOf("priv-mode.mjs", "bridge-token.mjs", "fast-mode.mjs").forEach { fileName ->
+            listOf("priv-mode.mjs", "bridge-token.mjs", "fast-mode.mjs", "plugin-health.mjs").forEach { fileName ->
                 val src = ctx.assets.open("android-plugins/$fileName").use { it.readBytes() }
                 val dst = File(f.parentFile, "android-plugins/$fileName")
                 deployOne(dst, src.toString(Charsets.UTF_8), fileName)
@@ -648,7 +705,8 @@ object EngineConfig {
      * 模拟器因无 com.termux 目录呈 ENOENT 静默通过故未暴露）。显式指回自带 etc/tls
      * 与宿主 Termux 彻底隔离。
      */
-    fun buildEnv(ctx: android.content.Context, port: Int): Array<String> {        val root = engineRoot(ctx)
+    fun buildEnv(ctx: android.content.Context, port: Int, bootId: String? = null): Array<String> {
+        val root = engineRoot(ctx)
         // 运行权限模式（m1.24）：注入给 AI 侧感知，令其按模式调整执行行为
         val privMode = Privilege.getMode(ctx)
         // m1.29：按模式控制 AI 子进程能否用 su。engine/bin 在 PATH 首位，
@@ -717,6 +775,7 @@ object EngineConfig {
             // （"no sandbox backend usable on host"），故固定 danger-full-access；
             // 真实安全边界是 App 的权限模式（Normal/Shizuku/Root）与 su 闸门。
             "DSH_PERMISSION_MODE=danger-full-access",
+            *(bootId?.let { arrayOf("DSH_ANDROID_BOOT_ID=$it") } ?: emptyArray()),
         )
         // Perl/Ruby：编译期 @INC/$LOAD_PATH 硬编码 Termux 前缀（重写 shebang 碰不到），
         // 注入扩展内的库路径（Agent 实测注入后 json/openssl 等模块恢复正常）

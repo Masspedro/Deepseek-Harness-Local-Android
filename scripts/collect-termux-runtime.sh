@@ -709,6 +709,31 @@ rm -rf "$ROOT/lib/node_modules/sherpa-onnx-linux-x64" \
        "$ROOT/lib/node_modules/node-addon-require-builtin-linux-x64-gnu" 2>/dev/null || true
 
 # ---- 5. 打 zip ----
+#
+# ⚠️ 出包前**硬断言 node 架构**（v1.3.3，issue #23）。
+# 一旦把 x86_64 的 node 打进 arm64 的 APK，症状是「装完就是坏的」：
+# 引擎 execve 被 linker 拒绝（EXEC format error）→ 无限重启 → 用户只能卸载。
+# 而 App 侧完整性探针看不到架构，会把它当「安装完整」，永远不自我修复。
+# 这类错误一旦发出去就是确定性事故，所以在这里挡住，不许静默通过。
+NODE_BIN="$ROOT/bin/node"
+if [ ! -f "$NODE_BIN" ]; then
+  echo "错误：runtime 内缺少 bin/node，中止打包" >&2
+  exit 1
+fi
+# ELF e_machine 位于文件偏移 18，小端 2 字节
+NODE_MACHINE=$(od -An -t u2 -j 18 -N 2 "$NODE_BIN" 2>/dev/null | tr -d ' \n')
+case "$ARCH" in
+  aarch64) EXPECT_MACHINE=183 ;;
+  x86_64)  EXPECT_MACHINE=62  ;;
+  *)       EXPECT_MACHINE=""   ;;
+esac
+if [ -n "$EXPECT_MACHINE" ] && [ "$NODE_MACHINE" != "$EXPECT_MACHINE" ]; then
+  echo "错误：bin/node 架构不匹配 —— ARCH=$ARCH, e_machine=$NODE_MACHINE (期望 $EXPECT_MACHINE)" >&2
+  echo "      （183=AArch64, 62=x86_64；发出去会导致该架构设备完全无法启动）" >&2
+  exit 1
+fi
+echo "架构校验通过：ARCH=$ARCH, bin/node e_machine=$NODE_MACHINE"
+
 ( cd "$ROOT" && zip -qr "$OUT_ZIP" . )
 
 echo "runtime.zip 已生成: $OUT_ZIP ($(du -h "$OUT_ZIP" | cut -f1))"

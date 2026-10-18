@@ -9,6 +9,7 @@
     <string name="status_installing">正在安装运行时…</string>
     <string name="status_starting">正在启动引擎…</string>
     <string name="status_healthy">引擎已就绪 · http://127.0.0.1:3080</string>
+    <string name="status_plugin_recovered">已恢复：已停用故障插件 %1$s · 引擎已就绪</string>
     <string name="status_safe_mode">安全模式：插件配置已隔离归档，引擎以空配置运行（工作区与会话不受影响）</string>
     <string name="status_backoff">进程异常退出，%1$d 秒后自动重启（第 %2$d 次）</string>
     <string name="status_backoff_hint">进程异常退出：%1$s · %2$d 秒后自动重启（第 %3$d 次）</string>
@@ -435,4 +436,5 @@
     <string name="splash_starting">正在启动引擎…</string>
     <string name="splash_loading">正在加载界面…</string>
     <string name="splash_hint">请稍等几秒…</string>
+    <string name="error_runtime_arch_mismatch">这个安装包内置的运行环境与设备 CPU 架构不匹配，无法在本机运行。请安装对应架构的安装包（手机请选 arm64-v8a）。</string>
 </resources>
