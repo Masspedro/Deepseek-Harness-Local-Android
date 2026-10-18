@@ -242,6 +242,16 @@ python3 "$SCRIPTS_DIR/patch-attachment-local.py" "$ROOT" || {
   exit 1
 }
 
+# [node-pty / subprocess-local] Android 终端支持（issue #18）：
+#   · node-pty 无 Android 预编译产物 → 换成本仓库实现（转发原生助手 dsh_pty_exec）
+#   · subprocess-local 的进程探测器只认 linux/darwin/win32，Termux node 报告的是
+#     "android" → 终端 spawn 直接抛 "terminal inspection is unsupported"
+# 两处都必须打，否则 Web 终端与持久 bash 工具在设备上不可用。
+python3 "$SCRIPTS_DIR/patch-node-pty-android.py" "$ROOT" || {
+  echo "错误：node-pty Android 补丁失败（上游形态已变？），中止构建" >&2
+  exit 1
+}
+
 # [node-addon-require-builtin] 0.2.0 新增：dsh 用它访问 Node 内部模块
 # （internal/modules/esm/loader 等），以便安装自定义模块解析拦截
 # （dsh-app-boot 的 installRuntimeInterception，用于插件/profile 解析）。

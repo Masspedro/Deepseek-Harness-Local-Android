@@ -613,6 +613,22 @@ object EngineConfig {
     }
 
     /**
+     * 引擎默认 shell 路径（v1.3.1，issue #18）。
+     *
+     * 首选自带 bash（`<engineRoot>/bin/bash`，门脚本与 /dev/tcp 都依赖 bash 特性）；
+     * 若因解压不完整等原因缺失，退回 runtime 里的 `bin/sh`，再退回系统 toybox sh。
+     * 绝不返回 Termux 前缀——那条路径在本机永远不存在。
+     */
+    private fun shellPathFor(root: File): String {
+        val bash = File(root, "bin/bash")
+        if (bash.canExecute()) return bash.absolutePath
+        val sh = File(root, "bin/sh")
+        if (sh.exists()) return sh.absolutePath
+        Log.w(TAG, "engine bash missing at ${bash.absolutePath}; falling back to /system/bin/sh")
+        return "/system/bin/sh"
+    }
+
+    /**
      * 组装子进程环境变量。
      * PATH/LD_LIBRARY_PATH/PREFIX 对齐 Termux 布局，保证 bionic 二进制能找到依赖库。
      *
@@ -622,8 +638,7 @@ object EngineConfig {
      * 模拟器因无 com.termux 目录呈 ENOENT 静默通过故未暴露）。显式指回自带 etc/tls
      * 与宿主 Termux 彻底隔离。
      */
-    fun buildEnv(ctx: android.content.Context, port: Int): Array<String> {
-        val root = engineRoot(ctx)
+    fun buildEnv(ctx: android.content.Context, port: Int): Array<String> {        val root = engineRoot(ctx)
         // 运行权限模式（m1.24）：注入给 AI 侧感知，令其按模式调整执行行为
         val privMode = Privilege.getMode(ctx)
         // m1.29：按模式控制 AI 子进程能否用 su。engine/bin 在 PATH 首位，
@@ -661,6 +676,15 @@ object EngineConfig {
                     extRoots.map { File(it, "lib") }
                 ).joinToString(":"),
             "PREFIX=$root",
+            // SHELL（v1.3.1，issue #18「终端错误」）：必须显式注入。
+            // 引擎的 dsh-subprocess-local 按 `process.env.SHELL || os.userInfo().shell`
+            // 推导默认 shell（terminalEnvironment），而 runtime 里的 node 是 Termux 官方
+            // 构建——它在二进制内把 passwd 的 shell 硬编码成
+            // /data/data/com.termux/files/usr/bin/bash（本机不存在，且与用户是否装过
+            // Termux 无关）。不设 SHELL 时引擎就会拿这个坏路径去 resolveExecutable →
+            // `subprocess-local: command "..." is not an executable file`（持久 bash
+            // 工具与 Web 终端一起报错）。注入后 SHELL 优先级最高，且指向自带 bash。
+            "SHELL=${shellPathFor(root)}",
             "HOME=${dshHome(ctx)}",
             "DSH_HOME=${dshHome(ctx)}",
             "TMPDIR=${tmpDir(ctx)}",
@@ -963,12 +987,70 @@ object EngineConfig {
                     Log.i(TAG, "android.jar staged: ${jar.length()} bytes (expected $want)")
                 }
             }.onFailure { Log.w(TAG, "android.jar staging failed: ${it.message}") }
+
+            // ── 终端 PTY 助手部署（v1.3.1，issue #18 第二层）─────────────────
+            // 引擎的 Web 终端与持久 bash 工具要经 node-pty 申请伪终端，而 node-pty
+            // 在 Android 无预编译产物。真正干活的是随包分发的原生助手 dsh_pty_exec
+            // （native 层打成 libdsh_pty_exec.so 才被 AGP 收进 APK），这里把它落到
+            // engine/bin 并给出执行位 —— targetSdk 28 豁免 W^X，可直接 execve。
+            // 助手在引擎侧由 node-pty 兼容层（runtime 内）spawn，见
+            // scripts/patch-node-pty-android.py。
+            runCatching {
+                deployPtyHelper(ctx, root)
+            }.onFailure { Log.w(TAG, "pty helper deploy failed: ${it.message}") }
         } catch (e: Exception) {
             Log.w(TAG, "agent gates: ${e.message}")
         }
     }
 
+    /**
+     * 把原生 PTY 助手从 APK 的 native 库目录落到 `engine/bin/dsh_pty_exec`。
+     *
+     * ⚠️ 为什么读 APK 而不读 `applicationInfo.nativeLibraryDir`：后者里的
+     * `libdsh_pty_exec.so` 由系统安装器解出，路径与名字都带 lib 前缀，且**只在
+     * 装了原生库的目录下存在**；直接从 APK 里取条目可以保证与本次运行的代码
+     * 同版本（增量更新后 nativeLibraryDir 可能滞后）。条目是 stored（未压缩），
+     * 读取很快。
+     *
+     * 幂等：按字节长度比对（体积固定，改动必然反映在长度上），命中即跳过，
+     * 避免每次启动都写盘。
+     */
+    private fun deployPtyHelper(ctx: android.content.Context, root: File) {
+        val dst = File(File(root, "bin").apply { mkdirs() }, PTY_HELPER_NAME)
+        val apk = ctx.applicationInfo.sourceDir ?: return
+        // 按设备实际 ABI 找条目：APK 里同时可能带多个架构目录
+        val want = runCatching {
+            java.util.zip.ZipFile(apk).use { zf ->
+                zf.entries().asSequence()
+                    .firstOrNull { it.name.endsWith("/lib$PTY_HELPER_NAME.so") }
+                    ?.size ?: -1L
+            }
+        }.getOrDefault(-1L)
+        if (want <= 0L) {
+            Log.w(TAG, "pty helper missing in APK — terminal will be unavailable")
+            return
+        }
+        val upToDate = dst.isFile && dst.length() == want && dst.canExecute()
+        if (upToDate) return
+        // 覆盖前先删：旧版本可能正被引擎子进程占用（Text file busy）
+        runCatching { dst.delete() }
+        java.util.zip.ZipFile(apk).use { zf ->
+            val e = zf.entries().asSequence()
+                .firstOrNull { it.name.endsWith("/lib$PTY_HELPER_NAME.so") } ?: return
+            zf.getInputStream(e).use { ins ->
+                dst.outputStream().use { ins.copyTo(it) }
+            }
+        }
+        // 执行位对所有用户落地后再交给引擎（同 uid，但 SELinux 会看 mode）
+        dst.setReadable(true, false)
+        dst.setExecutable(true, false)
+        Log.i(TAG, "pty helper deployed: ${dst.absolutePath} (${dst.length()} bytes)")
+    }
+
     private const val TAG = "EngineConfig"
+
+    /** 原生 PTY 助手文件名（APK 内为 lib<name>.so，落盘后去掉 lib 前缀与扩展名） */
+    private const val PTY_HELPER_NAME = "dsh_pty_exec"
 
     /**
      * npm 生态默认镜像。corepack / npm / pnpm 在 runtime 内无任何 .npmrc，
