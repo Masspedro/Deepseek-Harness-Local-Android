@@ -1000,3 +1000,24 @@ CI `i18n-check` 失败（23 条）。项目门禁（`scripts/check-i18n.py`）�
 ### 未验证/遗留
 - 未在真实 Lark/Feishu 包上复现；当前已对 Cordis 重复服务、Loader import/init 失败、关键服务缺失和 patch name mismatch 做代码路径与合成插件验证。
 - 若 workspaceRegistry 本身持久化数据损坏而没有第三方 bundle 精确 row 归因，修复会只留 marker/engine.log，不会猜测删除插件；需后续针对 storages/workspace.json 设计独立数据修复策略。
+
+## 2026-10-18 v1.3.3 发布与上游适配状态
+
+- **版本**：versionName 1.3.3，versionCode 245。
+- **Release**：https://github.com/Soodok/Deepseek-Harness-Local-Android/releases/tag/v1.3.3
+  release id `416513653`，公开；正式包 asset `653742573`（150,807,829B），debug asset
+  `653743712`（152,007,743B）。
+- **本版已验证修复**：
+  1. 插件健康探针 + 第三方 bundle 精确隔离（fake-bad 重复服务故障验证通过）；
+  2. runtime ELF 架构校验 + collect 脚本出包硬断言；
+  3. 三个窄屏插件的 MutationObserver 属性范围收紧（避免消息流 class/style/data 高频变化
+     触发全量布局重判，作为 1.3.x WebView 卡顿风险缓解）；
+  4. 既有终端、Root 自愈、用户指令段功能保留。
+- **验证**：node --check、窄屏回归测试（30/36/28）、i18n、git diff --check、
+  x86_64 debug 构建、arm64 release/debug 构建、CI android-build/i18n-check 全通过。
+- **CPU 说明**：用户设备的满核现象本地未复现；本版收紧了已确认的高频 DOM 观察器，
+  发布说明明确标为风险缓解，后续需要真实设备数据继续定位。
+- **上游状态**：上游 `deepseek-ai/deepseek-harness` 已发布 `dsh-v0.2.1-rc.2`
+  （commit `687f282e`，2026-10-17）。本项目 runtime 仍锁定 `@deepseek-ai/dsh 0.2.0-rc.2`，
+  因为 Android 运行时有多处针对 0.2.0-rc.2 的 bionic/Termux/PTY/native 补丁；
+  0.2.1 适配不与本次修复混发，待单独做依赖差异审查、补丁迁移、双架构构建与真机验证。
