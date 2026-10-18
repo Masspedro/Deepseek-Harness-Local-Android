@@ -52,7 +52,9 @@ jobs:
             echo "Linux ripgrep leaked into Android runtime" >&2
             exit 1
           fi
-          grep -q 'android-js-fallback' runtime-check/lib/node_modules/node-addon-require-builtin/index.js
+          NRB=$(find runtime-check/lib/node_modules -path '*/node-addon-require-builtin/index.js' -print -quit)
+          test -n "$NRB"
+          grep -q 'android-js-fallback' "$NRB"
           grep -q 'isAndroidUnsyncableLevel' runtime-check/lib/node_modules/@deepseek-ai/dsh-attachment-local/lib/index.js
           grep -q 'rename as link' runtime-check/lib/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
           grep -q 'dsh-android' runtime-check/lib/node_modules/@deepseek-ai/node-addon-system/lib/flock.js
