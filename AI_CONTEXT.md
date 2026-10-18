@@ -883,3 +883,62 @@ CI `i18n-check` 失败（23 条）。项目门禁（`scripts/check-i18n.py`）�
 - Release 资产已覆盖：release id `652449715`（150,779,015B）、debug id `652450527`；
 - issue #18 已回复（comment `6245584575`）并 closed/completed；
 - 提交：`dsh_pty_exec.c` + `patch-node-pty-android.py` 等 7 文件（本地已提交，待推送）。
+
+## 2026-10-18 Root 模式「被杀死后二次启动失败」修复（versionCode 243）
+
+### 用户反馈
+「root 模式下，极少数情况下应用因奇怪原因重启或被杀死，会导致二次启动无法启动」+
+「安卓 11 上异常退出后无法使用，删除重装又好了」+「如果文件属性被改坏了怎么办」。
+
+### 根因（两类，均已实测确认）
+**A. 端口冲突的自愈分支从未生效（死代码）**
+`EngineSupervisor` 里 v1.2.22/32/108 三轮修复都写在
+`deterministicFailure?.contains("EADDRINUSE")` 分支里，而该变量是
+`failureSignature()` 的产物 = `"<退出码>:<哈希>"` —— **哈希里永远不含这个字面量**。
+后果链：Root 引擎的 node 是 `su` 的**孙进程**（`dsh_pty.c` 的 `PR_SET_PDEATHSIG`
+只挂到 su 外壳上，信号传不到 node）→ App 被强杀时 node 以 uid 0 变孤儿继续占 3080
+→ 新引擎 EADDRINUSE 启动即退 → 本该「清场重试、不计罪」却落进 guardian →
+连续判罪后**回滚 profiles → SAFE MODE（归档用户配置）→ State.Failed**。
+模拟器实测孤儿 ppid 实测为 **570（adbd）而非 1**，而旧 `OrphanReaper` 只认
+`ppid == 1` → 也漏掉（双重漏网）。
+
+**B. 文件属性损坏（用户「删掉重装才好」的指纹）**
+① 属主自愈只在**非 Root** 模式跑（`mode != ROOT` 才调用）：Root 引擎以 uid 0 写出的
+   文件属主是 root，**App 自己**（非 root）读不了 `engine/.runtime-version`、
+   `profile-guardian.meta`、插件 → `RuntimeInstaller` 读版本戳 EACCES → 启动失败；
+② 权限位被剥（`chmod 000`）时无任何自愈；
+③ 用户只能靠卸载重装恢复 —— 卸载清空私有目录 = 变相重置属性，正是该缺陷的现场指纹。
+
+### 修复
+- **端口自愈真正生效**：改为硬证据判定 `portInUse()`（**探测超时按「占用」处理**，
+  旧实现把超时当空闲）+ `looksLikePortConflict()`（只读**本次启动**的日志段，
+  用 `logOffsetAtSpawn` 起算，避免历史 EADDRINUSE 误触发）；清场覆盖
+  「cmdline 含 engine/bin/node」的进程并**排除 lan-web-proxy**（否则局域网访问会静默失效）；
+  连续处置上限 `MAX_PORT_RECLAIMS=8`，防「非引擎进程永久占端口」时绕过退避无限重试。
+- **guardian 隔离环境类失败**：端口冲突 / `no usable su`（su 瞬时不可用，
+  App 被强杀后 magiskd 会话未重建）都**不计入配置崩溃**，只退避重试。
+- **su 探测加重试**：`usableSuPrefix()` 失败后等 1.2s 再试一次，把窗口让给 daemon 恢复。
+- **属性自愈扩展到所有模式 + 分层修复**：
+  ① 先用纯 Java 自己修（**实测：属主属于自己的文件，直接 chmod 即可，无需任何特权**）
+  —— 这让无 su/无 Shizuku 的设备也能自愈；
+  ② 再走 `runPrivileged`（Shizuku 优先）+ `restorecon` 修 SELinux 标签与属主。
+  检测用「**实际尝试打开**」而非 `canRead()`（后者在权限位 000 时不可靠）。
+- **目录必须补 rwx 三者**：只补 r+x 会留下 `dr-x------`「能读不能写」的目录，
+  把故障推迟到写入时（本轮实测发现的隐患，已修）。
+- **runtime 重建前先自愈属性**：否则 root 属主文件删不掉 → 覆盖写入 EACCES →
+  每次启动重装失败。
+- **版本戳读取容错**：读不了等价于「版本不匹配」，走重装路径（内部会先自愈）。
+
+### 实测（模拟器，引擎真实启动链路）
+- **安卓 16（dsh36）**：造孤儿占 3080 → 启动 App → 日志
+  `port 3080 in use — reclaiming` → 孤儿被杀（init 回收 18323）→
+  `engine healthy on :3080`；**无 guardian 判罪**（无 meta、无 rolled back、无归档）。
+- **安卓 11（dsh30，API 30）**：`chmod 000` 文件与目录 + 强杀 App → 二次启动 →
+  `ownership check: found entries this app cannot read` → `restored permissions on 16806 entr(ies)`
+  → `engine healthy on :3080`；属性恢复为 `drwx------` / `-rw-------`。
+- 注意：安卓 11 AVD 自带 WebView 是 Chrome 83，会弹「WebView needs an update」
+  对话框（App 的既有门槛提示，非 bug），需点 CONTINUE ANYWAY 才继续启动流程。
+
+### 发布
+- versionCode 242 → **243**，versionName 仍 1.3.0；
+- Release 资产已覆盖：release id `652699077`、debug id `652699848`。

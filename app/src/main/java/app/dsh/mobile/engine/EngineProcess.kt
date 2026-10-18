@@ -200,7 +200,16 @@ class EngineProcess private constructor(
                         append(" && ")
                     },
                 )
+                // ⚠️ v1.3.1：su 探测失败通常是**瞬时**的（App 被强杀后立刻重启，
+                // magiskd 尚未重建会话 / 设备刚开机 daemon 未就绪）。旧实现一次探测
+                // 失败就直接抛 EngineStartException，配合退避 fast-path 会让「二次启动」
+                // 在前几轮必然失败。这里给两次短重试，把窗口让给 daemon 恢复。
                 val prefix = Privilege.usableSuPrefix()
+                    ?: run {
+                        android.util.Log.w(TAG, "usableSuPrefix failed — retrying once after 1.2s (su may still be starting)")
+                        Thread.sleep(1_200)
+                        Privilege.usableSuPrefix()
+                    }
                     ?: throw EngineStartException("no usable su (tried -c / 0 / root -c)")
                 cmd = suPath                                  // 绝对路径，execve 需要
                 args = (prefix.drop(1) + inner.toString()).toTypedArray()

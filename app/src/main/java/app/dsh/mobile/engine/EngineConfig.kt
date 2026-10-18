@@ -33,6 +33,16 @@ object EngineConfig {
     // 否则第 8 次就进 Failed 停机、安全模式在数学上永远无法触发（实测事故）
     const val MAX_RESTART = 14
 
+    /**
+     * 端口冲突自动清场的最大连续次数（v1.3.1）。
+     *
+     * 端口被**我们的**孤儿引擎占用时，清场后即可恢复，通常一次足够；但若端口被
+     * 完全无关的进程（用户自己跑的、别的 app 的）永久占用，清场永远不会成功 ——
+     * 那时必须放行走正常退避与 State.Failed，让用户看到明确错误，
+     * 而不是绕过 MAX_RESTART 无声地无限重试。
+     */
+    const val MAX_PORT_RECLAIMS = 8
+
     fun engineRoot(ctx: android.content.Context): File =
         File(ctx.filesDir, "engine").apply { mkdirs() }
 

@@ -5,7 +5,7 @@
   "_\u8bf4\u660e": {
     "version": "v1.2.102-x86_64",
     "url": "\u8fdc\u7a0b runtime.zip \u4e0b\u8f7d\u5730\u5740\uff08assets \u5185\u7f6e\u5305\u7f3a\u5931\u65f6\u542f\u7528\uff09\uff1b\u7559\u7a7a\u8868\u793a\u4ec5\u652f\u6301\u5185\u7f6e\u5305",
-    "sha256": "26f1910d0255fb9529c22bbc50b1b152174017a62c9f699a4dcb95de9700c42e",
+    "sha256": "ccfcdaf9b65339fc9ed0ec13c4e139720ed27f6319d6281aba4f64debaa1b537",
     "\u6784\u5efa\u65b9\u5f0f": "\u7531 .github/workflows/android-build.yml \u7684 collect-runtime job \u81ea\u52a8\u586b\u5145 url/sha256 \u540e\u6253\u5305"
   }
 }

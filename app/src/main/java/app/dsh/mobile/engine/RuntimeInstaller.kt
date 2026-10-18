@@ -49,10 +49,17 @@ class RuntimeInstaller(private val ctx: Context) {
      *  任一关键资产缺失即视为安装不完整，删除重装。 */
     fun ensureInstalled(onProgress: (Float) -> Unit = {}) {
         val manifest = readManifest()
-        if (EngineConfig.nodeBin(ctx).exists() &&
-            stampFile.exists() && stampFile.readText().trim() == manifest.version &&
-            isRootComplete()
-        ) {
+        // ⚠️ v1.3.1：读版本戳**可能抛 EACCES**（属性被改坏：权限位被剥 / 属主变成 root
+        // ——用户反馈的「异常退出后无法使用，删掉重装才好」正是这条）。旧实现让它一路
+        // 抛到监督器 → 每轮启动都失败、退避到 Failed。
+        // 现在把「读不了」等价于「版本不匹配」：走重装路径（install 内部会先做属性自愈）。
+        val stampOk = runCatching {
+            stampFile.exists() && stampFile.readText().trim() == manifest.version
+        }.getOrElse { e ->
+            Log.w(TAG, "runtime stamp unreadable (${e.javaClass.simpleName}: ${e.message}) — treating as stale")
+            false
+        }
+        if (EngineConfig.nodeBin(ctx).exists() && stampOk && isRootComplete()) {
             Log.i(TAG, "runtime ${manifest.version} already installed (assets verified)")
             return
         }
@@ -138,8 +145,24 @@ class RuntimeInstaller(private val ctx: Context) {
                     .filter { it.isNotEmpty() }
                     .toSet()
             }
+            // ⚠️ v1.3.1：删除旧 runtime 前先确保**删得掉**。
+            // Root 引擎（uid 0）在 engine/ 下写过的文件属主是 root，App 删不掉 →
+            // deleteRecursively 静默留下残余 → 新文件覆盖写入 EACCES → 每次启动都重装失败
+            // （用户报的「异常退出后无法使用，删掉重装才好」）。这里在删除前先走一次
+            // 属性自愈（chown + chmod + restorecon，Shizuku/su 通道），失败也不阻断
+            // ——只是把「注定失败」变成「大概率成功」。
+            runCatching {
+                if (Privilege.dshHomeNeedsOwnershipFix(ctx)) {
+                    Log.w(TAG, "runtime reinstall: healing file attributes before wipe")
+                    Privilege.fixHomeOwnership(ctx)
+                }
+            }
             topDirs.forEach { top ->
-                File(root, top).deleteRecursively()
+                val victim = File(root, top)
+                if (!victim.deleteRecursively() && victim.exists()) {
+                    // 删不干净必须留痕：否则只在下一轮 unzip 失败时暴露，原因已丢失
+                    Log.w(TAG, "runtime reinstall: could not fully remove ${victim.absolutePath}")
+                }
             }
 
             unzip(assetZip, root, onProgress)
