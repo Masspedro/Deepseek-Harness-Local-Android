@@ -942,3 +942,26 @@ CI `i18n-check` 失败（23 条）。项目门禁（`scripts/check-i18n.py`）�
 ### 发布
 - versionCode 242 → **243**，versionName 仍 1.3.0；
 - Release 资产已覆盖：release id `652699077`、debug id `652699848`。
+
+## 2026-10-18 v1.3.1 正式发布
+
+- **版本**：versionName **1.3.1**（versionCode 243）。
+- **Release**：https://github.com/Soodok/Deepseek-Harness-Local-Android/releases/tag/v1.3.1
+  （release id `416293923`，公开 draft=false）
+  · `dsh-mobile-v1.3.1-arm64-v8a.apk`（asset id `652758035`，150,779,015B）
+  · `dsh-mobile-v1.3.1-arm64-v8a-debug.apk`（asset id `652758871`，151,980,024B）
+  · 说明：`RELEASE_NOTES_v1.3.1.md`（终端修复 / Root 自愈 / 横屏卡死 / 验证情况 / 已知问题）。
+- **README 三语同步**：徽章与「最新版」引用 v1.3.0 → v1.3.1。
+- **包内核对**：原生库含 `libdsh_pty_exec.so`（PTY 助手）；
+  runtime 含三处终端补丁（inspector 认 android / node-pty Android 实现 / kill 允许重复调用）。
+- **推送通道**：`git push` 直连 github.com 仍被重置（`Recv failure: Connection was reset`），
+  改用仓库自带的 `scripts/push-via-api.py`（Git Data API）成功推送，
+  远端 main → `5ac5980`。发布走 API 通道不受影响。
+
+### v1.3.1 相对 v1.3.0 的实质变化
+1. **终端可用**（issue #18）：注入 SHELL + 原生 PTY 助手 + 运行时 Android 适配。
+2. **Root 异常杀死后可自愈**：端口冲突自愈分支真正生效（原为死代码）、
+   孤儿识别不再依赖 ppid==1、guardian 隔离环境类失败、
+   属性自愈扩展到所有模式并分层（自己修优先，再走 shizuku/su + restorecon）。
+3. **横屏启动不再卡死**（issue #17）：遮罩在模式分支前解除 + 45s 兜底看门狗。
+4. **CI**：Gradle 堆 2G → 4G（修 nightly compressDebugAssets OOM）。
