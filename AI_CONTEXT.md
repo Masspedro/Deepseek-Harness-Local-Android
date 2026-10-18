@@ -836,3 +836,50 @@ CI `i18n-check` 失败（23 条）。项目门禁（`scripts/check-i18n.py`）�
   collect-runtime ×2、build-apk ×2（arm64-v8a / x86_64）、Build monitor 均 success；
   i18n-check `39077258387` success。
 - 注意：旧的失败 run 仍在 Actions 历史里（API 未删除），main 最新提交的 CI 是绿的。
+
+## 2026-10-18 issue #18「终端错误」修复（v1.3.0 第三次覆盖发布，versionCode 242）
+
+### 现象
+用户在 WebUI 点「新建终端」报：
+`subprocess-local: command "/data/data/com.termux/files/usr/bin/bash" is not an executable file`
+
+### 根因（两层，必须都修）
+1. **shell 路径 = Termux 硬编码**。runtime 里的 node 是 Termux 官方构建，二进制内把
+   `os.userInfo().shell` 写死为 `/data/data/com.termux/files/usr/bin/bash`（与用户是否装
+    Termux 无关）。引擎 `dsh-subprocess-local` 的 `terminalEnvironment()` 取
+   `process.env.SHELL || userInfo().shell`，而 `EngineConfig.buildEnv` **从未注入 SHELL**
+   → 拿坏路径做 `resolveExecutable` → 抛错。
+2. **Android 平台不被识别 + PTY 后端缺失**。Termux node 报 `process.platform === "android"`
+   （不是 "linux"），而 `createProcessInspector()` 只认 linux/darwin/win32 → 修好第①层后
+   会立刻撞上 `terminal inspection is unsupported on platform android`；且 `node-pty` 无
+   Android 预编译产物，runtime 里是被替换掉的「一调用就抛错」空壳。
+
+### 修复
+- **①** `EngineConfig.buildEnv` 注入 `SHELL=<engineRoot>/bin/bash`（优先级最高，彻底绕过
+  Termux 硬编码）；新增 `shellPathFor()`，bash 缺失时回退 `bin/sh` 再回退 `/system/bin/sh`。
+- **②** 新增原生助手 `app/src/main/cpp/dsh_pty_exec.c`（PTY 执行器：fork+setsid+TIOCSCTTY、
+  PTY↔stdio 双向搬运、fd3 控制通道做 resize/信号、pidfile 报 pid 与退出状态）；
+  CMake 里 `add_executable` 且 **OUTPUT_NAME 设为 libdsh_pty_exec.so**（AGP 只收 .so）；
+  `EngineConfig.deployPtyHelper()` 启动时从 APK 解出到 `engine/bin/dsh_pty_exec` 并给执行位。
+  引擎侧由 `scripts/patch-node-pty-android.py` 打三处补丁（单一真源，CI 的
+  collect-termux-runtime.sh 也调它）：探测器认 android、活动判定认 android、
+  node-pty 换成驱动助手的真实实现。
+
+### 实测踩到的两个坑（已修，勿回退）
+- **无效 fd 交给 poll() 会 100% CPU 空转**：助手启动时必须 `fcntl(fd, F_GETFD)` 探活再用。
+- **kill() 不能只发一次**：引擎清理是 SIGTERM→宽限→SIGKILL 升级序列，交互式 bash 默认
+  忽略 SIGTERM；若守卫成「只发第一次」，升级被吞 → 终端关闭后 shell 成孤儿
+  （实测 `terminal cleanup failed; surviving pid: N`）。
+
+### 验证（模拟器 x86_64，引擎真实代码路径，非单测桩）
+- `terminalEnvironment().defaultShell` → 自带 `bin/bash`（注入前是 Termux 路径）；
+- `resolveExecutable` PASS（第①层）；`spawnTerminal` PASS，pid 正常（第②层）；
+- 终端内执行命令并回读：`TERM-MARKER-42-/dev/pts/2`（真实 tty）；
+- `terminate()` PASS（2.5s 内完成，无残留进程）。
+- 对照：不注入 SHELL 时可精确复现用户报错原文。
+
+### 发布
+- versionCode 241 → **242**，versionName 仍 1.3.0；
+- Release 资产已覆盖：release id `652449715`（150,779,015B）、debug id `652450527`；
+- issue #18 已回复（comment `6245584575`）并 closed/completed；
+- 提交：`dsh_pty_exec.c` + `patch-node-pty-android.py` 等 7 文件（本地已提交，待推送）。
