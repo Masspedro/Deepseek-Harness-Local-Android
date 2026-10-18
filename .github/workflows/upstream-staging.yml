@@ -1,0 +1,110 @@
+name: upstream-staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      dsh_version:
+        description: "Upstream dsh version to stage"
+        required: true
+        default: "0.2.1-rc.2"
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - termux_arch: aarch64
+            abi: arm64-v8a
+          - termux_arch: x86_64
+            abi: x86_64
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Collect upstream runtime (${{ matrix.termux_arch }})
+        env:
+          DSH_VERSION: ${{ inputs.dsh_version }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq apt dpkg-dev zip
+          chmod +x scripts/collect-termux-runtime.sh
+          ./scripts/collect-termux-runtime.sh runtime.zip "${{ matrix.termux_arch }}"
+      - name: Verify runtime closure, ABI, and Android patch markers
+        run: |
+          python3 scripts/verify-runtime-abi.py runtime.zip "${{ matrix.abi }}"
+          rm -rf runtime-check && mkdir runtime-check
+          unzip -q runtime.zip -d runtime-check
+          test -x runtime-check/bin/node
+          test -x runtime-check/bin/bash
+          test -x runtime-check/bin/rg
+          test -x runtime-check/bin/pnpm
+          test -x runtime-check/bin/curl
+          test -e runtime-check/lib/libreadline.so.8
+          test -e runtime-check/lib/libhistory.so.8
+          case "${{ matrix.termux_arch }}" in
+            aarch64) test -x runtime-check/lib/node_modules/@vscode/ripgrep-android-arm64/bin/rg ;;
+            x86_64) test -x runtime-check/lib/node_modules/@vscode/ripgrep-android-x64/bin/rg ;;
+          esac
+          if find runtime-check -type f -path '*@vscode/ripgrep-linux-*/*/rg' -print -quit | grep -q .; then
+            echo "Linux ripgrep leaked into Android runtime" >&2
+            exit 1
+          fi
+          grep -q 'android-js-fallback' runtime-check/lib/node_modules/node-addon-require-builtin/index.js
+          grep -q 'isAndroidUnsyncableLevel' runtime-check/lib/node_modules/@deepseek-ai/dsh-attachment-local/lib/index.js
+          grep -q 'rename as link' runtime-check/lib/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
+          grep -q 'dsh-android' runtime-check/lib/node_modules/@deepseek-ai/node-addon-system/lib/flock.js
+          grep -q 'dsh_pty_exec' runtime-check/lib/node_modules/node-pty/lib/index.js
+          grep -q 'platform === "linux" || platform === "android"' runtime-check/lib/node_modules/@deepseek-ai/dsh-subprocess-local/lib/runner-launch-*.js
+          grep -q 'legacy-webview polyfill' runtime-check/lib/node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: upstream-runtime-${{ matrix.abi }}
+          path: runtime.zip
+          retention-days: 3
+
+  build-debug:
+    needs: collect
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+          - abi: x86_64
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: upstream-runtime-${{ matrix.abi }}
+          path: app/src/main/assets
+      - name: Pin staged runtime ABI
+        run: printf '%s\n' '${{ matrix.abi }}' > app/src/main/assets/runtime/.abi
+      - name: Update staged manifest
+        run: |
+          SHA=$(sha256sum app/src/main/assets/runtime.zip | cut -d' ' -f1)
+          jq --arg sha "$SHA" --arg ver "upstream-${{ inputs.dsh_version }}-${{ matrix.abi }}" \
+            '.version=$ver | .sha256=$sha' app/src/main/assets/runtime/MANIFEST.json > /tmp/m.json
+          mv /tmp/m.json app/src/main/assets/runtime/MANIFEST.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Build staged debug APK
+        run: |
+          set -o pipefail
+          gradle -p . assembleDebug -Pabi=${{ matrix.abi }} --stacktrace 2>&1 | tee staged-${{ matrix.abi }}.log
+      - name: Verify staged APK ABI
+        run: python3 scripts/verify-runtime-abi.py app/build/outputs/apk/debug/app-debug.apk "${{ matrix.abi }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: upstream-debug-apk-${{ matrix.abi }}
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            staged-${{ matrix.abi }}.log
+          retention-days: 3
