@@ -1071,3 +1071,31 @@ node-pty package marker、拒绝 shim 残留），并核对 APK 内 `assets/runt
 - 迁移期临时 workflow `upstream-staging.yml` 与 `_upstream-0.2.1-staging/` 目录为验证用，
   正式发布后应移除（避免长期保留入口与 ~1.3GB 中间产物）。
 - 用户设备 CPU 满核、工作区选择失效等仍未复现的问题，继续按 issue 收集现场证据。
+
+## 2026-10-19 v1.4.0-beta.1 试发行（上游 dsh 0.2.1-rc.2）
+
+### 为什么先出 beta（用户要求）
+用户要求「搞个试发型版 1.4.0beta」——0.2.1 是引擎换代，先小范围试跑再发稳定版。
+
+### 关键机制：beta 不会推给稳定用户
+`UpdateChecker.kt` 明确跳过 draft 与 prerelease（注释：那些不是给用户装的稳定包），
+因此把 Release 标为 prerelease 即可让稳定版用户完全不受影响。
+用 App 的真实版本比较逻辑实测（`parseVersion` + `compare`，丢弃 `-beta.1` 后缀）：
+- 稳定用户看到的最新版仍是 **v1.3.3**（未把 beta 当成更新）；
+- 1.3.3 用户 → 无更新提示；已装 beta 的用户 → 也无更新提示（版本号相等）。
+
+### ⚠️ 发现并修复一处「主分支未合并」的遗漏（用户指出的问题）
+用户反馈「主分支好像没有合并」。核实为：**`MainActivity.kt` 的状态栏插件恢复提示在 v1.3.3 提交时被漏掉**——
+当时 `git add` 清单未包含该文件，导致线上 v1.3.3 与首个 1.4.0 包**通知栏**会提示已停用插件、
+但**应用内状态栏**不会显示。已补提交（`d2ca69d`）并推送，主分支现在包含该改动；
+beta 包构建于该文件修改之后，经 dex/arsc 校验确认已包含 `status_plugin_recovered` 与 `recoveredPlugin`。
+
+### 发布形态
+- **tag `v1.4.0-beta.1`**（release id `416878787`，`prerelease=true`）
+- `dsh-mobile-v1.4.0-beta.1-arm64-v8a.apk`（asset `655151740`，235,652,373B）
+- `dsh-mobile-v1.4.0-beta.1-arm64-v8a-debug.apk`（asset `655153393`，237,248,183B）
+- versionName `1.4.0-beta.1`、versionCode 246；包内 `dsh 0.2.1-rc.2` + arm64 node（e_machine=183）
+- 曾创建的空 `v1.4.0` Release 与 tag 已删除，把 `v1.4.0` 名字留给将来的正式版。
+
+### 发布说明要点（RELEASE_NOTES_v1.4.0.md）
+开头明确标注「这是测试版」：App 内检查更新不会推送本版、想退回稳定版可直接装 v1.3.3 覆盖、报问题请附设备型号与现象。
