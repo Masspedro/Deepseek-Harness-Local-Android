@@ -716,14 +716,16 @@ class MainActivity : Activity() {
                     urlLoaded = true
                     loadLocalUrl((application as DshApp).supervisor.webUrl())
                 }
-                getString(R.string.status_healthy)
+                state.recoveredPlugin?.let { getString(R.string.status_plugin_recovered, it) }
+                    ?: getString(R.string.status_healthy)
             }
             is EngineSupervisor.State.SafeMode -> {
                 if (!urlLoaded) {
                     urlLoaded = true
                     loadLocalUrl((application as DshApp).supervisor.webUrl())
                 }
-                getString(R.string.status_safe_mode)
+                state.recoveredPlugin?.let { getString(R.string.status_plugin_recovered, it) }
+                    ?: getString(R.string.status_safe_mode)
             }
             is EngineSupervisor.State.Backoff ->
                 getString(R.string.status_backoff, state.delayMs / 1000, state.attempt)
