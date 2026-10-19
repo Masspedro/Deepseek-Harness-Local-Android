@@ -33,53 +33,185 @@ jobs:
           chmod +x scripts/collect-termux-runtime.sh
           ./scripts/collect-termux-runtime.sh runtime.zip "${{ matrix.termux_arch }}"
       - name: Verify runtime closure, ABI, and Android patch markers
+        env:
+          EXPECT_ABI: ${{ matrix.abi }}
+          TERMUX_ARCH: ${{ matrix.termux_arch }}
         run: |
-          python3 scripts/verify-runtime-abi.py runtime.zip "${{ matrix.abi }}"
+          set -euo pipefail
+          python3 scripts/verify-runtime-abi.py runtime.zip "$EXPECT_ABI"
           rm -rf runtime-check && mkdir runtime-check
           unzip -q runtime.zip -d runtime-check
-          test -x runtime-check/bin/node
-          test -x runtime-check/bin/bash
-          test -x runtime-check/bin/rg
-          test -x runtime-check/bin/pnpm
-          test -x runtime-check/bin/curl
-          test -e runtime-check/lib/libreadline.so.8
-          test -e runtime-check/lib/libhistory.so.8
-          case "${{ matrix.termux_arch }}" in
-            aarch64) test -x runtime-check/lib/node_modules/@vscode/ripgrep-android-arm64/bin/rg ;;
-            x86_64) test -x runtime-check/lib/node_modules/@vscode/ripgrep-android-x64/bin/rg ;;
-          esac
-          if find runtime-check -type f -path '*@vscode/ripgrep-linux-*/*/rg' -print -quit | grep -q .; then
-            echo "Linux ripgrep leaked into Android runtime" >&2
-            exit 1
-          fi
-          check_marker() {
-            label="$1"; pattern="$2"; shift 2
-            files=("$@")
-            if [ "${#files[@]}" -eq 0 ]; then
-              echo "MARKER $label: MISSING_FILE"
-              return 1
-            fi
-            if grep -q "$pattern" "${files[0]}"; then
-              echo "MARKER $label: OK path=${files[0]}"
-              return 0
-            fi
-            echo "MARKER $label: MISSING_TEXT path=${files[0]}"
-            return 1
-          }
-          NRB=$(find runtime-check/lib/node_modules -path '*/node-addon-require-builtin/index.js' -print -quit)
-          check_marker require-builtin android-js-fallback "$NRB"
-          ATT=$(find runtime-check/lib/node_modules -path '*/dsh-attachment-local/lib/index.js' -print -quit)
-          check_marker attachment isAndroidUnsyncableLevel "$ATT"
-          SES=$(find runtime-check/lib/node_modules -path '*/dsh-session-persistence-jsonl/lib/index.js' -print -quit)
-          check_marker session-rename 'rename as link' "$SES"
-          FLOCK=$(find runtime-check/lib/node_modules -path '*/node-addon-system/lib/flock.js' -print -quit)
-          check_marker flock dsh-android "$FLOCK"
-          PTY=$(find runtime-check/lib/node_modules -path '*/node-pty/lib/index.js' -print -quit)
-          check_marker node-pty dsh_pty_exec "$PTY"
-          RUNNER=$(find runtime-check/lib/node_modules -path '*/dsh-subprocess-local/lib/runner-launch-*.js' -print -quit)
-          check_marker subprocess-android 'platform === "linux" || platform === "android"' "$RUNNER"
-          FRONT=$(find runtime-check/lib/node_modules -path '*/dsh-web-frontend/dist/index.html' -print -quit)
-          check_marker webview-polyfill 'legacy-webview polyfill' "$FRONT"
+          python3 - <<'PY'
+          import glob
+          import os
+          import sys
+
+          root = "runtime-check"
+          failures = []
+          checked = 0
+
+          def record(label, problem):
+              failures.append(f"{label}: {problem}")
+
+          def check_exec(rel):
+              global checked
+              checked += 1
+              path = os.path.join(root, rel)
+              if not os.path.isfile(path):
+                  record("EXEC", f"MISSING_FILE {rel}")
+              elif not os.access(path, os.X_OK):
+                  record("EXEC", f"NOT_EXECUTABLE {rel}")
+              else:
+                  print(f"OK exec {rel}")
+
+          def check_file(rel):
+              global checked
+              checked += 1
+              path = os.path.join(root, rel)
+              if not os.path.isfile(path):
+                  record("FILE", f"MISSING_FILE {rel}")
+              else:
+                  print(f"OK file {rel}")
+
+          def check_marker(label, pattern, marker):
+              """Each glob must resolve to at least one file; every match must carry marker."""
+              global checked
+              checked += 1
+              matches = sorted(glob.glob(os.path.join(root, "**", pattern), recursive=True))
+              if not matches:
+                  record(f"MARKER {label}", f"MISSING_PATH pattern={pattern}")
+                  return
+              bad = []
+              for path in matches:
+                  try:
+                      with open(path, encoding="utf-8", errors="replace") as handle:
+                          text = handle.read()
+                  except OSError as error:
+                      bad.append(f"READ_ERROR {path}: {error}")
+                      continue
+                  if marker not in text:
+                      bad.append(f"MISSING_TEXT marker={marker!r} path={path}")
+              if bad:
+                  for problem in bad:
+                      record(f"MARKER {label}", problem)
+              else:
+                  print(f"OK marker {label}: {marker!r} -> {matches[0]}")
+
+          def check_absent(label, pattern, needle):
+              global checked
+              checked += 1
+              matches = sorted(glob.glob(os.path.join(root, "**", pattern), recursive=True))
+              if not matches:
+                  record(f"ABSENT {label}", f"MISSING_PATH pattern={pattern}")
+                  return
+              bad = []
+              for path in matches:
+                  try:
+                      with open(path, encoding="utf-8", errors="replace") as handle:
+                          text = handle.read()
+                  except OSError as error:
+                      bad.append(f"READ_ERROR {path}: {error}")
+                      continue
+                  if needle in text:
+                      bad.append(f"UNEXPECTED_TEXT {needle!r} path={path}")
+              if bad:
+                  for problem in bad:
+                      record(f"ABSENT {label}", problem)
+              else:
+                  print(f"OK absent {label}: {needle!r}")
+
+          # 1) Command closure and SONAME aliases (Android linker matches NEEDED literally).
+          for rel in ("bin/node", "bin/bash", "bin/rg", "bin/pnpm", "bin/curl"):
+              check_exec(rel)
+          for rel in (
+              "lib/libreadline.so.8",
+              "lib/libhistory.so.8",
+              "lib/libncursesw.so.6",
+              "lib/libncurses.so.6",
+              "lib/libiconv.so",
+              "lib/libpcre2-8.so",
+          ):
+              check_file(rel)
+          check_file("usr/bin/.keep")
+
+          # 2) Android ripgrep must exist; host Linux ripgrep must not leak in.
+          node_arch = {"aarch64": "arm64", "x86_64": "x64"}.get(os.environ["TERMUX_ARCH"])
+          if node_arch is None:
+              record("RIPGREP", f"unknown TERMUX_ARCH {os.environ['TERMUX_ARCH']!r}")
+          else:
+              check_exec(f"lib/node_modules/@vscode/ripgrep-android-{node_arch}/bin/rg")
+          linux_rg = []
+          for dirpath, dirnames, filenames in os.walk(root):
+              if os.path.basename(dirpath).startswith("ripgrep-linux-"):
+                  linux_rg.append(dirpath)
+          checked += 1
+          if linux_rg:
+              record("LINUX_RIPGREP", "leaked into Android runtime: " + ", ".join(sorted(linux_rg)))
+          else:
+              print("OK no Linux ripgrep")
+
+          # 3) Every Android patch must leave its marker. A missing glob is a hard failure;
+          #    no grep-from-stdin path can turn an empty find into a false positive.
+          check_marker(
+              "node-addon-require-builtin",
+              "**/node-addon-require-builtin/lib/index.js",
+              "android-js-fallback",
+          )
+          check_marker(
+              "attachment-local",
+              "dsh-attachment-local/lib/index.js",
+              "isAndroidUnsyncableLevel",
+          )
+          check_marker(
+              "attachment-local-link-shim",
+              "dsh-attachment-local/lib/index.js",
+              "COPYFILE_EXCL",
+          )
+          check_marker(
+              "session-persistence-rename",
+              "dsh-session-persistence-jsonl/lib/index.js",
+              "rename as link",
+          )
+          check_marker("flock", "node-addon-system/lib/flock.js", "dsh-android")
+          check_marker("node-pty-implementation", "node-pty/lib/index.js", "dsh_pty_exec")
+          check_marker(
+              "node-pty-package-marker",
+              "node-pty/package.json",
+              "0.0.0-android-ptyexec",
+          )
+          check_absent(
+              "node-pty-shim",
+              "node-pty/lib/index.js",
+              "node-pty unavailable in this Android build",
+          )
+          check_marker(
+              "subprocess-runner-android",
+              "dsh-subprocess-local/lib/runner-launch-*.js",
+              'platform === "linux" || platform === "android"',
+          )
+          check_marker(
+              "subprocess-activity-android",
+              "dsh-subprocess-local/lib/index.js",
+              '(this.platform === "linux" || this.platform === "android") && observed.complete === true',
+          )
+          check_marker(
+              "webview-polyfill",
+              "dsh-web-frontend/dist/index.html",
+              "legacy-webview polyfill",
+          )
+
+          if failures:
+              print("", file=sys.stderr)
+              print(
+                  f"STAGING VALIDATION FAILED: {len(failures)} problem(s) "
+                  f"across {checked} check(s)",
+                  file=sys.stderr,
+              )
+              for failure in failures:
+                  print(f"  - {failure}", file=sys.stderr)
+              sys.exit(1)
+          print(f"STAGING VALIDATION PASSED: {checked} checks")
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: upstream-runtime-${{ matrix.abi }}
