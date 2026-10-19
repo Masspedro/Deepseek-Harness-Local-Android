@@ -9,7 +9,7 @@
 > 🌐 [English](README_EN.md) · [Deutsch](README.de.md)
 
 [![CI](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml)
-![Release](https://img.shields.io/badge/release-v1.3.3-blue)
+![Release](https://img.shields.io/badge/release-v1.4.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-green)
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 
@@ -21,7 +21,7 @@
 
 DSH Mobile 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DeepSeek 开源的 Agent 框架）的 **Android 完整移植**。完整的 Node.js Agent 引擎运行在应用沙箱内，监听 `127.0.0.1` 回环——会话、凭证、工作区**全部留在手机上**，装完即用；是否有模型请求出设备，取决于你配置的模型服务地址。
 
-**这是**：官方 dsh 引擎（锁定 `0.2.0-rc.2`）+ 自建 Android 运行环境。插件体系、WebUI、工具调用链全部来自上游，本项目负责运行层：bionic 版 Node.js 运行时、前台服务保活、三级权限、扩展中心。**桌面上 dsh 能做的事，这里都能做。**
+**这是**：官方 dsh 引擎（锁定 `0.2.1-rc.2`）+ 自建 Android 运行环境。插件体系、WebUI、工具调用链全部来自上游，本项目负责运行层：bionic 版 Node.js 运行时、前台服务保活、三级权限、扩展中心。**桌面上 dsh 能做的事，这里都能做。**
 
 **这不是**：不是自研 Agent 框架，不是端侧大模型 App（模型走你配置的 API），不是手机自动化 Agent（读屏点击是交给 AI 的工具之一），**也不是 proot / Ubuntu 容器方案**——不套 Linux 容器、不装发行版 rootfs，Node.js 运行时与整套工具链都以 Android 原生（bionic）二进制直接打进 APK，装完即用。
 
@@ -60,7 +60,7 @@ DSH Mobile 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harnes
 
 ### 🖥️ 完整 Agent 任务执行：不是只能聊天的壳
 
-官方 dsh 引擎（锁定 `0.2.0-rc.2`）连同 Node.js 运行时和工具链完整运行在 Android 应用沙箱里。Agent 可以在手机上执行真实的文件、命令与项目工作流；会话、凭证和工作区留在设备本地，手机本身就是一台可随身携带的 Agent 工作站。
+官方 dsh 引擎（锁定 `0.2.1-rc.2`）连同 Node.js 运行时和工具链完整运行在 Android 应用沙箱里。Agent 可以在手机上执行真实的文件、命令与项目工作流；会话、凭证和工作区留在设备本地，手机本身就是一台可随身携带的 Agent 工作站。
 
 **即时预览成果**：Agent 起本地 HTTP 服务，返回 `http://127.0.0.1:端口` 链接，点开就是手机里生成的页面或服务，不用把项目搬回电脑才能验收。
 
@@ -178,7 +178,7 @@ specialUse 前台服务 + 指数退避监督器扛住系统回收，长任务锁
 
 ## 📦 安装
 
-**下载 Release（推荐）**：前往 [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) 下载 APK（手机选 `arm64-v8a`，最新版 **v1.3.3**），允许安装未知来源应用后安装。
+**下载 Release（推荐）**：前往 [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) 下载 APK（手机选 `arm64-v8a`，最新版 **v1.4.0**），允许安装未知来源应用后安装。
 
 > 📦 **Release 里有多种包，怎么选**：普通用户下 **`dsh-mobile-*-arm64-v8a.apk`**（正式签名）；
 > 文件名带 **`-debug`** 的是调试签名版，供抓日志调试、或之前就装 debug 渠道的用户继续升级用；
