@@ -1,7 +1,7 @@
 {
-  "version": "v1.3.1-arm64-pty",
+  "version": "v1.4.0-arm64-dsh0.2.1",
   "url": "",
-  "sha256": "c0235a6c541ea8dae7e0f40ebcb15f6b2afab8994694a74bed060ede47f41ec9",
+  "sha256": "fbd759dc9c8e94f2f0323b0d2b016f6cb2b7410bf80e76e1a6f6cde781627603",
   "_\u8bf4\u660e": {
     "version": "v1.2.102-x86_64",
     "url": "\u8fdc\u7a0b runtime.zip \u4e0b\u8f7d\u5730\u5740\uff08assets \u5185\u7f6e\u5305\u7f3a\u5931\u65f6\u542f\u7528\uff09\uff1b\u7559\u7a7a\u8868\u793a\u4ec5\u652f\u6301\u5185\u7f6e\u5305",

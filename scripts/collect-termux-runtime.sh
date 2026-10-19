@@ -98,7 +98,7 @@ rm -rf "$ROOT/data"
 # fs/promises import 多了 lstat；sandbox-local 的 landlock import 已被上游移除
 # （补丁正则自然 no-op）；fs-local 的 linkFile 调用、web-frontend 的 polyfill
 # 锚点均未变；koffi/node-pty 改为存在才打桩。
-DSH_VERSION="${DSH_VERSION:-0.2.0-rc.2}"
+DSH_VERSION="${DSH_VERSION:-0.2.1-rc.2}"
 mkdir -p "$WORK/bundle" && cd "$WORK/bundle"
 printf '{"name":"dsh-runtime","private":true,"dependencies":{"@deepseek-ai/dsh":"%s"}}' \
   "$DSH_VERSION" > package.json

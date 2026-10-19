@@ -1021,3 +1021,53 @@ CI `i18n-check` 失败（23 条）。项目门禁（`scripts/check-i18n.py`）�
   （commit `687f282e`，2026-10-17）。本项目 runtime 仍锁定 `@deepseek-ai/dsh 0.2.0-rc.2`，
   因为 Android 运行时有多处针对 0.2.0-rc.2 的 bionic/Termux/PTY/native 补丁；
   0.2.1 适配不与本次修复混发，待单独做依赖差异审查、补丁迁移、双架构构建与真机验证。
+
+## 2026-10-19 上游 dsh 0.2.1-rc.2 适配完成（v1.4.0，versionCode 246）
+
+### 上游差异（已用源码/包级比对确认，非猜测）
+- 上游 tag `dsh-v0.2.1-rc.2`（commit `687f282e`，2026-10-17），npm 发布时间 2026-09-29 → 2026-10-17 之间 1925 个 commit。
+- 全部 `@deepseek-ai/dsh-*` lockstep 升 0.2.0-rc.2 → 0.2.1-rc.2；`node-addon-system` 仍 0.1.2；
+  `node-addon-require-builtin` ^0.1.6 → ^0.1.9；node-pty 仍 1.2.0-beta.15（上游 patch hash 变化，本仓已整体替换为 Android 实现，不受影响）；
+  cordis ~4.0.4 → ~4.0.5。
+- 结构性变化：`dsh-host-directory-picker-auto` 的 `inject` 从 `[webServer, loader]` 变为 `[webServer, connection, loader]`
+  并读取 `ctx.connection.allowsRemoteAuthorities`；`dsh-subprocess-local` 新增 `linux-scope-selector.ts`（Linux scope 重构）；
+  `dsh-app-boot` 新增 profile resolution 解析层与 **Node internal loader 能力校验**；
+  `dsh-session-persistence-jsonl` 新增 `p-limit` listing 并发限制；`dsh-client-hmr` / `dsh-storage-domain` 源码文件有增删。
+
+### 迁移结论：13 个 Android 补丁锚点全部存活
+用 CI Linux runner 隔离 staging（`DSH_VERSION=0.2.1-rc.2`，双架构）逐条验证：
+koffi inert、node-pty Android 实现、subprocess-local 两个 android 锚点、flock 兼容层、
+attachment-local（import + link shim）、session-persistence rename、
+jsonl worker.cjs link shim、sandbox-local 外科手术、fs-local rename、
+ripgrep Android 平台包、curl/corepack wrapper、Termux shebang/SONAME、架构硬断言 —— 全部命中。
+新增 `.github/workflows/upstream-staging.yml`（仅 workflow_dispatch）作为迁移期验证入口，
+校验项 28 条（ABI、命令闭包、SONAME、Android ripgrep、拒绝 Linux ripgrep、各补丁 marker、
+node-pty package marker、拒绝 shim 残留），并核对 APK 内 `assets/runtime.zip` 与 staged sha256 一致。
+`scripts/patch-node-pty-android.py` 改为 fail-fast（缺目录/缺包/锚点未命中 → 非零退出），
+并修复 zip 模式新条目未写回的潜在 bug。
+
+### 行为验证（真实设备，非静态推断）
+- **x86_64 模拟器（Android 16）**：装 staged 0.2.1 debug 包 → 引擎 `engine healthy on :3080`，
+  plugin-health marker `ok=true, missingServices=[], failedEntries=[]`；
+  终端真实链路全 PASS（`defaultShell` → 自带 bash、`resolveExecutable`、`spawnTerminal` pid 正常、
+  PTY 内执行命令 `tty=/dev/pts/2`）；关闭回收 `terminate OK`（2.3s，无残留）。
+- **arm64 真机（OnePlus PLZ110 / Android 16）**：0.2.1 新增的 Node internal loader 能力校验
+  （`getOrInitializeCascadedLoader`/`resolveSync`/`getModuleJobForImport`/`_resolveFilename`/
+  `getCjsConditions`/`getDefaultConditions`/`defaultResolve`）在候选 runtime 自带的 node 上
+  **RESULT: OK**（用真机临时目录只读验证，未影响现有安装，验证后已清理 /data/local/tmp/dsh-probe*）。
+- **真机覆盖安装 v1.4.0**：`pm install -r` 成功（versionCode 246），引擎启动，
+  marker `ok=true, missingServices=[], failedEntries=[]`，`.runtime-version = v1.4.0-arm64-dsh0.2.1`。
+
+### 发布形态
+- 正式 runtime 已替换为 0.2.1-rc.2（arm64 + x86_64 双备份入 `_runtime_bak/`），
+  `collect-termux-runtime.sh` 默认 `DSH_VERSION` 同步改为 `0.2.1-rc.2`。
+- 版本：versionName **1.4.0**、versionCode **246**（minor 升级，与「引擎换代」风险等级相称）。
+- 本地产物：`dist/v1.4.0/dsh-mobile-v1.4.0-arm64-v8a.apk`（235,652,373B，含 dsh 0.2.1-rc.2 + arm64 node）。
+
+### 遗留/风险
+- `directory-picker-auto` 的 `inject` 在 Android overlay 中仍写 `[webServer, loader]`；
+  cordis 语义为「entry inject 追加到插件自身 inject」，故 `connection` 不会被覆盖（marker 已证明服务激活），
+  但为语义清晰建议后续把 `connection` 补进 overlay 行。
+- 迁移期临时 workflow `upstream-staging.yml` 与 `_upstream-0.2.1-staging/` 目录为验证用，
+  正式发布后应移除（避免长期保留入口与 ~1.3GB 中间产物）。
+- 用户设备 CPU 满核、工作区选择失效等仍未复现的问题，继续按 issue 收集现场证据。

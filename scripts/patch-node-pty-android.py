@@ -26,8 +26,12 @@
     python scripts/patch-node-pty-android.py <runtime 根目录|runtime.zip> [更多...]
     python scripts/patch-node-pty-android.py <runtime.zip> --backup-dir _runtime_bak
 
-幂等：按 node-pty/package.json 的 version 标记判断，已打过则跳过。
-未识别任何目标 → 非零退出（CI fail-fast：漏打补丁 = 终端对用户不可用）。
+幂等：按 node-pty/package.json 的 version 标记 + 补丁后的 JS 内容判断。
+以下任一情况都会**非零退出**，不再 WARN 后假装成功（漏打补丁 = 终端对用户不可用）：
+  · subprocess-local 包/目录/文件缺失；
+  · 两个 Android 锚点任一未命中（上游重构导致形态变化）；
+  · node-pty 包缺失，或实现文件无法写入；
+  · zip 模式中同样的任一目标缺失。
 """
 import json
 import os
@@ -292,6 +296,9 @@ module.exports.default = module.exports;
 # ---------------------------------------------------------------------------
 # JS 补丁：让探测/活动判定接受 android（procfs 语义与 linux 相同）
 # ---------------------------------------------------------------------------
+# 0.2.1-rc.2 已核验：runner-launch 的探测器锚点与 0.2.0 完全相同；
+# index.js 的活动判定前面新增了 this.exited / managedOwner / root 条件，
+# 但下面这个子串仍然唯一命中，替换后 android 走与 linux 相同的 procfs 判定。
 PATCHES = [
     (
         "@deepseek-ai/dsh-subprocess-local/lib/runner-launch",
@@ -308,8 +315,18 @@ PATCHES = [
 ]
 
 
+class PatchError(Exception):
+    """必需的包/文件/锚点缺失 —— 绝不能 WARN 后返回成功。"""
+
+
 def log(msg):
     print(msg, flush=True)
+
+
+def _failure_report(failures):
+    lines = ["patch-node-pty-android: refusing to report success:"]
+    lines.extend(f"  - {item}" for item in failures)
+    return "\n".join(lines)
 
 
 def patch_js(text, old, new):
@@ -321,119 +338,226 @@ def patch_js(text, old, new):
 
 
 def patch_dir(root):
-    """在已解压的 runtime 目录上打补丁。返回改动条数。"""
+    """在已解压的 runtime 目录上打补丁。返回改动条数。
+
+    先校验所有必需目标与锚点，再统一落盘 —— 任一项缺失都抛 PatchError，
+    不会留下"打了一半"的 runtime。
+    """
     nm = os.path.join(root, "lib", "node_modules")
-    changed = 0
+    failures = []
+    writes = []  # (path, new_text, label)
 
     # 1) 探测器 / 活动判定
     for rel, old, new, why in PATCHES:
         target_dir = os.path.join(nm, os.path.dirname(rel))
         if not os.path.isdir(target_dir):
-            log(f"WARN: 目录缺失 {target_dir}（跳过：{why}）")
+            failures.append(f"missing directory {target_dir} (target {rel}; {why})")
             continue
         base = os.path.basename(rel)
-        hit = False
-        for name in sorted(os.listdir(target_dir)):
-            if not (name.startswith(base) and name.endswith(".js")):
-                continue
+        names = sorted(
+            name
+            for name in os.listdir(target_dir)
+            if name.startswith(base) and name.endswith(".js")
+        )
+        if not names:
+            failures.append(f"no {base}*.js under {target_dir} (target {rel}; {why})")
+            continue
+        for name in names:
             p = os.path.join(target_dir, name)
-            with open(p, encoding="utf-8") as f:
-                text = f.read()
+            try:
+                with open(p, encoding="utf-8") as f:
+                    text = f.read()
+            except (OSError, UnicodeDecodeError) as error:
+                failures.append(f"cannot read {p}: {error}")
+                continue
             out, state = patch_js(text, old, new)
             if state == "patched":
-                with open(p, "w", encoding="utf-8", newline="\n") as f:
-                    f.write(out)
-                log(f"  patched {rel}{name[len(base):]}: {why}")
-                changed += 1
-            hit = True
-        if not hit:
-            log(f"WARN: 未找到 {rel}*（跳过：{why}）")
+                writes.append((p, out, f"{rel}{name[len(base):]}: {why}"))
+            elif state == "already":
+                log(f"  already patched {rel}{name[len(base):]}: {why}")
+            else:
+                failures.append(
+                    f"anchor not found in {p} (target {rel}; expected {old!r}); "
+                    "upstream shape changed?"
+                )
 
     # 2) node-pty 真实实现
     pkg_dir = os.path.join(nm, "node-pty")
-    if os.path.isdir(pkg_dir):
-        lib_dir = os.path.join(pkg_dir, "lib")
-        os.makedirs(lib_dir, exist_ok=True)
-        impl = os.path.join(lib_dir, "index.js")
+    impl = os.path.join(pkg_dir, "lib", "index.js")
+    pkg_json = os.path.join(pkg_dir, "package.json")
+    pty_write = None
+    if not os.path.isdir(pkg_dir):
+        failures.append(f"node-pty package missing at {pkg_dir} (terminal PTY backend)")
+    else:
         cur = ""
         if os.path.isfile(impl):
             with open(impl, encoding="utf-8") as f:
                 cur = f.read()
-        if cur == NODE_PTY_IMPL:
-            log("  node-pty: 已是当前 Android 实现，跳过")
+        impl_ok = cur == NODE_PTY_IMPL
+        pkg_ok = False
+        if os.path.isfile(pkg_json):
+            try:
+                with open(pkg_json, encoding="utf-8") as f:
+                    meta = json.load(f)
+                pkg_ok = (
+                    meta.get("version") == MARKER_VERSION
+                    and meta.get("main") == "lib/index.js"
+                )
+            except (OSError, ValueError):
+                pkg_ok = False
+        if impl_ok and pkg_ok:
+            log("  node-pty: already current Android implementation, skipped")
         else:
-            with open(impl, "w", encoding="utf-8", newline="\n") as f:
+            # 包目录存在即可修复（例如上游只缺 lib/index.js 或 package.json），
+            # 只有整个包缺失才是硬失败。
+            pty_write = (impl, pkg_json, not impl_ok, not pkg_ok)
+
+    if failures:
+        raise PatchError(_failure_report(failures))
+
+    changed = 0
+    for p, out, label in writes:
+        with open(p, "w", encoding="utf-8", newline="\n") as f:
+            f.write(out)
+        log(f"  patched {label}")
+        changed += 1
+
+    if pty_write is not None:
+        impl_path, pkg_path, write_impl, write_pkg = pty_write
+        os.makedirs(os.path.dirname(impl_path), exist_ok=True)
+        if write_impl:
+            with open(impl_path, "w", encoding="utf-8", newline="\n") as f:
                 f.write(NODE_PTY_IMPL)
-            with open(
-                os.path.join(pkg_dir, "package.json"), "w", encoding="utf-8", newline="\n"
-            ) as f:
+        if write_pkg:
+            with open(pkg_path, "w", encoding="utf-8", newline="\n") as f:
                 json.dump(
                     {"name": "node-pty", "version": MARKER_VERSION, "main": "lib/index.js"},
                     f,
                     separators=(",", ":"),
                 )
                 f.write("\n")
-            log("  node-pty: 写入 Android PTY 实现（转发 dsh_pty_exec）")
-            changed += 1
-    else:
-        log("WARN: node-pty 不在依赖树中（跳过：终端 PTY 后端）")
+        log("  node-pty: wrote Android PTY implementation (forwards dsh_pty_exec)")
+        changed += 1
 
     return changed
 
 
+def _zip_rel(name):
+    """zip 内条目名归一（Info-ZIP 可能带 "./" 前缀）。"""
+    return name[2:] if name.startswith("./") else name
+
+
+def _zip_find(names, target):
+    for name in names:
+        if _zip_rel(name) == target:
+            return name
+    return None
+
+
 def patch_zip(zip_path, backup_dir=None):
-    """在 runtime.zip 上原地打补丁（保持压缩级别与顺序）。"""
+    """在 runtime.zip 上原地打补丁（保持压缩级别与顺序）。
+
+    与目录模式同样严格：任一必需的 subprocess-local 锚点或 node-pty 目标缺失都
+    抛 PatchError，且在全部校验通过前不写回 zip。
+    """
     with zipfile.ZipFile(zip_path) as z:
-        names = z.namelist()
         infos = {i.filename: i for i in z.infolist()}
+        names = list(infos)
         blobs = {n: z.read(n) for n in names}
 
+    entry_prefix = "./" if any(n.startswith("./") for n in names) else ""
     nm = "lib/node_modules/"
-    changed = 0
+    failures = []
+    pending = {}  # original/new entry name -> bytes
+    new_entries = []
+    patched_logs = []  # (entry, reason) — logged only after all anchors validated
 
-    def patch_entry(rel, old, new, why):
-        nonlocal changed
-        matches = [n for n in names if n.startswith(nm + rel) and n.endswith(".js")]
+    def add_entry(target, data):
+        existing = _zip_find(names, target)
+        if existing is None:
+            existing = entry_prefix + target
+            infos[existing] = zipfile.ZipInfo(existing)
+            new_entries.append(existing)
+        pending[existing] = data
+
+    # 1) 探测器 / 活动判定
+    for rel, old, new, why in PATCHES:
+        matches = [
+            n for n in names if _zip_rel(n).startswith(nm + rel) and _zip_rel(n).endswith(".js")
+        ]
         if not matches:
-            log(f"WARN: 未找到 {rel}*（跳过：{why}）")
-            return
+            failures.append(f"no {nm}{rel}*.js in {zip_path} (target {rel}; {why})")
+            continue
         for n in matches:
-            text = blobs[n].decode("utf-8")
+            try:
+                text = blobs[n].decode("utf-8")
+            except UnicodeDecodeError as error:
+                failures.append(f"cannot decode {n} as UTF-8: {error}")
+                continue
             out, state = patch_js(text, old, new)
             if state == "patched":
-                blobs[n] = out.encode("utf-8")
-                log(f"  patched {n}: {why}")
-                changed += 1
-
-    for rel, old, new, why in PATCHES:
-        patch_entry(rel, old, new, why)
-
-    pkg = nm + "node-pty/"
-    impl_name = pkg + "lib/index.js"
-    pkg_json = pkg + "package.json"
-    if any(n.startswith(pkg) for n in names):
-        cur = blobs.get(impl_name, b"").decode("utf-8", errors="replace")
-        if cur == NODE_PTY_IMPL:
-            log("  node-pty: 已是当前 Android 实现，跳过")
-        else:
-            blobs[impl_name] = NODE_PTY_IMPL.encode("utf-8")
-            blobs[pkg_json] = (
-                json.dumps(
-                    {"name": "node-pty", "version": MARKER_VERSION, "main": "lib/index.js"},
-                    separators=(",", ":"),
+                pending[n] = out.encode("utf-8")
+                patched_logs.append((n, why))
+            elif state == "already":
+                log(f"  already patched {n}: {why}")
+            else:
+                failures.append(
+                    f"anchor not found in {n} (target {rel}; expected {old!r}); "
+                    "upstream shape changed?"
                 )
-                + "\n"
-            ).encode("utf-8")
-            if impl_name not in infos:
-                infos[impl_name] = zipfile.ZipInfo(impl_name)
-            if pkg_json not in infos:
-                infos[pkg_json] = zipfile.ZipInfo(pkg_json)
-            log("  node-pty: 写入 Android PTY 实现（转发 dsh_pty_exec）")
-            changed += 1
-    else:
-        log("WARN: node-pty 不在依赖树中（跳过：终端 PTY 后端）")
 
-    if changed == 0:
+    # 2) node-pty 真实实现
+    pkg_prefix = nm + "node-pty/"
+    pkg_entries = [n for n in names if _zip_rel(n).startswith(pkg_prefix)]
+    impl_name = _zip_find(names, pkg_prefix + "lib/index.js")
+    pkg_json = _zip_find(names, pkg_prefix + "package.json")
+    pty_pending = False
+    if not pkg_entries:
+        failures.append(f"node-pty package missing from {zip_path} (terminal PTY backend)")
+    else:
+        cur = blobs.get(impl_name, b"").decode("utf-8", errors="replace") if impl_name else ""
+        impl_ok = cur == NODE_PTY_IMPL
+        pkg_ok = False
+        if pkg_json is not None:
+            try:
+                meta = json.loads(blobs[pkg_json].decode("utf-8"))
+                pkg_ok = (
+                    meta.get("version") == MARKER_VERSION
+                    and meta.get("main") == "lib/index.js"
+                )
+            except (UnicodeDecodeError, ValueError):
+                pkg_ok = False
+        if impl_ok and pkg_ok:
+            log("  node-pty: already current Android implementation, skipped")
+        else:
+            if not impl_ok:
+                add_entry(pkg_prefix + "lib/index.js", NODE_PTY_IMPL.encode("utf-8"))
+            if not pkg_ok:
+                add_entry(
+                    pkg_prefix + "package.json",
+                    (
+                        json.dumps(
+                            {
+                                "name": "node-pty",
+                                "version": MARKER_VERSION,
+                                "main": "lib/index.js",
+                            },
+                            separators=(",", ":"),
+                        )
+                        + "\n"
+                    ).encode("utf-8"),
+                )
+            pty_pending = True
+
+    if failures:
+        raise PatchError(_failure_report(failures))
+
+    for entry, why in patched_logs:
+        log(f"  patched {entry}: {why}")
+    if pty_pending:
+        log("  node-pty: wrote Android PTY implementation (forwards dsh_pty_exec)")
+
+    if not pending:
         log("nothing to do (补丁已存在)")
         return 0
 
@@ -445,14 +569,17 @@ def patch_zip(zip_path, backup_dir=None):
             shutil.copy2(zip_path, dst)
             log(f"backup -> {dst}")
 
+    # 新条目必须追加到写入顺序里；旧实现只遍历 names，会丢掉新建的
+    # node-pty/lib/index.js（当上游包没有该文件时）。
+    ordered = names + new_entries
     tmp = zip_path + ".tmp"
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as out:
-        for n in names:
+        for n in ordered:
             info = infos[n]
             info.compress_type = zipfile.ZIP_DEFLATED
-            out.writestr(info, blobs[n])
+            out.writestr(info, pending[n] if n in pending else blobs[n])
     os.replace(tmp, zip_path)
-    log(f"patched {changed} file(s) -> {zip_path}")
+    log(f"patched {len(pending)} file(s) -> {zip_path}")
     return 0
 
 
@@ -480,10 +607,20 @@ def main(argv):
     for t in targets:
         log(f"== {t}")
         if os.path.isdir(t):
-            n = patch_dir(t)
+            try:
+                n = patch_dir(t)
+            except PatchError as error:
+                print(f"ERROR: {error}", file=sys.stderr, flush=True)
+                rc = 1
+                continue
             log(f"   {n} 处改动")
         elif os.path.isfile(t) and t.endswith(".zip"):
-            patch_zip(t, backup_dir)
+            try:
+                patch_zip(t, backup_dir)
+            except PatchError as error:
+                print(f"ERROR: {error}", file=sys.stderr, flush=True)
+                rc = 1
+                continue
         else:
             log(f"ERROR: 无法识别 {t}")
             rc = 1

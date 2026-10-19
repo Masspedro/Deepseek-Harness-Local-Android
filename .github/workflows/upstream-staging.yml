@@ -73,6 +73,25 @@ jobs:
               else:
                   print(f"OK file {rel}")
 
+          def check_elf_machine(rel, machine):
+              global checked
+              checked += 1
+              path = os.path.join(root, rel)
+              try:
+                  with open(path, "rb") as handle:
+                      header = handle.read(20)
+              except OSError as error:
+                  record("ELF", f"READ_ERROR {rel}: {error}")
+                  return
+              if len(header) < 20 or header[:4] != b"\x7fELF":
+                  record("ELF", f"NOT_ELF {rel}")
+                  return
+              actual = int.from_bytes(header[18:20], "little")
+              if actual != machine:
+                  record("ELF", f"WRONG_MACHINE {rel} actual={actual} expected={machine}")
+              else:
+                  print(f"OK ELF {rel} e_machine={actual}")
+
           def check_marker(label, pattern, marker):
               """Each glob must resolve to at least one file; every match must carry marker."""
               global checked
@@ -136,10 +155,21 @@ jobs:
 
           # 2) Android ripgrep must exist; host Linux ripgrep must not leak in.
           node_arch = {"aarch64": "arm64", "x86_64": "x64"}.get(os.environ["TERMUX_ARCH"])
-          if node_arch is None:
+          elf_machine = {"aarch64": 183, "x86_64": 62}.get(os.environ["TERMUX_ARCH"])
+          if node_arch is None or elf_machine is None:
               record("RIPGREP", f"unknown TERMUX_ARCH {os.environ['TERMUX_ARCH']!r}")
           else:
               check_exec(f"lib/node_modules/@vscode/ripgrep-android-{node_arch}/bin/rg")
+              # The resolver may pick bin/rg directly; both copies must be the
+              # target ELF, not a host Linux x86_64 binary that merely runs.
+              # bin/bash is checked too: an executable wrong-arch shell is the
+              # same class of failure as the v1.2.97 wrong-arch node incident.
+              check_elf_machine("bin/bash", elf_machine)
+              check_elf_machine("bin/rg", elf_machine)
+              check_elf_machine(
+                  f"lib/node_modules/@vscode/ripgrep-android-{node_arch}/bin/rg",
+                  elf_machine,
+              )
           linux_rg = []
           for dirpath, dirnames, filenames in os.walk(root):
               if os.path.basename(dirpath).startswith("ripgrep-linux-"):
@@ -154,7 +184,7 @@ jobs:
           #    no grep-from-stdin path can turn an empty find into a false positive.
           check_marker(
               "node-addon-require-builtin",
-              "**/node-addon-require-builtin/lib/index.js",
+              "node-addon-require-builtin/lib/index.js",
               "android-js-fallback",
           )
           check_marker(
@@ -216,6 +246,7 @@ jobs:
         with:
           name: upstream-runtime-${{ matrix.abi }}
           path: runtime.zip
+          if-no-files-found: error
           retention-days: 3
 
   build-debug:
@@ -241,6 +272,9 @@ jobs:
           jq --arg sha "$SHA" --arg ver "upstream-${{ inputs.dsh_version }}-${{ matrix.abi }}" \
             '.version=$ver | .sha256=$sha' app/src/main/assets/runtime/MANIFEST.json > /tmp/m.json
           mv /tmp/m.json app/src/main/assets/runtime/MANIFEST.json
+      - name: Record staged runtime checksum
+        id: staged
+        run: echo "sha256=$(sha256sum app/src/main/assets/runtime.zip | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -254,10 +288,32 @@ jobs:
           gradle -p . assembleDebug -Pabi=${{ matrix.abi }} --stacktrace 2>&1 | tee staged-${{ matrix.abi }}.log
       - name: Verify staged APK ABI
         run: python3 scripts/verify-runtime-abi.py app/build/outputs/apk/debug/app-debug.apk "${{ matrix.abi }}"
+      - name: Verify staged APK embeds the staged runtime
+        env:
+          EXPECT_SHA: ${{ steps.staged.outputs.sha256 }}
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import os
+          import zipfile
+
+          with zipfile.ZipFile("app/build/outputs/apk/debug/app-debug.apk") as apk:
+              embedded = hashlib.sha256(apk.read("assets/runtime.zip")).hexdigest()
+          expected = os.environ["EXPECT_SHA"].strip().lower()
+          if embedded != expected:
+              raise SystemExit(
+                  "staged runtime mismatch: APK embeds sha256="
+                  + embedded
+                  + ", expected "
+                  + expected
+              )
+          print("APK embeds staged runtime sha256:", embedded)
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: upstream-debug-apk-${{ matrix.abi }}
           path: |
             app/build/outputs/apk/debug/app-debug.apk
             staged-${{ matrix.abi }}.log
+          if-no-files-found: error
           retention-days: 3
