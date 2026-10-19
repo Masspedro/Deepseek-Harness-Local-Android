@@ -52,15 +52,34 @@ jobs:
             echo "Linux ripgrep leaked into Android runtime" >&2
             exit 1
           fi
+          check_marker() {
+            label="$1"; pattern="$2"; shift 2
+            files=("$@")
+            if [ "${#files[@]}" -eq 0 ]; then
+              echo "MARKER $label: MISSING_FILE"
+              return 1
+            fi
+            if grep -q "$pattern" "${files[0]}"; then
+              echo "MARKER $label: OK path=${files[0]}"
+              return 0
+            fi
+            echo "MARKER $label: MISSING_TEXT path=${files[0]}"
+            return 1
+          }
           NRB=$(find runtime-check/lib/node_modules -path '*/node-addon-require-builtin/index.js' -print -quit)
-          test -n "$NRB"
-          grep -q 'android-js-fallback' "$NRB"
-          grep -q 'isAndroidUnsyncableLevel' runtime-check/lib/node_modules/@deepseek-ai/dsh-attachment-local/lib/index.js
-          grep -q 'rename as link' runtime-check/lib/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
-          grep -q 'dsh-android' runtime-check/lib/node_modules/@deepseek-ai/node-addon-system/lib/flock.js
-          grep -q 'dsh_pty_exec' runtime-check/lib/node_modules/node-pty/lib/index.js
-          grep -q 'platform === "linux" || platform === "android"' runtime-check/lib/node_modules/@deepseek-ai/dsh-subprocess-local/lib/runner-launch-*.js
-          grep -q 'legacy-webview polyfill' runtime-check/lib/node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html
+          check_marker require-builtin android-js-fallback "$NRB"
+          ATT=$(find runtime-check/lib/node_modules -path '*/dsh-attachment-local/lib/index.js' -print -quit)
+          check_marker attachment isAndroidUnsyncableLevel "$ATT"
+          SES=$(find runtime-check/lib/node_modules -path '*/dsh-session-persistence-jsonl/lib/index.js' -print -quit)
+          check_marker session-rename 'rename as link' "$SES"
+          FLOCK=$(find runtime-check/lib/node_modules -path '*/node-addon-system/lib/flock.js' -print -quit)
+          check_marker flock dsh-android "$FLOCK"
+          PTY=$(find runtime-check/lib/node_modules -path '*/node-pty/lib/index.js' -print -quit)
+          check_marker node-pty dsh_pty_exec "$PTY"
+          RUNNER=$(find runtime-check/lib/node_modules -path '*/dsh-subprocess-local/lib/runner-launch-*.js' -print -quit)
+          check_marker subprocess-android 'platform === "linux" || platform === "android"' "$RUNNER"
+          FRONT=$(find runtime-check/lib/node_modules -path '*/dsh-web-frontend/dist/index.html' -print -quit)
+          check_marker webview-polyfill 'legacy-webview polyfill' "$FRONT"
       - uses: actions/upload-artifact@v4
         with:
           name: upstream-runtime-${{ matrix.abi }}
