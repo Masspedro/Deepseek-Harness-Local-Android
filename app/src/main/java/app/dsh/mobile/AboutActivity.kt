@@ -35,6 +35,17 @@ class AboutActivity : Activity() {
             Toast.makeText(this, getString(R.string.about_copied), Toast.LENGTH_SHORT).show()
         }
 
+        // QQ 交流群（v1.4.0）：点击复制群号 —— 与开源地址同样的轻交互。
+        // 不尝试 deep link 拉起 QQ：QQ 的加群链接格式各版本不一，且未安装时会失败；
+        // 复制群号让用户自己搜索是唯一在所有设备上都成立的路径。
+        findViewById<android.view.View>(R.id.rowQqGroup).setOnClickListener {
+            val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+            cm.setPrimaryClip(
+                ClipData.newPlainText("qq-group", getString(R.string.about_qq_group_id))
+            )
+            Toast.makeText(this, getString(R.string.about_qq_group_copied), Toast.LENGTH_SHORT).show()
+        }
+
         // 检查更新（v1.2.77）：查 GitHub Releases 是否有更高版本
         // 网络请求必须离开主线程（否则 ANR）；结果回主线程更新文案
         findViewById<android.view.View>(R.id.rowUpdate).setOnClickListener {

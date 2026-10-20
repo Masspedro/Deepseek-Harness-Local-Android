@@ -220,6 +220,10 @@ They will be re-downloaded and reinstalled (with dependency closures). If a "per
     <string name="about_open_source">Source code</string>
     <string name="about_repo">github.com/Soodok/Deepseek-Harness-Local-Android</string>
     <string name="about_copied">Repo URL copied</string>
+    <string name="about_qq_group">QQ group</string>
+    <string name="about_qq_group_id">1128769016</string>
+    <string name="about_qq_group_tap">Tap to copy</string>
+    <string name="about_qq_group_copied">Group number copied — open QQ and search it</string>
     <string name="about_check_update">Check for updates</string>
     <string name="about_update_idle">Tap to check GitHub Releases</string>
     <string name="about_update_checking">Checking…</string>

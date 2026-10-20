@@ -219,6 +219,10 @@
     <string name="about_open_source">开源地址</string>
     <string name="about_repo">github.com/Soodok/Deepseek-Harness-Local-Android</string>
     <string name="about_copied">仓库地址已复制</string>
+    <string name="about_qq_group">QQ 交流群</string>
+    <string name="about_qq_group_id">1128769016</string>
+    <string name="about_qq_group_tap">点击复制</string>
+    <string name="about_qq_group_copied">群号已复制，打开 QQ 搜索即可加入</string>
     <string name="about_check_update">检查更新</string>
     <string name="about_update_idle">点击检查 GitHub 最新版本</string>
     <string name="about_update_checking">正在检查…</string>
