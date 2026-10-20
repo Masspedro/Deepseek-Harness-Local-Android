@@ -45,3 +45,29 @@ node_modules/
 # dev probe artifacts
 scripts/probes/_parts/
 scripts/probes/*.bin
+
+# 根目录调试草稿（UI dump / 临时截图，v1.4.x 清理）
+/_*.xml
+/_*.png
+/_*.mjs
+/_*.sh
+/_*.json
+/social-preview.png
+/dsh-mobile-social.png
+
+# 性能分析临时产物
+/_cmp/
+/_fstest*/
+
+# 本地探针脚本（只保留已跟踪的正式测试）
+/scripts/probes/*
+!/scripts/probes/_test_narrow_sidebar.mjs
+!/scripts/probes/_test_narrow_rightbar.mjs
+!/scripts/probes/_test_narrow_settings.mjs
+!/scripts/probes/_test_narrow_perf.mjs
+!/scripts/probes/_test_narrow_jsdom.mjs
+!/scripts/probes/_bench_narrow_before_after.mjs
+!/scripts/probes/attachment-read-probe.mjs
+!/scripts/probes/test_embed.mjs
+!/scripts/probes/test_pick.py
+!/scripts/probes/zstd-tail.js
