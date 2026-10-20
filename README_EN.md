@@ -224,6 +224,8 @@ Alternatively, fork the repo and run the **android-build** workflow on GitHub Ac
 
 Found a bug or have a feature request? Open an [Issue](https://github.com/Soodok/Deepseek-Harness-Local-Android/issues). For crash reports, please attach the `logcat` output or the engine log available in the app.
 
+**QQ group (Chinese): `1128769016`** — usage questions, release news, and plugin recommendations. Bugs are still best filed as Issues so they don't get lost.
+
 ## License
 
 [MIT](LICENSE). Runtime components retain their original licenses (MIT / BSD / ISC / Zlib); `@deepseek-ai/dsh` is owned by DeepSeek AI.

@@ -212,6 +212,8 @@ Alternativ: Forke das Repository und lasse den Workflow **android-build** auf Gi
 
 Fehler gefunden oder eine Funktion vorgeschlagen? Eröffne ein [Issue](https://github.com/Soodok/Deepseek-Harness-Local-Android/issues). Für Absturzberichte bitte die `logcat`-Ausgabe oder das in der App zugängliche Engine-Log anhängen.
 
+**QQ-Gruppe (Chinesisch): `1128769016`** — Fragen zur Nutzung, Versionsneuigkeiten und Plugin-Empfehlungen. Fehler bitte weiterhin als Issue melden, damit sie nicht untergehen.
+
 ## Lizenz
 
 [MIT](LICENSE). Die Laufzeitkomponenten behalten ihre jeweiligen Original-Lizenzen (MIT / BSD / ISC / Zlib); `@deepseek-ai/dsh` gehört DeepSeek AI.

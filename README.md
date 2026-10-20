@@ -245,6 +245,8 @@ gradle assembleDebug -Pabi=arm64-v8a
 
 遇到问题或功能建议，欢迎提交 [Issue](https://github.com/Soodok/Deepseek-Harness-Local-Android/issues)；崩溃类问题请附上 `logcat` 输出或应用内的引擎日志。
 
+**QQ 交流群：`1128769016`** —— 使用问题、版本动态、插件推荐都可以在群里聊；Bug 仍建议同时提 Issue，方便跟踪不遗漏。
+
 ## 许可证
 
 [MIT](LICENSE)。运行时组件沿用其原始许可证（MIT / BSD / ISC / Zlib）；`@deepseek-ai/dsh` 归 DeepSeek AI 所有。
