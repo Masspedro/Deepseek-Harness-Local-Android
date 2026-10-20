@@ -1,11 +1,11 @@
 {
-  "version": "v1.4.0-arm64-dsh0.2.1",
+  "version": "v1.4.0-arm64-dsh0.2.1-rc.2",
   "url": "",
-  "sha256": "fbd759dc9c8e94f2f0323b0d2b016f6cb2b7410bf80e76e1a6f6cde781627603",
-  "_\u8bf4\u660e": {
+  "sha256": "f8e4d69f9ab428f78ddfc7372b1b3ecd82bccf886398599a3423aec212789b5a",
+  "_说明": {
     "version": "v1.2.102-x86_64",
-    "url": "\u8fdc\u7a0b runtime.zip \u4e0b\u8f7d\u5730\u5740\uff08assets \u5185\u7f6e\u5305\u7f3a\u5931\u65f6\u542f\u7528\uff09\uff1b\u7559\u7a7a\u8868\u793a\u4ec5\u652f\u6301\u5185\u7f6e\u5305",
-    "sha256": "ccfcdaf9b65339fc9ed0ec13c4e139720ed27f6319d6281aba4f64debaa1b537",
-    "\u6784\u5efa\u65b9\u5f0f": "\u7531 .github/workflows/android-build.yml \u7684 collect-runtime job \u81ea\u52a8\u586b\u5145 url/sha256 \u540e\u6253\u5305"
+    "url": "远程 runtime.zip 下载地址（assets 内置包缺失时启用）；留空表示仅支持内置包",
+    "sha256": "0a3e8e869a9b920cce47abfba2fc2042c31c42195d3365b6031dfc8be3b8b9ba",
+    "构建方式": "由 .github/workflows/android-build.yml 的 collect-runtime job 自动填充 url/sha256 后打包"
   }
 }

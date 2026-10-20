@@ -118,6 +118,26 @@
     <string name="user_prompt_save">保存</string>
     <string name="user_prompt_saved">已保存，新会话生效</string>
     <string name="user_prompt_path">保存在 AGENTS.md 的用户段（由应用管理，你的内容永不被覆盖）</string>
+
+    <!-- 应用内文件编辑页（v1.4.0，issue #25）。上游「打开配置文件」把路径交给桌面
+         文本编辑器，Android 没有对应程序；引擎现在把这个请求转到本页。 -->
+    <string name="file_editor_title">文件</string>
+    <string name="file_editor_save">保存</string>
+    <string name="file_editor_saved">已保存</string>
+    <string name="file_editor_reload">重新载入</string>
+    <string name="file_editor_reloaded">已从磁盘重新载入</string>
+    <string name="file_editor_path">路径</string>
+    <string name="file_editor_read_failed">无法读取该文件</string>
+    <string name="file_editor_save_failed">保存失败：%1$s</string>
+    <string name="file_editor_too_large">该文件 %1$s，太大，不适合在这里编辑。可以在对话里让 AI 打开或修改它。</string>
+    <string name="file_editor_binary">该文件不是 UTF-8 文本，无法在这里编辑。</string>
+    <string name="file_editor_unsaved_title">放弃修改？</string>
+    <string name="file_editor_unsaved_body">该文件有未保存的修改。</string>
+    <string name="file_editor_discard">放弃</string>
+    <string name="file_editor_keep_editing">继续编辑</string>
+    <string name="file_editor_copy_path">复制路径</string>
+    <string name="file_editor_path_copied">路径已复制</string>
+
     <string name="plugin_center_title">社区插件</string>
     <string name="plugin_center_sub">一键安装 dsh 生态插件（npm）</string>
     <string name="plugin_install">安装</string>

@@ -208,6 +208,37 @@ window.__ModuleLoader__.load({
         window.requestAnimationFrame(refresh);
       }
 
+      /**
+       * 带最短间隔的触发（v1.4.0，issue #26）。
+       *
+       * 右侧面板的开合很稀疏，但 `childList` 在 AI 工作期间会被消息流每几毫秒触发。
+       * 本插件的 `findOpenPanel()` 只是一次属性选择器查询（很便宜），但每帧都做、
+       * 并叠加另外两个插件，仍是纯浪费。200ms 下限只作用于 DOM 变化引起的触发；
+       * resize / orientationchange / 首帧补判仍走 [schedule] 立即执行。
+       */
+      var lastRun = 0;
+      var cooldownTimer = null;
+      var MIN_INTERVAL_MS = 200;
+
+      function scheduleThrottled() {
+        var now = Date.now();
+        var wait = MIN_INTERVAL_MS - (now - lastRun);
+        if (wait <= 0) {
+          lastRun = now;
+          schedule();
+          return;
+        }
+        if (cooldownTimer !== null) return;
+        cooldownTimer = window.setTimeout(function () {
+          cooldownTimer = null;
+          lastRun = Date.now();
+          schedule();
+        }, wait);
+      }
+      cleanups.push(function () {
+        if (cooldownTimer !== null) window.clearTimeout(cooldownTimer);
+      });
+
       schedule();
       var timers = [300, 1200, 2600].map(function (ms) {
         return window.setTimeout(schedule, ms);
@@ -224,9 +255,12 @@ window.__ModuleLoader__.load({
       });
 
       // 只关注面板打开态的语义属性；消息流的 class/style/data 高频变化不能触发全树重判。
-      // childList 负责面板重建，resize/orientationchange 负责视口变化。
+      // resize/orientationchange 负责视口变化。
+      //
+      // v1.4.0（issue #26）：保留 subtree，但 DOM 变化引起的重判限制为最多 5 次/秒。
+      // findOpenPanel() 本身只是一次属性选择器查询，真正的浪费在于「每帧都做」。
       try {
-        var mo = new MutationObserver(schedule);
+        var mo = new MutationObserver(scheduleThrottled);
         mo.observe(document.documentElement, {
           childList: true,
           subtree: true,

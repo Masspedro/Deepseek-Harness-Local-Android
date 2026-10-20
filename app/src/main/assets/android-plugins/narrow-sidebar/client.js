@@ -273,6 +273,40 @@ window.__ModuleLoader__.load({
         window.requestAnimationFrame(refresh);
       }
 
+      /**
+       * 带最短间隔的触发（v1.4.0，issue #26）。
+       *
+       * AI 工作时消息流持续增删节点，`childList` 会被每几毫秒触发一次。虽然本插件的
+       * `locate()` 只做两次 `querySelector` + 一次 `getComputedStyle`（比
+       * narrow-settings 便宜得多），但乘以每帧、再乘以三个插件，依然是纯浪费 ——
+       * 而且这些变化**不可能**改变侧栏的开合状态。
+       *
+       * 200ms 下限只作用于 DOM 变化引起的触发；resize / orientationchange /
+       * 首帧补判仍走 [schedule] 立即执行（转屏必须马上响应）。
+       */
+      var lastRun = 0;
+      var cooldownTimer = null;
+      var MIN_INTERVAL_MS = 200;
+
+      function scheduleThrottled() {
+        var now = Date.now();
+        var wait = MIN_INTERVAL_MS - (now - lastRun);
+        if (wait <= 0) {
+          lastRun = now;
+          schedule();
+          return;
+        }
+        if (cooldownTimer !== null) return;
+        cooldownTimer = window.setTimeout(function () {
+          cooldownTimer = null;
+          lastRun = Date.now();
+          schedule();
+        }, wait);
+      }
+      cleanups.push(function () {
+        if (cooldownTimer !== null) window.clearTimeout(cooldownTimer);
+      });
+
       // 首帧 + 延迟补判（侧栏可能晚于本插件挂载）
       schedule();
       var timers = [300, 1200, 2600].map(function (ms) {
@@ -299,10 +333,15 @@ window.__ModuleLoader__.load({
       // ⚠️ 性能边界（v1.3.3，issue #22）：旧版监听 subtree 下的**所有属性**。
       // AI 工作时引擎会持续更新消息/动画节点，任何无关 class/style/data 变化都会
       // 让插件每帧重新 locate + getComputedStyle；三个窄屏插件叠加后，WebView
-      // 在后台也会持续吃 CPU。这里只关心侧栏按钮的状态属性；DOM 增删仍由
-      // childList 覆盖，视口变化由 resize/orientationchange 覆盖。
+      // 在后台也会持续吃 CPU。这里只关心侧栏按钮的状态属性；视口变化由
+      // resize/orientationchange 覆盖。
+      //
+      // v1.4.0（issue #26）：保留 subtree（列结构可能嵌在任意深度，收窄会漏判），
+      // 但把触发换成 scheduleThrottled —— DOM 变化引起的重判最多 5 次/秒，
+      // 而 locate() 本身只有两次 querySelector + 若干 getComputedStyle，代价可控。
+      // 关键收益来自「不再每帧都做」，而不是缩小观察范围。
       try {
-        var mo = new MutationObserver(schedule);
+        var mo = new MutationObserver(scheduleThrottled);
         mo.observe(document.documentElement, {
           childList: true,
           subtree: true,

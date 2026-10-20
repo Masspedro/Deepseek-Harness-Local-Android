@@ -344,6 +344,30 @@ window.__ModuleLoader__.load({
         );
       }
 
+      /**
+       * 廉价预判：页面上到底有没有「可能是设置面板」的候选。
+       *
+       * ## 为什么必须加这一步（v1.4.0，issue #26）
+       * 旧版 `refresh()` 直接进 `findPanel()`，而它在找不到 dialog 时会
+       * `querySelectorAll("div, section, aside")` —— **整个页面所有块级元素** ——
+       * 再对每个候选沿祖先链 `getComputedStyle()`（每次都是一次样式计算）、
+       * 多次 `querySelectorAll("button")`、一次 `getBoundingClientRect()`（强制布局）。
+       *
+       * 主界面没有 `[role=dialog][aria-modal=true]`，所以那条退路**每个候选都要走完
+       * 才失败**。AI 工作时消息流持续插入节点，`childList` 观察器把每次插入都变成
+       * 一轮全页扫描，而且都在 rAF 里执行 —— 直接吃掉渲染帧。用户感知就是
+       * 「滑一下就卡、开侧边栏/弹输入法也卡」（issue #26）。
+       *
+       * 现在先查一次属性选择器（引擎原生索引，成本与页面规模基本无关）：
+       * 没有 dialog 就立刻返回，一步都不多走。设置面板本身就是 dialog，
+       * 这条预判不会漏判。
+       *
+       * @returns {boolean} 是否值得进入完整定位。
+       */
+      function maybePanelPresent() {
+        return document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
+      }
+
       /** 重新判定。 */
       function refresh() {
         pending = false;
@@ -353,6 +377,11 @@ window.__ModuleLoader__.load({
             console.log("[dsh-android] narrow-settings: 已恢复（视口 " +
                         window.innerWidth + "x" + window.innerHeight + "）");
           }
+          return;
+        }
+        // 廉价预判：没有 dialog 就没有设置面板，避免全页扫描（见 maybePanelPresent）。
+        if (!maybePanelPresent()) {
+          if (marked) unmark(); // 面板已关闭
           return;
         }
         var found = findPanel();
@@ -382,6 +411,38 @@ window.__ModuleLoader__.load({
         window.requestAnimationFrame(refresh);
       }
 
+      /**
+       * 带最短间隔的触发（v1.4.0，issue #26）。
+       *
+       * ## 为什么需要
+       * 设置面板的开关本身很稀疏，但 `childList` 观察器在 AI 工作期间会被消息流
+       * **每几毫秒**触发一次。即便 `refresh()` 现在有廉价预判，无节流时仍然每帧
+       * 都要跑一次选择器查询。这里给「由 DOM 变化引起」的触发加 200ms 下限，
+       * 而 resize/orientationchange 这类**必须立即响应**的路径仍走 [schedule]。
+       */
+      var lastRun = 0;
+      var cooldownTimer = null;
+      var MIN_INTERVAL_MS = 200;
+
+      function scheduleThrottled() {
+        var now = Date.now();
+        var wait = MIN_INTERVAL_MS - (now - lastRun);
+        if (wait <= 0) {
+          lastRun = now;
+          schedule();
+          return;
+        }
+        if (cooldownTimer !== null) return;
+        cooldownTimer = window.setTimeout(function () {
+          cooldownTimer = null;
+          lastRun = Date.now();
+          schedule();
+        }, wait);
+      }
+      cleanups.push(function () {
+        if (cooldownTimer !== null) window.clearTimeout(cooldownTimer);
+      });
+
       schedule();
       var timers = [300, 1200, 2600].map(function (ms) {
         return window.setTimeout(schedule, ms);
@@ -398,9 +459,14 @@ window.__ModuleLoader__.load({
       });
 
       // 设置面板的结构属性只在打开/关闭或面板重建时变化；忽略消息流里的 class/style/data 高频刷新。
-      // 视口变化仍由 resize/orientationchange 处理，DOM 重建仍由 childList 处理。
+      // 视口变化仍由 resize/orientationchange 处理。
+      //
+      // v1.4.0（issue #26）：保留 subtree（面板可能嵌在浮层容器里，收窄会漏判），
+      // 但把触发换成 scheduleThrottled。本插件的 refresh 曾在找不到 dialog 时做
+      // 全页 `div, section, aside` 扫描，必须靠「廉价预判 + 节流」双重限制；
+      // 预判是主要收益（直接跳过整段），节流是兜底（限制预判本身的调用频率）。
       try {
-        var mo = new MutationObserver(schedule);
+        var mo = new MutationObserver(scheduleThrottled);
         mo.observe(document.documentElement, {
           childList: true,
           subtree: true,

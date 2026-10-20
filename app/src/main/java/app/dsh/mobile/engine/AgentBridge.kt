@@ -405,9 +405,80 @@ object AgentBridge {
             method == "GET" && path == "/diag" -> diag(ctx)
             method == "POST" && path == "/say" -> say(ctx, body)
             method == "GET" && path == "/say" -> sayGet(ctx, query)
+            method == "POST" && path == "/open-file" -> openFile(ctx, body)
             method == "POST" && path == "/ext/install" -> extInstall(ctx, body)
             else -> 404 to """{"ok":false,"error":"unknown route"}"""
         }
+    }
+
+    /**
+     * POST /open-file —— 在本应用内打开一个文件供用户查看/编辑（v1.4.0，issue #25）。
+     *
+     * ## 为什么由桥来做
+     * 上游「打开配置文件」把路径交给桌面文本编辑器（macOS `open -t` /
+     * Windows 资源管理器 / Linux `xdg-open`），Android 三者皆无 →
+     * 引擎抛 `native path opener is unsupported on android`，前端显示
+     * 「无法打开配置文件」。宿主机插件 `android-open-file.mjs` 把这个调用转到
+     * 这里，由应用拉起 FileEditorActivity，形成可用的等价能力。
+     *
+     * ## 路径校验
+     * 只接受**本应用私有目录 / 引擎目录 / 工作区**内的绝对路径：
+     *   · 拒绝相对路径与 `..`（防目录穿越）；
+     *   · 拒绝上述根之外的路径 —— 这个端点由 Agent 的 shell 可达（token 在引擎
+     *     环境里），不能让它变成「拉起任意路径」的通用弹窗器；
+     *   · 目标是符号链接时按真实路径判定，避免用链接绕过上面的根检查。
+     * 注意这与「AI 能读什么文件」是两件事：AI 的沙箱由权限模式决定，
+     * 这里限制的是**能弹给用户看的界面**。
+     *
+     * ## 返回
+     * `{"ok":true,"opened":true}` —— 只表示界面已拉起，不代表用户已保存。
+     * 调用方（open-file.mjs）据此判断是否要向上游抛错。
+     */
+    private fun openFile(ctx: Context, body: String): Pair<Int, String> {
+        val obj = runCatching { JSONObject(body) }.getOrNull()
+            ?: return 400 to """{"ok":false,"error":"invalid json"}"""
+        val raw = obj.optString("path").trim()
+        if (raw.isBlank()) return 400 to """{"ok":false,"error":"field 'path' required"}"""
+        if (!raw.startsWith("/")) return 400 to """{"ok":false,"error":"absolute path required"}"""
+
+        val target = File(raw)
+        // 真实路径判定：软链接会解析到真实位置，root 检查绕不过去。
+        val real = runCatching { target.canonicalFile }.getOrDefault(target)
+        if (!isOpenablePath(ctx, real)) {
+            return 403 to """{"ok":false,"error":"path is outside the app-managed roots"}"""
+        }
+        if (!real.isFile) return 404 to """{"ok":false,"error":"not a file"}"""
+
+        return runCatching {
+            val intent = android.content.Intent(ctx, app.dsh.mobile.FileEditorActivity::class.java)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra(app.dsh.mobile.FileEditorActivity.EXTRA_PATH, real.absolutePath)
+            ctx.startActivity(intent)
+            200 to """{"ok":true,"opened":true}"""
+        }.getOrElse {
+            Log.w(TAG, "open-file failed: ${it.message}")
+            500 to """{"ok":false,"error":"${it.message}"}"""
+        }
+    }
+
+    /**
+     * 该路径是否落在应用管理的根之内（见 [openFile] 的说明）。
+     *
+     * 根集合 = 应用私有 files/ 与 cache/（引擎、dsh-home、插件都在下面）、
+     * 外置工作区（externaliseSubdir 可能把 workspaces/ 放到共享存储）。
+     * 用 canonicalPath 前缀比较，避免 `..` 与软链接绕过。
+     */
+    private fun isOpenablePath(ctx: Context, file: File): Boolean {
+        val p = file.absolutePath
+        val roots = listOfNotNull(
+            runCatching { ctx.filesDir.canonicalPath }.getOrNull(),
+            runCatching { ctx.cacheDir.canonicalPath }.getOrNull(),
+            runCatching { EngineConfig.engineRoot(ctx).canonicalPath }.getOrNull(),
+            runCatching { EngineConfig.dshHome(ctx).canonicalPath }.getOrNull(),
+            // 工作区在公开目录时（Documents/dshdata/workspaces）单独放行
+            runCatching { EngineConfig.workspaces(ctx).canonicalPath }.getOrNull(),
+        )
+        return roots.any { root -> p == root || p.startsWith("$root/") }
     }
 
     /** GET /ext/list → 扩展清单与三态（red/yellow/green），AI 判断环境是否可用的唯一入口 */

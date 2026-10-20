@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  应用内文件编辑页（v1.4.0，issue #25）。
+
+  为什么需要这一页：上游「打开配置文件」把路径交给**桌面**文本编辑器
+  （macOS `open -t` / Windows 资源管理器 / Linux `xdg-open`），Android 三者皆无，
+  引擎直接抛 "native path opener is unsupported on android"。这里提供应用内的
+  等价能力：读、改、原子保存，不依赖任何外部程序。
+
+  结构刻意与 activity_user_prompt.xml 保持一致（同一套深色配色与返回栏），
+  用户在两处之间的操作手感不割裂。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#FF101418">
+
+    <!-- 顶部栏：返回 + 文件名 + 保存 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="#FF101418"
+        android:elevation="2dp">
+
+        <ImageView
+            android:id="@+id/btnBack"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="12dp"
+            android:src="@drawable/ic_back"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/settings_back" />
+
+        <TextView
+            android:id="@+id/txtTitle"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center_vertical"
+            android:ellipsize="middle"
+            android:singleLine="true"
+            android:text="@string/file_editor_title"
+            android:textColor="#FFFFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/btnReload"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:paddingHorizontal="12dp"
+            android:text="@string/file_editor_reload"
+            android:textColor="#FF8A94A3"
+            android:textSize="14sp"
+            android:background="?android:attr/selectableItemBackgroundBorderless" />
+
+        <TextView
+            android:id="@+id/btnSave"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:paddingHorizontal="18dp"
+            android:text="@string/file_editor_save"
+            android:textColor="#FF7DD3FC"
+            android:textSize="16sp"
+            android:background="?android:attr/selectableItemBackgroundBorderless" />
+    </LinearLayout>
+
+    <!-- 路径行：显示真实路径，可复制（供 AI 会话里直接引用） -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="16dp"
+        android:paddingTop="10dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/file_editor_path"
+            android:textColor="#FF8A94A3"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/txtPath"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:ellipsize="middle"
+            android:singleLine="true"
+            android:textColor="#FF5A6472"
+            android:textSize="12sp"
+            android:fontFamily="monospace" />
+
+        <TextView
+            android:id="@+id/btnCopyPath"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="2dp"
+            android:text="@string/file_editor_copy_path"
+            android:textColor="#FF7DD3FC"
+            android:textSize="12sp"
+            android:background="?android:attr/selectableItemBackgroundBorderless" />
+    </LinearLayout>
+
+    <!-- 只读提示条：文件不可编辑（过大/非 UTF-8）时显示，此时隐藏保存按钮 -->
+    <TextView
+        android:id="@+id/txtNotice"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="16dp"
+        android:paddingTop="10dp"
+        android:textColor="#FFF5A623"
+        android:textSize="13sp"
+        android:lineSpacingExtra="2dp"
+        android:visibility="gone" />
+
+    <EditText
+        android:id="@+id/editorFile"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="12dp"
+        android:layout_marginBottom="16dp"
+        android:padding="14dp"
+        android:gravity="top|start"
+        android:inputType="textMultiLine|textNoSuggestions"
+        android:textColor="#FFEDF1F7"
+        android:textColorHint="#FF5A6472"
+        android:textSize="14sp"
+        android:fontFamily="monospace"
+        android:lineSpacingExtra="3dp"
+        android:background="@drawable/bg_search_field"
+        android:scrollbars="vertical" />
+</LinearLayout>

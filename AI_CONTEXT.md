@@ -1099,3 +1099,175 @@ beta 包构建于该文件修改之后，经 dex/arsc 校验确认已包含 `sta
 
 ### 发布说明要点（RELEASE_NOTES_v1.4.0.md）
 开头明确标注「这是测试版」：App 内检查更新不会推送本版、想退回稳定版可直接装 v1.3.3 覆盖、报问题请附设备型号与现象。
+
+---
+
+## v1.4.0-beta.2 · 修复 issue #25「无法打开配置文件」（2026-10-19）
+
+### 根因（代码定位，非推测）
+设置 → 通用 → 「打开配置文件」走的是上游 `settingsController.openSettingsDocument()` →
+`settingsProvider.prepareDocument()` 拿到 profile patch 路径 →
+`openNativeTextFile()`（`@deepseek-ai/dsh-native-command`）。该函数按平台分派：
+
+| 平台 | 上游行为 |
+|---|---|
+| darwin | `open -t <path>` |
+| win32 | 资源管理器 |
+| linux | `xdg-open <path>` |
+| 其他（含 android） | **抛错** `native path opener is unsupported on android` |
+
+前端把内部错误统一显示成 `openDocument.error`（「无法打开配置文件」），用户误以为文件损坏。
+文件本身完好，路径：`/data/user/0/app.dsh.mobile/files/dsh-home/profiles/web/cordis.patch.yml`。
+该按钮在 1.3.3（引擎 0.2.0）就存在，属长期平台差异，非 1.4.0 引入。
+
+### 修法（不改 228MB runtime）
+新增宿主机插件 `app/src/main/assets/android-plugins/open-file.mjs`，
+替换上游自己留给测试用的实例级 seam `settingsController.openTextFile`
+（源码：`this.openTextFile = internals.openTextFile ?? openNativeTextFile`），
+改为 `POST http://127.0.0.1:3083/open-file`（带 `X-DSH-Token`）。
+应用侧新增 `FileEditorActivity` 承接：读取 / 编辑 / 原子保存。
+
+- 部署：`EngineConfig.ensureAndroidOverlay()` 的单文件插件列表加入 `open-file.mjs`，
+  overlay `insert` 段追加 `android-open-file` 条目（id 唯一，不覆盖上游行）。
+- 桥路由：`AgentBridge.openFile()`，路径限制在 `filesDir` / `cacheDir` /
+  `engineRoot` / `dshHome` / `workspaces` 之内（canonicalPath 前缀比较，防 `..` 与软链接绕过）。
+- 保存：同目录临时文件 → 继承原文件 POSIX 权限 → rename 覆盖（原子）。
+  不直接写原文件，避免半截配置触发 ProfileGuardian 安全模式。
+- 上限 1MB、严格 UTF-8 解码（不猜编码）、遇 NUL 判为二进制 → 只读展示并说明原因。
+- **用户明确要求移除**「用其他应用打开」分支：FileProvider、`res/xml/file_paths.xml`、
+  androidx.core 依赖、相关 7 条文案已全部删除（`grep` 确认无残留）。
+
+### 已验证（模拟器 Android 16 / x86_64）
+- 插件 seam 单测 4/4：正常转发（含 token）、桥 403 时抛错、桥不可达时抛错、seam 缺失只告警不崩。
+- 端到端：桥 `POST /open-file` → `{"ok":true,"opened":true}`，
+  `dumpsys` 确认 `topResumedActivity=...FileEditorActivity`。
+- 越界路径 `/system/build.prop` → `{"ok":false,"error":"path is outside the app-managed roots"}`。
+- 无 token → 拒绝（fail-closed）。
+- 保存实测：343 → 381 字节，md5 变化，**权限保持 `-rw-------`**，无临时文件残留；
+  测试后已精确还原（md5 `1712c86f...`、343 字节）。
+- plugin-health marker `ok:true`，`failedEntries:[]`；engine.log 无 seam 缺失告警。
+- i18n 三语 408 条同步、Kotlin 编译、`assembleDebug` 全通过。
+
+### 注意
+- assets 的 `runtime.zip` 与 `MANIFEST.json` 在 x86_64 构建时被 `prepareRuntime` 改写，
+  已恢复为 arm64 原件（sha `fbd759dc...`）并把 `.abi` 写回 `arm64-v8a`，与 MANIFEST 一致。
+- 版本号：versionCode 247 / versionName `1.4.0-beta.2`。
+
+---
+
+## v1.4.0-beta.2 追加：「文件资源服务不可用」根因与修复（2026-10-19）
+
+### 用户报告
+> 「通过内置的文件系统去读目录，会直接提示不可用或者直接反复一直卡、每秒数次刷新界面，
+>   好像就是读目录会出现一些报错，但是点击读文件似乎可以」
+> 「安卓14 LOS 通过 DSH 文件系统连文件都读不了，提示文件资源服务不可用」
+
+### 根因（模拟器实测复现，非推测）
+日志铁证（Android 16 模拟器，`MANAGE_EXTERNAL_STORAGE` 未授予）：
+```
+EngineConfig: publicDataRoot probe: docs=true storageManager=false mkdirs=false   ← 探针假阳性
+EngineConfig: publicDataRoot: /storage/emulated/0/Documents/dshdata
+EngineConfig: externalise workspaces: pub=.../Documents/dshdata/workspaces
+$ ls files/dsh-home/workspaces/   →  Permission denied
+```
+两个缺陷叠加：
+
+1. **`isDirUsable()` 探针假阳性**：它只验证「自己创建→写→读回→删」这一个文件，
+   以及 `dir.list() != null`。在未授权 MANAGE_EXTERNAL_STORAGE 时这条路径能通过
+   （探针文件由本进程创建，SELinux 允许读写自己的文件），于是把
+   `/storage/emulated/0/Documents/dshdata` 判为可用并建立软链。但引擎真正
+   `readdir()`/`stat()` **别人创建**的条目时被 SELinux 拒绝（media_rw / 其它 uid）。
+2. **`dsh-fs-local` 不容忍 EACCES**：`probeStats()` 只把 ENOENT/ENOTDIR 当"不存在"，
+   其余 errno 原样上抛；`listDirectory()` 对每个子项单独 resolve+probe，一个失败就
+   `throw` 让整目录不可用。于是前端：
+   - 文件预览 `locateFile()` 拿不到 entry → `workspace-file/not-regular-file`
+     → TextPreview 的 `meta.status === "none"` → **「文件资源服务不可用」**；
+   - 目录列举整条失败 + `watch()` 反复触发 `changed()` → **每秒数次刷新/卡顿**。
+
+### 修复（两层，互补）
+**A. 应用侧（Kotlin）— 探针不再猜权限**
+`EngineConfig.isDirUsable(dir, requireManager)` 新增 `requireManager` 参数：
+共享存储（Documents）**必须** `Environment.isExternalStorageManager() == true` 才认。
+权限是系统事实，不该由写读探针推断。未授权 → 回退 app 专属外部目录
+（`Android/data/<pkg>/files/dshdata`，零权限、稳定）。
+另加**升级自愈**：即使 pubRoot 可用，若现有软链目标不可访问也解开重建 ——
+否则老版本建错的链会一直留在用户设备上。
+
+**B. 运行时侧（补丁）— fs 层容忍不可观测项**
+`scripts/patch-fs-local-android.py`（新增，已接入 `collect-termux-runtime.sh`）：
+- `probeStats`：EACCES/EPERM 视为「无法观测」返回 null（不再致命）；
+- `listDirectory`：单个子项 EACCES 降级为 `type: "other"`，保留文件名继续列举。
+- **其余 errno（EIO 等）照旧上抛** —— 真故障不能被吞。
+- fail-fast：锚点形态不识别即中止构建。
+
+### 验证
+- 补丁行为单测（6 项断言全过）：EACCES 由致命→可观测、EIO 仍抛出、
+  三项目录中一项不可读时上游整列失败 vs 补丁后三项全保留。
+- 模拟器实测（Android 16 x86_64）：
+  | 项 | 修复前 | 修复后 |
+  |---|---|---|
+  | 探针结果 | `docs=true`（假阳性） | `docs=false` ✅ |
+  | 落点 | `/storage/emulated/0/Documents/dshdata` | `Android/data/app.dsh.mobile/files/dshdata` ✅ |
+  | `ls workspaces/` | Permission denied | 正常 ✅ |
+  | 引擎 `readdir`/`readFile` | EACCES | `list: ['proj']` / `read: hello` ✅ |
+- plugin-health `ok:true`，`failedEntries:[]`。
+
+### 注意
+- 修复后 **未授权「所有文件访问」的用户，会话/工作区落在 app 专属外部目录**，
+  卸载会清除（这是权限未授予时唯一稳定可用的位置）。要让数据扛住卸载，
+  仍需在设置 → 权限中心授予「所有文件访问」。
+- arm64 / x86_64 两个 runtime 源包均已打补丁；`MANIFEST.json` 的 sha256 已同步为
+  `f8e4d69f9ab428f78ddfc7372b1b3ecd82bccf886398599a3423aec212789b5a`（arm64）。
+- 版本号仍为 `1.4.0-beta.2`（versionCode 247）。
+
+---
+
+## v1.4.0-beta.2 追加：长会话卡顿的真凶是我们自己的窄屏插件（2026-10-19）
+
+### 用户怀疑是对的
+用户问「有没有可能是一些我们自己造的问题」—— 确认**是**，而且问题就在三个窄屏 UI 插件里。
+
+### 定位过程
+1. **先排除服务端**：在模拟器上用真实引擎代码跑 300 轮会话（2401 事件、393KB）的完整
+   打开流程 —— 读 1.4ms + 解析 5.5ms + turnOutline 全量折叠 4ms + 分页 0ms = **11ms**。
+   服务端不是瓶颈。
+2. **再量前端**：用客户端插件在真实 WebView 里采样，发现**空页面就有 655ms 长任务** ——
+   说明相当一部分开销与长会话无关，是固定成本。
+3. **审自己的插件** → 发现 `narrow-settings` 的 `refresh()` 在找不到 dialog 时会做
+   **全页** `querySelectorAll("div, section, aside")`，对每个候选沿祖先链
+   `getComputedStyle()`（每次一次样式计算）+ `querySelectorAll("button")` +
+   `getBoundingClientRect()`（强制布局）。而三个插件都用
+   `MutationObserver { childList: true, subtree: true }` 观察整棵文档 ——
+   AI 工作时消息流每几毫秒增删节点，等于**每帧一轮全页扫描**。
+
+### 量化（jsdom，主界面 60 条消息 + 200 次 DOM 插入）
+| 指标 | 修复前 | 修复后 | 降幅 |
+|---|---|---|---|
+| `querySelectorAll` | 164 | 0 | 100% |
+| `getComputedStyle` | **68,502** | **0** | **100%** |
+
+68502 次样式计算正是「滑一下就卡、开侧栏/弹输入法也卡」的来源。
+
+### 修复（三处，全在我们自己的插件里，不碰上游）
+1. **narrow-settings**：新增 `maybePanelPresent()` 廉价预判 —— 先查
+   `[role="dialog"][aria-modal="true"]`，没有就立即返回，绝不进入全页扫描。
+   设置面板本身就是 dialog，不会漏判。
+2. **三个插件统一**：DOM 变化引起的重判改为 `scheduleThrottled()`，200ms 下限
+   （最多 5 次/秒）；`resize` / `orientationchange` / 首帧补判仍立即执行（转屏必须秒响应）。
+3. **保留 `subtree: true`**：评估过收窄到 `body` 直接子节点，但侧栏/面板可能嵌在
+   任意深度，收窄会漏判功能；真正的收益来自"不再每帧都做"，不是缩小观察范围。
+
+### 验证
+- 既有测试全过：`_test_narrow_sidebar` 30/30、`_test_narrow_settings` 36/36、
+  `_test_narrow_rightbar` 28/28。
+- 新增 `scripts/probes/_test_narrow_perf.mjs`（4/4）：
+  ① 主界面无 dialog 时不得全页扫描；② 设置面板打开仍能接管（功能未回归）；
+  ③ 300 次 DOM 插入导致的查询增量受限（节流生效）。
+- 新增 `scripts/probes/_bench_narrow_before_after.mjs` 做前后量化对比。
+- 模拟器全新安装 + 引导初始化后：plugin-health `ok:true`、`failedEntries:[]`。
+
+### 注意
+- 压测用的 `probe` 客户端插件与全部临时脚本已删除，未进发布包。
+- 会话存储的真实布局是 `<sessions>/<cwd-slug>/<session-id>/session.v4.jsonl.zstd`
+  （zstd 压缩、按 cwd 分目录、需 `agentPreset` 字段），不是平铺 JSONL ——
+  后续若再要造测试会话，按这个结构来。

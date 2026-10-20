@@ -79,7 +79,46 @@ object EngineConfig {
      * 只看 canWrite 就采用该目录，会造成「报告成功、实际读不到」的静默失败
      * （主人实测：悬浮条永远空白且无任何错误日志）。
      */
-    private fun isDirUsable(dir: File): Boolean = runCatching {
+    /**
+     * 目录是否真的能被引擎**长期**使用。
+     *
+     * ## 为什么不能只看 canWrite()
+     * Android 11+ 的 FUSE（scoped storage）下，`canWrite()` 对某些路径返回 true，
+     * 而实际 `listFiles()` / 读取会被拒绝 —— 实测（模拟器）：
+     *   `canWrite()=true` 但 `ls /storage/emulated/0/Android/data/<pkg>/files/` → Permission denied
+     * 只看 canWrite 就采用该目录，会造成「报告成功、实际读不到」的静默失败
+     * （主人实测：悬浮条永远空白且无任何错误日志）。
+     *
+     * ## 为什么还要多查一步（v1.4.0，issue #25 后续）
+     * 「写入→读回→删除」只验证了**自己刚创建的那个文件**。Android 的共享存储上
+     * 这远远不够：
+     *
+     *   · 探针文件由本进程创建，SELinux 允许自己读写它；
+     *   · 但目录里**别的应用/媒体扫描器创建的条目**属 media_rw 或其它 uid，
+     *     父目录的读权限在 SELinux 层被拒绝 → `readdir()` 返回 EACCES。
+     *
+     * 实测（Android 16 模拟器，MANAGE_EXTERNAL_STORAGE 未授予）：
+     * ```
+     * publicDataRoot probe: docs=true storageManager=false   ← 探针假阳性
+     * externalise workspaces: pub=/storage/emulated/0/Documents/dshdata/workspaces
+     * $ ls files/dsh-home/workspaces/  → Permission denied    ← 引擎实际用不了
+     * ```
+     * 后果就是用户看到的两条症状：文件预览「文件资源服务不可用」（stat 失败），
+     * 目录反复刷新（每次列举都抛错后重试）。
+     *
+     * 修法：**有 MANAGE_EXTERNAL_STORAGE 才认 Documents**。这是系统层面的布尔事实，
+     * 不依赖任何探针推断；未授权时直接回退 app 专属外部目录（零权限、稳定可用，
+     * 代价只是卸载会清除）。另外保留原有的写读探针，作为授权后仍不可用
+     * （volume 未挂载、被其它策略拦截）的兜底。
+     *
+     * @param requireManager true 时，未获「所有文件访问」直接判否（共享存储用）
+     */
+    private fun isDirUsable(dir: File, requireManager: Boolean = false): Boolean = runCatching {
+        if (requireManager) {
+            val isManager = android.os.Build.VERSION.SDK_INT >= 30 &&
+                android.os.Environment.isExternalStorageManager()
+            if (!isManager) return@runCatching false
+        }
         val probe = File(dir, ".dsh-probe")
         probe.writeText("ok")
         val readBack = probe.readText() == "ok"
@@ -105,7 +144,13 @@ object EngineConfig {
         val manager = android.os.Build.VERSION.SDK_INT >= 30 &&
             android.os.Environment.isExternalStorageManager()
         val docsProbe = runCatching {
-            (docs.exists() || docs.mkdirs()) && isDirUsable(docs)
+            // ⚠️ v1.4.0（issue #25 后续）：Documents 是**共享存储**，必须要求
+            // MANAGE_EXTERNAL_STORAGE。此前只跑写读探针，在未授权的设备上会出现
+            // 假阳性：探针文件是自己创建的、SELinux 允许，于是判为可用并建软链；
+            // 但引擎真正 readdir/stat 别人创建的条目时被拒 → 文件面板「资源服务
+            // 不可用」、目录反复刷新（Android 16 模拟器实测，storageManager=false
+            // 时 docsProbe 仍为 true）。权限是系统事实，不该由探针推断。
+            (docs.exists() || docs.mkdirs()) && isDirUsable(docs, requireManager = true)
         }.getOrDefault(false)
         Log.i(TAG, "publicDataRoot probe: docs=$docsProbe storageManager=$manager mkdirs=${runCatching { docs.mkdirs() }.getOrDefault(false)}")
         if (docsProbe) {
@@ -183,9 +228,18 @@ object EngineConfig {
         // ① 重指向：软链目标与当前 pub 不一致 → 删旧软链重建（数据在目标目录里，删链不删数据）
         if (isLink) {
             val target = runCatching { Files.readSymbolicLink(priv.toPath()).toString() }.getOrNull()
-            if (target != pub.absolutePath) {
+            // v1.4.0（issue #25 后续）：**目标存在但不可访问**同样要解开。
+            // 旧版本在 MANAGE_EXTERNAL_STORAGE 未授予时把 Documents 判为可用并建链
+            // （探针假阳性：只验证了自建文件），升级后权限依旧没给 → 链还在、目标读不了，
+            // 引擎每条 readdir/stat 都 EACCES —— 用户看到的「文件资源服务不可用」
+            // 与「目录反复刷新」正是这条链造成的。这里做升级自愈：目标不可用就删链。
+            val stale = target != null && (
+                !target.equals(pub.absolutePath, ignoreCase = true) ||
+                    !isDirUsable(File(target), requireManager = true)
+                )
+            if (target == null || stale) {
                 Log.i(TAG, "$name: relink $target -> ${pub.absolutePath}")
-                priv.delete()
+                runCatching { priv.delete() }
                 isLink = false
             }
         }
@@ -579,6 +633,19 @@ object EngineConfig {
             |    - id: android-bridge-token
             |      name: ./android-plugins/bridge-token.mjs
             |
+            |# Settings -> "open configuration file" (v1.4.0, issue #25). Upstream
+            |# hands the profile patch path to a *desktop* text editor (macOS
+            |# `open -t`, Windows Explorer, Linux `xdg-open`); Android has none, so
+            |# the engine throws "native path opener is unsupported on android" and
+            |# the browser shows its generic failure string -- users read that as
+            |# "my config file is broken" though the file is fine. This plugin
+            |# replaces the settingsController's openTextFile seam (the same seam
+            |# upstream uses for tests) with a call to the app bridge, which opens
+            |# the app's own editor for that exact path.
+            |- insert:
+            |    - id: android-open-file
+            |      name: ./android-plugins/open-file.mjs
+            |
             |# Accessibility-time thinking switch (v1.2.165): the agent runs `fast on`
             |# before an accessibility task, so later steps stop paying the reasoning
             |# cost; `fast off` restores normal conversation. The plugin reads the
@@ -614,7 +681,7 @@ object EngineConfig {
             |- insert:
             |    - id: android-narrow-rightbar
             |      name: ./android-plugins/narrow-rightbar/index.js
-            |
+
             |""".trimMargin()
         runCatching {
             if (!f.isFile || f.readText() != body) f.writeText(body)
@@ -623,7 +690,13 @@ object EngineConfig {
         // sit beside it. Deploy from assets (kept in sync by the same idempotent check).
         runCatching {
             // 单文件插件（.mjs）：overlay 直接指向文件
-            listOf("priv-mode.mjs", "bridge-token.mjs", "fast-mode.mjs", "plugin-health.mjs").forEach { fileName ->
+            listOf(
+                "priv-mode.mjs",
+                "bridge-token.mjs",
+                "fast-mode.mjs",
+                "plugin-health.mjs",
+                "open-file.mjs",
+            ).forEach { fileName ->
                 val src = ctx.assets.open("android-plugins/$fileName").use { it.readBytes() }
                 val dst = File(f.parentFile, "android-plugins/$fileName")
                 deployOne(dst, src.toString(Charsets.UTF_8), fileName)

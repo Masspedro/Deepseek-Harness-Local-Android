@@ -242,6 +242,21 @@ python3 "$SCRIPTS_DIR/patch-attachment-local.py" "$ROOT" || {
   exit 1
 }
 
+# [dsh-fs-local] Android 共享存储的权限语义（issue #25 后续：安卓14 LOS
+# 「文件资源服务不可用」/ 目录反复刷新）：
+#   · probeStats 只容忍 ENOENT/ENOTDIR，其余 errno 直接上抛 —— 而 Android 的
+#     FUSE 共享存储即使有 MANAGE_EXTERNAL_STORAGE 也会对某些目录项返回 EACCES
+#     （SELinux 域迁移 / volume 重新挂载 / media 属主 uid），于是整条
+#     resolve→stat→locateFile 链失败 → 前端显示「文件资源服务不可用」。
+#   · listDirectory 对每个子项单独 resolve+probe，一个不可读项就 throw，把
+#     「某一项读不了」扩散成「整个目录打不开」。
+# 补丁把 EACCES/EPERM 当作「无法观测」（目录列举时降级为 type=other），
+# 其余 errno 照旧上抛。详细说明见 scripts/patch-fs-local-android.py 顶部。
+python3 "$SCRIPTS_DIR/patch-fs-local-android.py" "$ROOT" || {
+  echo "错误：dsh-fs-local Android 补丁失败（上游形态已变？），中止构建" >&2
+  exit 1
+}
+
 # [node-pty / subprocess-local] Android 终端支持（issue #18）：
 #   · node-pty 无 Android 预编译产物 → 换成本仓库实现（转发原生助手 dsh_pty_exec）
 #   · subprocess-local 的进程探测器只认 linux/darwin/win32，Termux node 报告的是

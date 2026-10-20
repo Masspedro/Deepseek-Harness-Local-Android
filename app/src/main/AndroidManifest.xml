@@ -97,6 +97,18 @@
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <!-- 应用内文件编辑页（v1.4.0，issue #25）：上游「打开配置文件」在 Android
+             没有可用的桌面编辑器（macOS open -t / Windows 资源管理器 / Linux
+             xdg-open 三者皆无），引擎把这请求转到本页。见 FileEditorActivity 注释。
+             不让系统重建 Activity：编辑到一半转屏或切输入法丢内容不可接受。
+             exported=false：只有本应用（AgentBridge）能拉起。 -->
+        <activity
+            android:name=".FileEditorActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|keyboardHidden|keyboard" />
+
         <!-- 扩展中心（v1.2.0）：环境扩展下载/激活管理 -->
         <activity
             android:name=".ExtensionStoreActivity"

@@ -121,6 +121,27 @@
     <string name="user_prompt_save">Speichern</string>
     <string name="user_prompt_saved">Gespeichert. Gilt in neuen Sitzungen.</string>
     <string name="user_prompt_path">Gespeichert im Nutzerabschnitt von AGENTS.md (von der App verwaltet, deiner wird nie überschrieben)</string>
+
+    <!-- Datei-Editor in der App (v1.4.0, Issue #25). Der Button "Konfigurationsdatei
+         öffnen" übergibt den Pfad an einen Desktop-Texteditor, den Android nicht hat;
+         die Engine leitet die Anfrage jetzt an diesen Bildschirm weiter. -->
+    <string name="file_editor_title">Datei</string>
+    <string name="file_editor_save">Speichern</string>
+    <string name="file_editor_saved">Gespeichert</string>
+    <string name="file_editor_reload">Neu laden</string>
+    <string name="file_editor_reloaded">Vom Datenträger neu geladen</string>
+    <string name="file_editor_path">Pfad</string>
+    <string name="file_editor_read_failed">Diese Datei konnte nicht gelesen werden</string>
+    <string name="file_editor_save_failed">Speichern fehlgeschlagen: %1$s</string>
+    <string name="file_editor_too_large">Diese Datei ist %1$s groß und zu groß zum Bearbeiten. Bitte die KI im Chat bitten, sie zu öffnen oder zu ändern.</string>
+    <string name="file_editor_binary">Diese Datei ist kein UTF-8-Text und kann hier nicht bearbeitet werden.</string>
+    <string name="file_editor_unsaved_title">Änderungen verwerfen?</string>
+    <string name="file_editor_unsaved_body">Diese Datei hat ungespeicherte Änderungen.</string>
+    <string name="file_editor_discard">Verwerfen</string>
+    <string name="file_editor_keep_editing">Weiter bearbeiten</string>
+    <string name="file_editor_copy_path">Pfad kopieren</string>
+    <string name="file_editor_path_copied">Pfad kopiert</string>
+
     <string name="plugin_center_title">Community-Plugins</string>
     <string name="plugin_center_sub">dsh-Ökosystem-Plugins mit einem Klick installieren (npm)</string>
     <string name="plugin_install">Installieren</string>

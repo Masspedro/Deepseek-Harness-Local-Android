@@ -118,6 +118,27 @@
     <string name="user_prompt_save">Save</string>
     <string name="user_prompt_saved">Saved. Takes effect in new sessions.</string>
     <string name="user_prompt_path">Stored in the user section of AGENTS.md (managed by the app, yours is never overwritten)</string>
+
+    <!-- In-app file editor (v1.4.0, issue #25). Upstream\'s "open configuration
+         file" button hands the path to a desktop text editor that Android does
+         not have; the engine now routes that request to this screen instead. -->
+    <string name="file_editor_title">File</string>
+    <string name="file_editor_save">Save</string>
+    <string name="file_editor_saved">Saved</string>
+    <string name="file_editor_reload">Reload</string>
+    <string name="file_editor_reloaded">Reloaded from disk</string>
+    <string name="file_editor_path">Path</string>
+    <string name="file_editor_read_failed">Could not read this file</string>
+    <string name="file_editor_save_failed">Could not save: %1$s</string>
+    <string name="file_editor_too_large">This file is %1$s, too large to edit here. Ask the AI to open or change it in the chat instead.</string>
+    <string name="file_editor_binary">This file is not UTF-8 text, so it cannot be edited here.</string>
+    <string name="file_editor_unsaved_title">Discard changes?</string>
+    <string name="file_editor_unsaved_body">You have unsaved edits to this file.</string>
+    <string name="file_editor_discard">Discard</string>
+    <string name="file_editor_keep_editing">Keep editing</string>
+    <string name="file_editor_copy_path">Copy path</string>
+    <string name="file_editor_path_copied">Path copied</string>
+
     <string name="plugin_center_title">Community Plugins</string>
     <string name="plugin_center_sub">One-click install dsh ecosystem plugins (npm)</string>
     <string name="plugin_install">Install</string>
