@@ -1271,3 +1271,86 @@ $ ls files/dsh-home/workspaces/   →  Permission denied
 - 会话存储的真实布局是 `<sessions>/<cwd-slug>/<session-id>/session.v4.jsonl.zstd`
   （zstd 压缩、按 cwd 分目录、需 `agentPreset` 字段），不是平铺 JSONL ——
   后续若再要造测试会话，按这个结构来。
+
+---
+
+## v1.4.0 正式版发布（2026-10-20）
+
+### 上游版本
+**0.2.1-rc.2**（不是 0.2.0）。内核包 `dsh` / `dsh-base` / `dsh-web-app` / `dsh-session` /
+`dsh-client-ui-chat` 全部核对为 0.2.1-rc.2。
+
+### 发布产物
+| 项 | 值 |
+|---|---|
+| tag | `v1.4.0` |
+| release id | `417920468` |
+| draft / prerelease | **false / false**（正式版，会推送给稳定用户） |
+| versionCode / versionName | **250 / 1.4.0** |
+| APK | `dsh-mobile-v1.4.0-arm64-v8a.apk` |
+| asset id | `657975189` |
+| 大小 | 241,517,983 bytes |
+| SHA-256 | `2b81597742d1372a6761ff9f37dbbbef4d318e8553b98017eb7e433f11274d07` |
+| 签名 | v2 + v3（v1/v3.1/v4 未启用），CN=DSH Mobile |
+| runtime | e_machine=183 (aarch64)，sha256 `f8e4d69f...` |
+
+URL: https://github.com/Soodok/Deepseek-Harness-Local-Android/releases/tag/v1.4.0
+
+### 打包前校验（全部通过）
+- APK 原生库仅 `lib/arm64-v8a/`（libdsh_pty_exec.so / libdshpty.so / libmlkit…）
+- 内嵌 runtime.zip 的 `bin/node` = aarch64
+- fs-local 补丁存在；`open-file.mjs` 在包内；**压测探针未被泄漏进包**
+- `aapt2 dump badging`：versionName 1.4.0 / versionCode 250 / native-code arm64-v8a
+- `apksigner verify`：v2、v3 通过
+
+### 本次纳入的修复
+1. **长会话卡顿（issue #26）**：三个窄屏插件每帧重判 + 全页扫描 → 廉价预判 + 200ms 节流。
+   实测 `getComputedStyle` 68502 → 0。
+2. **打开配置文件（issue #25）**：宿主机插件接管 `openTextFile` seam + 应用内编辑器。
+3. **文件面板不可用（#25 后续）**：`isDirUsable(requireManager)` + 升级自愈，
+   配合 runtime 侧 fs-local 补丁（EACCES 容忍 + 目录单项降级）。
+
+### 提交
+`46dfe0a` release: v1.4.0 正式版（引擎 0.2.1-rc.2），18 files changed。
+推送走 `scripts/push-via-api.py`（SSH 凭据不可用），远端 main → `daed273`。
+
+### 遗留观察项
+- 空白首页仍有约 655ms 固定长任务（与长会话无关），尚未定位。
+- issue #26 用户的实际体验反馈待收集。
+
+---
+
+## v1.4.0 重新发布：关于页加入 QQ 群号（2026-10-20）
+
+### 变更
+- `activity_about.xml`：「开源地址」与「检查更新」之间新增 QQ 交流群卡片
+  （`rowQqGroup`），点击复制群号 `1128769016`。
+- `AboutActivity`：点击 handler 复制到剪贴板 + Toast 提示。
+  不做 deep link 拉起 QQ —— 加群链接格式各版本不一，未安装时会直接失败；
+  复制群号是唯一在所有设备上都成立的路径。
+- 三语文案：`about_qq_group` / `about_qq_group_id` / `about_qq_group_tap` /
+  `about_qq_group_copied`（en / zh-rCN / de）。
+
+### 验证
+- i18n：412 条三语同步，全绿。
+- 模拟器（x86_64 debug 构建）实机截图确认：卡片位置、群号、`Tap to copy` 均正确渲染。
+- 群号已编入 `resources.arsc`（`aapt2 dump strings` → `String #502 : 1128769016`）。
+
+### 重新发布的产物
+| 项 | 值 |
+|---|---|
+| release id | `417920468`（同一个 v1.4.0，替换资产） |
+| 旧 asset | `657975189` 已删除 |
+| 新 asset id | **`658071799`** |
+| 大小 | 241,522,079 bytes（与旧包差 4096 字节，即新增的资源与代码） |
+| SHA-256 | `344ed905b28a41df24bcdb8834bd711d812e40d92912d76a419d12d6b5dbf14c` |
+| 签名 | v2 + v3 通过 |
+| versionCode / versionName | 250 / 1.4.0（未变） |
+| runtime 架构 | e_machine=183（aarch64） |
+
+提交：`050dd4a` feat(about): 关于页新增 QQ 交流群卡片（三语，点击复制群号）
+远端 main → `af99f7f`。发布说明也追加了「## 交流」段。
+
+### 注意
+- Release 仍是 `draft:false` / `prerelease:false`，稳定用户会收到更新提示；
+  已装 beta 的用户版本号相同（250），不会重复提示。
