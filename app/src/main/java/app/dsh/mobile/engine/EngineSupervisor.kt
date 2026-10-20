@@ -129,16 +129,69 @@ class EngineSupervisor(private val ctx: Context) {
      */
     @Volatile var onExplicitExit: (() -> Unit)? = null
 
-    /** 派发显式退出回调到主线程（任何线程调用都安全）。 */
+    /**
+     * 派发显式退出：结束 Activity（若在），然后**无条件结束整个 App 进程**。
+     *
+     * ## 为什么必须兜底杀进程（v1.4.0，用户反馈「通知栏退出后仍持续空转」）
+     * 旧实现只调用 `onExplicitExit` 回调，而该回调注册在 MainActivity 上、并在
+     * Activity onDestroy 时被置回 null（`MainActivity:1183` 的实例感知清理）。
+     * 于是出现这条必然失败的路径：
+     *
+     *     用户按 Home 让 App 进后台（Activity 可能被回收）
+     *       → 从通知栏点「退出」
+     *       → supervisor.stop(explicit = true)
+     *       → dispatchExplicitExit() 发现回调为 null
+     *       → log 一句 "no live Activity" 就返回
+     *       → **没有任何东西去结束进程**，App 连同其前台服务/无障碍/悬浮窗继续驻留
+     *
+     * 用户感知正是「脚本成功把软件退出了（引擎没了），但自己本身不退出」。
+     * root 模式下更糟：残留进程会持续空转吃 CPU。
+     *
+     * 现在：回调有没有都继续走完，最后调用 [killAppProcess] 彻底结束进程。
+     * Activity 在时先让它 finishAndRemoveTask（正常释放 WebView），再由兜底
+     * 结束进程；Activity 不在时直接兜底 —— 两条路径终点一致。
+     */
     private fun dispatchExplicitExit() {
         val cb = onExplicitExit
         if (cb == null) {
-            Log.i(TAG, "explicit exit: no live Activity to finish (nothing to release)")
-            return
+            Log.i(TAG, "explicit exit: no live Activity; killing process instead")
         }
         android.os.Handler(android.os.Looper.getMainLooper()).post {
-            runCatching { cb() }
-                .onFailure { Log.w(TAG, "explicit exit callback failed: ${it.message}") }
+            if (cb != null) {
+                runCatching { cb() }
+                    .onFailure { Log.w(TAG, "explicit exit callback failed: ${it.message}") }
+            }
+            // 给 Activity 的 finishAndRemoveTask 一点时间把 WebView 拆干净；
+            // 但无论如何都会结束进程 —— 用户点了「退出」就不该留下任何东西。
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                killAppProcess()
+            }, if (cb == null) 0L else 600L)
+        }
+    }
+
+    /**
+     * 结束本 App 进程。
+     *
+     * 用 `am kill`/`force-stop` 针对自己不现实（需要 shell 权限），`Process.killProcess`
+     * 对自家 uid 完全合法，且会带走同一进程里的前台服务、无障碍绑定、悬浮窗与所有
+     * Kotlin 协程。引擎与它派生的进程树在 [stop] 里已经先 TERM→KILL，孤儿另有
+     * [OrphanReaper] 兜底，所以这里只需要处理「本进程」。
+     */
+    private fun killAppProcess() {
+        Log.i(TAG, "explicit exit: finishing app process")
+        runCatching {
+            // 先移除常驻通知，避免用户看到一条指向已死引擎的通知（部分 ROM 会保留）
+            android.app.NotificationManager::class.java
+                .let { ctx.getSystemService(it) }
+                ?.cancelAll()
+        }
+        runCatching {
+            android.os.Process.killProcess(android.os.Process.myPid())
+        }.onFailure {
+            // 极端情况下 killProcess 被拦（部分 ROM 的策略），退回 exit(0) —— 同样是
+            // 结束本进程，不影响其他应用。
+            Log.w(TAG, "killProcess failed (${it.message}); falling back to exit")
+            kotlin.system.exitProcess(0)
         }
     }
 
@@ -170,6 +223,21 @@ class EngineSupervisor(private val ctx: Context) {
         // spawnEngine() 的阻塞段里，已 fork 的 node 可能没有引用、无人 stop。
         // 这里补一次孤儿清理（端口占用检测 + 同 uid pkill），覆盖该窗口。
         runCatching { cleanupOrphanEngine() }
+        // ⚠️ v1.4.0 修复（用户反馈「通知栏退出后 root 模式持续空转」）：
+        // cleanupOrphanEngine() 以 `portInUse()` 为前提 —— 端口没被占就整体跳过。
+        // 而 root 模式下存在问题：主引擎 node 已退出、3080 也随之释放，但它通过
+        // su 派生/被 init 收养的后代（AI 起的 bash、工具进程）仍在跑并空转吃 CPU。
+        // 端口检查看不到它们，于是这条路径被整个跳过，进程永久残留。
+        //
+        // 修法：显式退出时**无条件**跑一次全量孤儿回收（含 root 视角的 /proc 扫描）。
+        // 只杀 cmdline 里带本 app engine/dsh-home 绝对路径的进程，不会误伤用户
+        // 自己在 Termux 里跑的东西（见 OrphanReaper 顶部「绝不误杀」）。
+        if (explicit) {
+            runCatching {
+                val killed = OrphanReaper.reap(ctx)
+                if (killed > 0) Log.i(TAG, "explicit exit: reaped $killed orphan process(es)")
+            }.onFailure { Log.w(TAG, "explicit exit orphan reap failed: ${it.message}") }
+        }
         _state.value = State.Stopped
         if (explicit) dispatchExplicitExit()
     }

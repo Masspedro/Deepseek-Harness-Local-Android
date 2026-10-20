@@ -227,11 +227,32 @@ class DshAccessibilityService : AccessibilityService() {
         val r = object : Runnable {
             override fun run() {
                 runCatching {
-                    // 引擎前台服务不在 → 拉起来（除非用户显式退出过）
-                    if (!app.dsh.mobile.service.EngineService.isRunning()) {
+                    // 引擎前台服务不在 → 拉起来，**但必须尊重用户的显式退出**。
+                    //
+                    // ⚠️ v1.4.0 修复（用户反馈「通知栏退出后 root 模式持续空转」）：
+                    // 下面这句注释「除非用户显式退出过」在 v1.2.91 就写了，但代码里
+                    // **从来没有对应的判断**。后果是一条完整的复活循环：
+                    //
+                    //   用户在通知栏点「退出」
+                    //     → exitCompletely() 停引擎、stopSelf()、结束 Activity
+                    //     → 但无障碍服务是系统级组件，进程还活着，看门狗继续跑
+                    //     → 60 秒后发现 EngineService 不在，**重新把它拉起来**
+                    //     → 引擎重启 → 再退出 → 再拉起 …… 无限循环
+                    //
+                    // root 模式下每次复活都要经 su 拉进程，空转代价更高（用户实测
+                    // 持续吃 CPU）。现在先查 supervisor.isUserStopped()：
+                    // 用户显式退出后不再自动拉起，直到用户下次主动打开 App
+                    //（EngineService.start → supervisor.start 会把 userStop 清零）。
+                    val sup = (application as DshApp).supervisor
+                    val exitedByUser = sup.isUserStopped() ||
+                        app.dsh.mobile.DshApp.userExitedExplicitly(this@DshAccessibilityService)
+                    if (exitedByUser) {
+                        Log.i("DshA11y", "keepalive: user exited explicitly, not restarting")
+                    } else if (!app.dsh.mobile.service.EngineService.isRunning()) {
                         Log.i("DshA11y", "keepalive: engine service not running, restarting")
                         app.dsh.mobile.service.EngineService.start(this@DshAccessibilityService)
                     }
+                    Unit
                 }.onFailure { Log.w("DshA11y", "keepalive check failed: ${it.message}") }
                 keepAliveHandler.postDelayed(this, KEEPALIVE_INTERVAL_MS)
             }

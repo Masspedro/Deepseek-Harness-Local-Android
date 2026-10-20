@@ -94,6 +94,9 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 用户主动打开了 App → 清除「显式退出」标记，恢复正常保活行为。
+        // 与 EngineService.exitCompletely() 的置位成对：退出后不复活，重开即恢复。
+        runCatching { DshApp.setUserExitedExplicitly(this, false) }
         // 首启保护：若用户尚未完成引导（如直接拉起 MainActivity），先跳 Onboarding
         if (!Privilege.isOnboarded(this)) {
             startActivity(Intent(this, OnboardingActivity::class.java))

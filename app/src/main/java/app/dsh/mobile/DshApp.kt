@@ -64,6 +64,9 @@ class DshApp : Application() {
         /** 验证码是否处于"待展示"状态（只显示一次，再进设置不再显示） */
         private const val KEY_LAN_WEB_PW_PENDING = "lan_web_pw_pending"
 
+        /** 用户显式退出标记（跨进程存活；见 [userExitedExplicitly] 的说明） */
+        private const val KEY_USER_EXITED = "user_exited_explicitly"
+
         fun lanWebEnabled(context: android.content.Context): Boolean =
             context.getSharedPreferences(PREFS_UI, android.content.Context.MODE_PRIVATE)
                 .getBoolean(KEY_LAN_WEB, false)
@@ -71,6 +74,29 @@ class DshApp : Application() {
         fun setLanWebEnabled(context: android.content.Context, on: Boolean) {
             context.getSharedPreferences(PREFS_UI, android.content.Context.MODE_PRIVATE)
                 .edit().putBoolean(KEY_LAN_WEB, on).apply()
+        }
+
+        /**
+         * 用户是否在通知栏点过「退出」，且此后没有主动打开过 App。
+         *
+         * ## 为什么必须持久化（v1.4.0，用户反馈「退出后 root 模式持续空转」）
+         * `EngineSupervisor.userStop` 只是内存标志，进程一死就没了。而退出流程
+         * 恰恰会结束进程（见 `killAppProcess`）—— 于是：
+         *
+         *   退出 → 进程结束 → 无障碍服务仍被系统拉起（它是独立的系统级组件）
+         *        → 看门狗读到 userStop = false（新进程、内存标志已重置）
+         *        → **把引擎重新拉起来** → 空转
+         *
+         * 落盘之后，新进程也能知道「用户是主动退出的，别自作主张复活」。
+         * 用户下一次主动打开 App（MainActivity.onCreate）会清掉它。
+         */
+        fun userExitedExplicitly(context: android.content.Context): Boolean =
+            context.getSharedPreferences(PREFS_UI, android.content.Context.MODE_PRIVATE)
+                .getBoolean(KEY_USER_EXITED, false)
+
+        fun setUserExitedExplicitly(context: android.content.Context, exited: Boolean) {
+            context.getSharedPreferences(PREFS_UI, android.content.Context.MODE_PRIVATE)
+                .edit().putBoolean(KEY_USER_EXITED, exited).apply()
         }
 
         /** 访问密码：首次生成后固定（8 位十六进制） */

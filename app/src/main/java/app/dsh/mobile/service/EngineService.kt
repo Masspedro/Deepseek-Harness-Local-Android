@@ -232,6 +232,11 @@ class EngineService : Service() {
     private fun exitCompletely() {
         stateJob?.cancel()
         stateJob = null
+        // 落盘「用户主动退出」标记：退出流程会结束进程，而无障碍保活看门狗是
+        // 独立的系统级组件、进程重启后仍会跑。新进程读到这个标记就拒绝复活引擎，
+        // 否则就是「退出 → 被看门狗拉起 → 再退出」的空转循环（v1.4.0，
+        // 用户反馈 root 模式下持续耗资源）。用户下次主动打开 App 时清除。
+        runCatching { DshApp.setUserExitedExplicitly(this, true) }
         // ① 立刻反馈
         runCatching { pushStatusText(getString(R.string.status_exiting)) }
         // ② 后台真正停止（阻塞动作不能在主线程）
