@@ -126,6 +126,14 @@ class ExtensionManager(private val ctx: Context) {
     /** 扩展下载任务表（id → 快照）。UI 收集此流渲染进度；Activity 重建后自动恢复显示 */
     val tasks: StateFlow<Map<String, ExtTask>> = _tasks
 
+    /**
+     * [enqueue] 的原子占位集合：抢到 id 才启动任务。
+     * 与 companion 里的 [installing] 分工不同 —— installing 表示「正在执行」，
+     * 本集合表示「已被某个入口认领」，用于消除「判空与启动之间」的竞态窗口。
+     * 由 [installTask] 的 finally 释放。
+     */
+    private val pendingIds = mutableSetOf<String>()
+
     /** 并发上限：网络段允许 3 个扩展同时下载；解包/发布按扩展分锁（v1.2.41 起可并行） */
     private val dlSemaphore = Semaphore(3)
 
@@ -142,7 +150,16 @@ class ExtensionManager(private val ctx: Context) {
      */
     fun enqueue(ext: Extension) {
         check(!RuntimeInstaller.installing) { "Runtime is being set up — wait for the engine to finish starting, then try again" }
-        if (installing.contains(ext.id)) return
+        // ⚠️ 去重必须在**入队时原子地**完成，不能靠「这里 contains 就 return、那里 installTask 再判一次」：
+        // 旧实现中，若第二条路径漏进来，installTask 抛的 IllegalStateException 会被它自己的
+        // catch 吞掉并写成**同一个 id** 的 FAILED —— 把正在正常跑的那个任务快照改成失败，
+        // UI 随即弹「安装失败」；而 installing 集合仍占着 id，用户再点下载时
+        // 旧代码的 contains 分支直接 return → 按钮毫无反应。
+        // 现在用 pendingIds 做原子占位：抢到才启动，抢不到就是真的在跑/在队列，直接忽略。
+        val claimed = synchronized(pendingIds) {
+            if (pendingIds.add(ext.id)) true else false
+        }
+        if (!claimed) return
         _tasks.update { cur ->
             val existing = cur[ext.id]
             if (existing != null &&
@@ -158,10 +175,12 @@ class ExtensionManager(private val ctx: Context) {
      * UI 入口用 [enqueue]（异步 + [tasks] 状态流），AI 通道可挂起直调。
      */
     suspend fun installTask(ext: Extension, report: (Float?, String) -> Unit = { _, _ -> }) {
-        if (installing.contains(ext.id)) {
+        // check-then-act 必须原子：旧的 `contains` 后紧跟 `add` 是两次独立加锁，
+        // 两个入口（UI enqueue 与 AI 通道 runBlocking 直调）可以同时通过检查 → 双装。
+        val alreadyRunning = synchronized(installing) { !installing.add(ext.id) }
+        if (alreadyRunning) {
             throw IllegalStateException("Extension ${ext.id} is already installing")
         }
-        installing.add(ext.id)
         try {
             updateTask(ext.id) { it.copy(state = TaskState.RUNNING, stage = "Preparing…") }
             fun rep(p: Float?, s: String) {
@@ -185,6 +204,11 @@ class ExtensionManager(private val ctx: Context) {
                     // 换一个镜像作索引源重来一次即可拿到一致的那份索引。
                     Log.w(TAG, "download ${ext.id} failed, retrying once with another index mirror: ${e.message}")
                     rep(0f, "Retrying (switching mirror)…")
+                    // ⚠️ 重试前清掉上一轮下到一半的 .deb：旧文件名带版本号，
+                    // 索引换代后新旧不同名，旧文件不会被覆盖 → 永久占着 cacheDir
+                    // （下载阶段抛错时只有 installPhase 的 finally 才清 cache，
+                    // 而失败的安装根本走不到那里）。实测可残留数百 MB。
+                    runCatching { File(ctx.cacheDir, "ext-${ext.id}").deleteRecursively() }
                     downloadPhase(ext, rotatePreferred = true) { p, s -> rep(p, s) }
                 }
             } finally {
@@ -221,6 +245,15 @@ class ExtensionManager(private val ctx: Context) {
             }
         } finally {
             installing.remove(ext.id)
+            // 释放 enqueue 的占位，否则该扩展再也无法被 UI 入队（按钮永久无反应）
+            synchronized(pendingIds) { pendingIds.remove(ext.id) }
+            // 失败/取消时清掉下载缓存：installPhase 的 finally 只在解包阶段能跑到，
+            // 而下载阶段就失败（镜像 404、校验不过）时，cacheDir 里的半成品 .deb
+            // 没有任何路径会清理 → 永久残留（单扩展可达数百 MB）。
+            // 成功路径由 installPhase 自己清理，这里再删一次是幂等的。
+            if (_tasks.value[ext.id]?.state != TaskState.DONE) {
+                runCatching { File(ctx.cacheDir, "ext-${ext.id}").deleteRecursively() }
+            }
         }
     }
 
@@ -482,6 +515,9 @@ class ExtensionManager(private val ctx: Context) {
                 report(((done + p.size * frac).toDouble() / totalBytes).toFloat() * 0.95f, "")
             }
             check(p.sha256.isEmpty() || RuntimeInstaller.sha256(f) == p.sha256.lowercase()) {
+                // 校验失败必须顺手删掉这个坏文件：否则它以正式文件名留在 cacheDir，
+                // 后续重试/自愈若命中故障路径，会把「已存在的坏文件」当成可用产物。
+                runCatching { f.delete() }
                 "SHA-256 verification failed: ${p.name} (corrupt mirror data?)"
             }
             done += p.size
@@ -668,10 +704,18 @@ class ExtensionManager(private val ctx: Context) {
             val missingBins = ext.bins.filterNot { binExists(finalDir, it) }
             if (ext.bins.isNotEmpty() && missingBins.size == ext.bins.size) {
                 runCatching { File(finalDir, MARKER).delete() }
+                // ⚠️ 报错文案必须给出**真实**可能原因。旧文案一口咬定「权限残留 / 要 root」，
+                // 而实测最常见的其实是传输层问题（.deb 下载被截断 → 二进制根本没落地，
+                // 如 aapt/openjdk 解包后只剩 share/doc 与 legal/）。按这种文案去排查会
+                // 白折腾 su 和文件管理器。这里把「已落地的文件数」一并报出来便于定位。
+                val landed = finalDir.walkTopDown().count { it.isFile }
                 throw IllegalStateException(
                     "Extension verification failed: none of the executables declared by ${ext.name} " +
-                        "(${ext.bins.joinToString(", ")}) were installed — the directory is probably held by permission leftovers. " +
-                        "Grant su and reinstall (the app force-cleans automatically), or delete the extension directory with a root-capable file manager"
+                        "(${ext.bins.joinToString(", ")}) were installed (dir has $landed file(s)). " +
+                        "Usually the download was incomplete or the package payload did not unpack — " +
+                        "retry the install (a fresh download is attempted). If it keeps failing: " +
+                        "grant su and retry (root-owned leftovers), or delete the extension directory " +
+                        "with a root-capable file manager"
                 )
             } else if (missingBins.isNotEmpty()) {
                 Log.w(TAG, "extension ${ext.id}: missing bins $missingBins")
@@ -1025,6 +1069,19 @@ class ExtensionManager(private val ctx: Context) {
      * 场景：旧目录里有 root 属主残留，应用身份删不掉 → rename 必失败；改为逐项合并，
      * 让扩展先可用，而不是整次安装失败。
      */
+    /**
+     * 兜底发布：把 tmp 内容逐项搬进已有目录（用于 rename 失败、旧目录清不掉的场景）。
+     *
+     * ⚠️ 旧实现是 `runCatching { recurse(src, dst) }` 后**无条件** `src.deleteRecursively()`：
+     * recurse 内部一旦真抛异常（而不是走 failed.add 分支），异常被 runCatching 整体吞掉，
+     * tmp 照删不误，但只搬过去一部分 —— 而 failed 仍是空列表，调用方的
+     * `failed.isNotEmpty()` 判断不出问题，于是把「装了一半」当成成功发布。
+     * 实测症状：扩展目录里 share/doc 齐全、bin/ 下实体可执行文件全无（openjdk 只剩 legal/），
+     * 而安装流程没有报错，直到发布后校验才以「权限残留」的误导文案失败。
+     *
+     * 现在：异常必须计入 failed（让调用方判失败并删版本标记），且**失败时不清 src**，
+     * 保留现场便于重试与排查。
+     */
     private fun mergeMove(src: File, dst: File): List<String> {
         val failed = mutableListOf<String>()
         fun recurse(s: File, d: File) {
@@ -1032,11 +1089,18 @@ class ExtensionManager(private val ctx: Context) {
             s.listFiles()?.forEach { child ->
                 val target = File(d, child.name)
                 if (target.isDirectory && child.isDirectory) {
+                    val before = failed.size
                     recurse(child, target)
-                    child.delete()
+                    // 子目录里若有没搬成功的条目，不要删源目录 —— 否则失败的那部分
+                    // 数据直接丢失，而父级只看到「子目录已处理完」。
+                    if (failed.size == before) child.delete()
                     return@forEach
                 }
-                if (target.exists()) target.deleteRecursively()   // best-effort removal of the stale same-name entry
+                // 同名项已存在：先尝试直接换掉（rename 会失败，所以先删旧）。
+                // ⚠️ 但删除之前的旧内容是不可恢复的，因此这里只适用于「新内容确实在 tmp 里」
+                // 的常规场景；真正搬不动时由下方 copied 判断记入 failed，调用方会判安装失败
+                // 并删掉版本标记，不会留下「绿了但不可用」的假状态。
+                if (target.exists()) target.deleteRecursively()
                 if (child.renameTo(target)) return@forEach
                 val copied = runCatching { child.copyRecursively(target, overwrite = true) }.isSuccess
                 if (copied && target.exists() && (target.length() == child.length() || child.isDirectory)) {
@@ -1046,8 +1110,15 @@ class ExtensionManager(private val ctx: Context) {
                 }
             }
         }
-        runCatching { recurse(src, dst) }
-        runCatching { src.deleteRecursively() }
+        // 中途异常也计入失败：否则「搬了一半」会被当成成功（见上方说明）
+        val thrown = runCatching { recurse(src, dst) }.exceptionOrNull()
+        if (thrown != null) {
+            failed.add("<aborted: ${thrown.message ?: thrown.javaClass.simpleName}>")
+        }
+        // 只有全部搬完才清理源目录；有失败时保留 tmp，便于下次重试直接复用
+        if (failed.isEmpty()) {
+            runCatching { src.deleteRecursively() }
+        }
         return failed
     }
 
@@ -1391,11 +1462,23 @@ class ExtensionManager(private val ctx: Context) {
                 val buf = ByteArray(64 shl 10)
                 var done = 0L
                 while (true) {
+                    // ⚠️ 只有 -1 才是 EOF。InputStream.read() 返回 0 表示「本次没读到数据，
+                    // 但流还没结束」（HttpURLConnection 在网络卡顿/TLS 分片/服务端限速时会出现）。
+                    // 旧代码写 `if (n <= 0) break`，把 0 当成 EOF → 下载被静默截断，
+                    // 文件只写了一半；随后 SHA-256 校验必然失败并报 "corrupt mirror data?"，
+                    // 而截断的半成品已写成正式文件名留在 cacheDir 里。
+                    // 这就是「下载老是失败、手动重试有时才成功」的根因。
                     val n = input.read(buf)
-                    if (n <= 0) break
+                    if (n < 0) break
+                    if (n == 0) continue
                     out.write(buf, 0, n)
                     done += n
                     if (total > 0) onProgress((done.toDouble() / total).toFloat().coerceIn(0f, 1f))
+                }
+                // 服务端声明了长度就核对：短读即视为传输失败，交给 failover 换镜像重来，
+                // 而不是把一个截断文件当成功写进 cache。
+                if (total > 0 && done != total) {
+                    throw java.io.IOException("truncated download: $done/$total bytes ($url)")
                 }
             }
         }
