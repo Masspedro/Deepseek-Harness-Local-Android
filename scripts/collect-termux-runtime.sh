@@ -257,6 +257,17 @@ python3 "$SCRIPTS_DIR/patch-fs-local-android.py" "$ROOT" || {
   exit 1
 }
 
+# [dsh-ptc-runtime-node] PTC run_code 子进程保留 LD_LIBRARY_PATH（issue #29）：
+# 该包拉子进程时清空继承环境、只留 STARTUP_ENVIRONMENT_NAMES 白名单
+# （PATH/PATHEXT/SYSTEMROOT/WINDIR/TEMP/TMP）。Linux 靠 ldconfig 找 libz，
+# 不需要 LD_LIBRARY_PATH；Android 的 Termux node 库全在 runtime 的 lib/ 下，
+# 一旦被清掉 → `CANNOT LINK EXECUTABLE ... libz.so.1 not found`，主进程正常
+# 但所有子进程起不来。补丁把它加入白名单。详见 scripts/patch-ptc-runtime-android.py。
+python3 "$SCRIPTS_DIR/patch-ptc-runtime-android.py" "$ROOT" || {
+  echo "错误：dsh-ptc-runtime-node Android 补丁失败（上游形态已变？），中止构建" >&2
+  exit 1
+}
+
 # [node-pty / subprocess-local] Android 终端支持（issue #18）：
 #   · node-pty 无 Android 预编译产物 → 换成本仓库实现（转发原生助手 dsh_pty_exec）
 #   · subprocess-local 的进程探测器只认 linux/darwin/win32，Termux node 报告的是

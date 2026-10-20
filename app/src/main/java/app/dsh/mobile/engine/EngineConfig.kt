@@ -492,6 +492,73 @@ object EngineConfig {
             val b = externaliseSubdir(ctx, "workspaces")
             Log.i(TAG, "user data external: sessions=$a workspaces=$b")
         }.onFailure { Log.w(TAG, "externalise failed: ${it.message}") }
+        // 外置/迁移之后，引擎存的「工作区注册表」里可能还指向旧路径。
+        // 不修的话 workspace 服务起不来 → 连锁导致 directoryPickerController 缺失，
+        // 用户看到的正是「迁移完成后选工作区提示 unavailable」（v1.4.3 修复）。
+        runCatching { healWorkspaceRegistry(ctx) }
+            .onFailure { Log.w(TAG, "workspace registry heal failed: ${it.message}") }
+    }
+
+    /**
+     * 修复 `storages/workspace.json` 里失效的工作区路径。
+     *
+     * ## 为什么需要（用户反馈：数据迁移完成后选择工作区提示 unavailable）
+     * 引擎把工作区列表存在 `$DSH_HOME/storages/workspace.json`，每个工作区带绝对
+     * `path`。而本应用为了「卸载不丢数据」会把 `workspaces/` 软链到公开目录
+     * （Documents/dshdata 或 app external）；升级、授权变化、迁移都会让**软链
+     * 目标变化**，但注册表里的绝对路径仍是旧值：
+     *
+     *   workspace.json:  "path": "/storage/emulated/0/Android/data/<pkg>/files/..."
+     *   软链现在指向:     "/storage/emulated/0/Documents/dshdata/workspaces"
+     *   → workspaceRegistry 解析失败 → workspace / storageDomain 起不来
+     *   → directoryPickerController 缺失 → 选工作区直接报 unavailable
+     *
+     * ## 修法（只改「确实失效」的条目）
+     * 路径存在就原样保留；不存在时，若其 basename 在当前 `workspaces/` 下有同名
+     * 目录，则把 path 重指到新位置。**绝不删除任何条目** —— 找不到对应就保留原值，
+     * 宁可让引擎报错，也不静默丢用户的工作区。
+     *
+     * 幂等：所有路径有效时不写文件。
+     */
+    private fun healWorkspaceRegistry(ctx: android.content.Context) {
+        val registry = File(dshHome(ctx), "storages/workspace.json")
+        if (!registry.isFile) return
+        val text = runCatching { registry.readText() }.getOrNull() ?: return
+        val root = runCatching { org.json.JSONObject(text) }.getOrNull() ?: return
+        val tables = root.optJSONObject("tables")?.optJSONObject("workspaces") ?: return
+        val wsRoot = File(dshHome(ctx), "workspaces")
+
+        var changed = 0
+        for (id in tables.keys().asSequence().toList()) {
+            val ws = tables.optJSONObject(id) ?: continue
+            val path = ws.optString("path").takeIf { it.isNotBlank() } ?: continue
+            if (File(path).isDirectory) continue          // 仍然有效，不动
+
+            val name = File(path).name.takeIf { it.isNotBlank() } ?: continue
+            val replacement = File(wsRoot, name)
+            if (!replacement.isDirectory) {
+                Log.w(TAG, "workspace $id path missing, no replacement '$name'; left as-is")
+                continue
+            }
+            ws.put("path", replacement.absolutePath)
+            changed++
+            Log.i(TAG, "workspace $id repointed: $path -> ${replacement.absolutePath}")
+        }
+
+        if (changed == 0) return
+        // 原子写：同目录临时文件 + rename，避免写到一半留下坏 JSON
+        val tmp = File(registry.parentFile, ".workspace.json.tmp")
+        try {
+            tmp.writeText(root.toString(2) + "\n")
+            if (!tmp.renameTo(registry)) {
+                tmp.copyTo(registry, overwrite = true)
+                tmp.delete()
+            }
+            Log.i(TAG, "workspace registry healed ($changed entries)")
+        } catch (e: Exception) {
+            runCatching { tmp.delete() }
+            throw e
+        }
     }
 
     /** $DSH_HOME（凭证、会话、配置）—— 保持私有；sessions/ 由 ensureUserDataExternal 外置 */

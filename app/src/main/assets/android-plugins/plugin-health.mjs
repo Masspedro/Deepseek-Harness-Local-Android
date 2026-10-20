@@ -116,10 +116,20 @@ function inspect(ctx) {
     const rows = SERVICE_ROWS[service] || [];
     for (const [id, name] of rows) {
       if (failedEntries.some((entry) => entry.id === id)) continue;
+      // v1.4.3（用户反馈「数据迁移完成后 directoryPickerController is unavailable」）：
+      // 只报「required service X is unavailable」时，用户和我们都无法知道**为什么**。
+      // 这里把该行自己的 fiber 错误一并带出 —— 若是 workspace/storage 起不来导致
+      // 服务缺失，根因（scandir EACCES、软链失效、注册表损坏…）就直接可见。
+      const owner = entries.find((entry) => entry.id === id);
+      const ownerError = owner?.fiber?._error
+        ? String(owner.fiber._error?.stack || owner.fiber._error?.message || owner.fiber._error)
+        : "";
       failedEntries.push({
         id,
         name,
-        error: `required service ${service} is unavailable`,
+        error: ownerError
+          ? `required service ${service} is unavailable; row error: ${ownerError}`
+          : `required service ${service} is unavailable`,
       });
     }
   }
