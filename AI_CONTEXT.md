@@ -1354,3 +1354,59 @@ URL: https://github.com/Soodok/Deepseek-Harness-Local-Android/releases/tag/v1.4.
 ### 注意
 - Release 仍是 `draft:false` / `prerelease:false`，稳定用户会收到更新提示；
   已装 beta 的用户版本号相同（250），不会重复提示。
+
+---
+
+## v1.4.1 紧急修复：通知栏退出后空转（2026-10-20）
+
+### 用户报告
+「通过通知栏进行退出，脚本成功将软件退出了，但是自己本身不退出，导致 root 模式下
+在持续空转，严重消耗资源。」
+
+### 根因（三个独立缺陷叠加）
+1. **保活看门狗复活引擎（主因）**
+   `DshAccessibilityService.startKeepAliveWatchdog()` 每 60s 检查 EngineService，
+   不在就 start。注释写「除非用户显式退出过」，但**代码里从来没有该判断**。
+   无障碍服务是系统级组件，主进程结束后仍存活 → 60s 后复活引擎 → 死循环。
+   root 模式每次复活都要经 su，代价更高。
+2. **dispatchExplicitExit 在 Activity 缺失时直接 return**
+   回调注册在 MainActivity、onDestroy 置空。用户先按 Home（Activity 被回收）
+   再点通知栏退出 → 回调 null → 无人结束 App 进程。
+3. **cleanupOrphanEngine 以 portInUse() 为前提**
+   主引擎退出后 3080 已释放，但它经 su 派生 / 被 init 收养的后代仍在跑；
+   端口检查看不到 → 整条清理被跳过。
+
+### 修复
+- `DshApp.userExitedExplicitly` 持久化标记（SharedPreferences）：
+  退出时置 true（EngineService.exitCompletely），App 打开时置 false（MainActivity.onCreate）。
+  跨进程存活，解决「内存标志随进程消失」的问题。
+- 看门狗同时查 `supervisor.isUserStopped()` 与落盘标记，任一为真则不复活。
+- `dispatchExplicitExit` 无条件收尾：有回调先 finish Activity，随后
+  `killAppProcess()`（NotificationManager.cancelAll + Process.killProcess；
+  失败退回 exitProcess(0)）。
+- `stop(explicit = true)` 时**无条件** `OrphanReaper.reap(ctx)`（含 root 视角扫描）。
+
+### 验证
+- 状态机 4 场景全过：退出后看门狗不复活、重开 App 恢复、退出后 5 分钟无复活、
+  旧逻辑对照确认 bug。
+- Kotlin 编译通过（修了两处 runCatching 末行 if 缺 else 的表达式问题）。
+- release 包：versionCode 251 / versionName 1.4.1，签名 v2+v3，arm64（e_machine=183），
+  fs-local 补丁在、open-file 插件在、无探针泄漏。
+
+### 发布
+| 项 | 值 |
+|---|---|
+| tag | v1.4.1 |
+| release id | `418106915` |
+| asset id | `658579315` |
+| 大小 | 241,522,079 bytes |
+| SHA-256 | `ebfa243f238f0865987b45fe01c78442efc24101bf5172a926f74c623f621e0c` |
+| 状态 | draft=false / prerelease=false |
+
+提交 `0c52f39`（代码）+ `d968946`（发布说明/版本），远端 main → `3f379ac`。
+
+### 未完成
+- 轻量版（剥离 LibreOffice 145MB + inspector 22MB）已调研并有
+  `scripts/make-lite-runtime.py`，但直接删包会导致 office-to-pdf 的 Cordis 依赖链
+  断裂，进而 directory-picker/workspace 等核心服务不可用。正确解法是「overlay 里
+  disabled: true + 只剔静态资源」，实验做到一半用户叫停。用户确认「先不管」。
