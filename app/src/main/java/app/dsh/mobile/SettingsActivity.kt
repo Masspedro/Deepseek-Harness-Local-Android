@@ -16,9 +16,11 @@ import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
+import app.dsh.mobile.engine.ChatRecovery
 import app.dsh.mobile.engine.ExtensionManager
 import app.dsh.mobile.engine.PrivMode
 import app.dsh.mobile.engine.Privilege
+import app.dsh.mobile.engine.SelfCheck
 import app.dsh.mobile.engine.TtsManager
 import app.dsh.mobile.engine.LanWebProxy
 
@@ -247,6 +249,100 @@ class SettingsActivity : Activity() {
         // （主人反馈：「设置里面好像没有下载入口」—— 原来藏在 语音服务 → ? → 弹窗 三层里）
         findViewById<LinearLayout>(R.id.rowAsrApps).setOnClickListener {
             startActivity(Intent(this, app.dsh.mobile.AsrAppActivity::class.java))
+        }
+
+        // —— 其他：对话恢复（v1.4.4）——
+        // 扫描 sessions/ 下未登记进工作区的会话文件，用户确认后登记回去。
+        // 全程后台线程：扫几百个会话目录 + 读写注册表，不能在主线程做。
+        val recoverSub = findViewById<TextView>(R.id.txtRecoverSub)
+        findViewById<LinearLayout>(R.id.rowRecoverChats).setOnClickListener {
+            recoverSub.text = getString(R.string.recover_scanning)
+            Thread({
+                val result = runCatching { ChatRecovery.scan(this) }.getOrNull()
+                runOnUiThread {
+                    if (result == null) {
+                        recoverSub.text = getString(
+                            R.string.recover_failed, getString(R.string.file_editor_read_failed),
+                        )
+                        return@runOnUiThread
+                    }
+                    if (result.orphans.isEmpty()) {
+                        recoverSub.text = getString(R.string.recover_none)
+                        return@runOnUiThread
+                    }
+                    android.app.AlertDialog.Builder(this)
+                        .setTitle(R.string.setting_recover_chats)
+                        .setMessage(getString(R.string.recover_confirm, result.orphans.size))
+                        .setPositiveButton(R.string.file_editor_discard) { _, _ ->
+                            recoverSub.text = getString(R.string.recover_scanning)
+                            Thread({
+                                val n = runCatching {
+                                    ChatRecovery.recover(this, result.orphans)
+                                }.getOrElse { -1 }
+                                runOnUiThread {
+                                    recoverSub.text = if (n >= 0) {
+                                        getString(R.string.recover_done, n) + " · " +
+                                            getString(R.string.recover_restart_hint)
+                                    } else {
+                                        getString(
+                                            R.string.recover_failed,
+                                            getString(R.string.file_editor_read_failed),
+                                        )
+                                    }
+                                }
+                            }, "chat-recover-write").start()
+                        }
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show()
+                }
+            }, "chat-recover-scan").start()
+        }
+
+        // —— 其他：全面体检与修复（v1.4.4，用户要的「强检模式」）——
+        // 与插件无关：插件坏了、配置乱了也能跑；结果逐条列出，异常项带具体数值。
+        val selfCheckSub = findViewById<TextView>(R.id.txtSelfCheckSub)
+        findViewById<LinearLayout>(R.id.rowSelfCheck).setOnClickListener {
+            selfCheckSub.text = getString(R.string.self_check_running)
+            Thread({
+                val report = runCatching { SelfCheck.run(this) }.getOrNull()
+                runOnUiThread {
+                    if (report == null) {
+                        selfCheckSub.text = getString(
+                            R.string.recover_failed, getString(R.string.file_editor_read_failed),
+                        )
+                        return@runOnUiThread
+                    }
+                    selfCheckSub.text = if (report.issues == 0) {
+                        getString(R.string.self_check_ok)
+                    } else {
+                        getString(R.string.self_check_issues, report.issues, report.fixed)
+                    }
+                    // 逐条展示：用户能直接看到哪一项异常、具体是什么
+                    val lines = report.items.map { item ->
+                        val mark = when (item.status) {
+                            SelfCheck.Item.Status.OK -> "✓"
+                            SelfCheck.Item.Status.FIXED -> "✓*"
+                            SelfCheck.Item.Status.WARN -> "!"
+                            SelfCheck.Item.Status.FAIL -> "✗"
+                        }
+                        "$mark ${item.title}" + if (item.detail.isNotBlank()) "\n    ${item.detail}" else ""
+                    }
+                    android.app.AlertDialog.Builder(this)
+                        .setTitle(R.string.setting_self_check)
+                        .setMessage(lines.joinToString("\n\n"))
+                        .setPositiveButton(android.R.string.ok, null)
+                        .setNeutralButton(R.string.file_editor_copy_path) { _, _ ->
+                            val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            cm.setPrimaryClip(
+                                android.content.ClipData.newPlainText(
+                                    "dsh-selfcheck", SelfCheck.summarize(report),
+                                ),
+                            )
+                            Toast.makeText(this, R.string.file_editor_path_copied, Toast.LENGTH_SHORT).show()
+                        }
+                        .show()
+                }
+            }, "self-check").start()
         }
 
         // —— 其他：重启引擎 ——

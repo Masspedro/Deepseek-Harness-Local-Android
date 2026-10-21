@@ -471,4 +471,17 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="splash_loading">Oberfläche wird geladen…</string>
     <string name="splash_hint">Bitte warte ein paar Sekunden…</string>
     <string name="error_runtime_arch_mismatch">Dieses Paket enthält eine Laufzeit für eine andere CPU-Architektur und kann auf diesem Gerät nicht laufen. Bitte installiere das richtige APK (arm64-v8a für Smartphones).</string>
+    <string name="setting_recover_chats">Unterhaltungen wiederherstellen</string>
+    <string name="setting_recover_chats_sub">Sitzungen auf dem Datenträger finden, die in der Liste fehlen, und wieder eintragen</string>
+    <string name="recover_scanning">Wird durchsucht…</string>
+    <string name="recover_none">Keine fehlenden Unterhaltungen gefunden</string>
+    <string name="recover_done">%1$d Unterhaltung(en) wiederhergestellt</string>
+    <string name="recover_failed">Wiederherstellung fehlgeschlagen: %1$s</string>
+    <string name="recover_confirm">%1$d Unterhaltung(en) auf dem Datenträger gefunden, die nicht in der Arbeitsbereichsliste stehen. Hinzufügen?</string>
+    <string name="recover_restart_hint">Nach einem Neustart der Engine sichtbar</string>
+    <string name="setting_self_check">Vollständige Prüfung &amp; Reparatur</string>
+    <string name="setting_self_check_sub">Prüft Laufzeit, Speicher, Verknüpfungen, Plugins und Einstellungen – repariert was sicher möglich ist</string>
+    <string name="self_check_running">Wird geprüft…</string>
+    <string name="self_check_ok">Alle Prüfungen bestanden</string>
+    <string name="self_check_issues">%1$d Problem(e) gefunden, %2$d repariert</string>
 </resources>

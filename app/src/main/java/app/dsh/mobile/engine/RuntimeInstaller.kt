@@ -83,10 +83,32 @@ class RuntimeInstaller(private val ctx: Context) {
         if (!File(lib, "libreadline.so.8").isFile) return false
         // 3) node 本体可执行位（安装器 restoreExecBits 之后应为 true）
         if (!EngineConfig.nodeBin(ctx).canExecute()) return false
-        // 4) @deepseek-ai 作用域下至少要有一批真实文件（空壳=部分解压）
+        // 4) @deepseek-ai 作用域下锚点文件存在（空壳=部分解压）
+        //
+        // ⚠️ v1.4.4 性能修复（用户实测手表启动 12s → 40s）：
+        // 此前用 `walkTopDown().filter{isFile}.count() < 100` 判「不是空壳」。
+        // 引擎 0.2.1 改成逐包嵌套依赖后，`@deepseek-ai` 下文件从 2,093 涨到
+        // **33,620**，而这段代码**每次启动**都要把整棵树走一遍。Android 上
+        // stat/readdir 很贵（实测 5k 目录需 3.2s），阈值只有 100 却付了 3 万文件的代价 ——
+        // 这是「每次启动变慢」最确定的单一来源。
+        //
+        // 改为固定锚点抽样：覆盖入口包、核心框架、内置 profile 层与前端 bundle，
+        // 任一处缺失即判不完整（宁可多装一次，也不让坏安装走快路径）。
         val dshAi = File(root, "lib/node_modules/@deepseek-ai")
-        val fileCount = dshAi.walkTopDown().filter { it.isFile }.count()
-        if (fileCount < MIN_DSH_AI_FILES) return false
+        val anchors = listOf(
+            "dsh/lib/bin.js",                     // 引擎入口
+            "dsh/package.json",                   // 包元数据
+            "cordis/lib/index.js",                // 核心框架（所有插件依赖）
+            "dsh-base/cordis.patch.yml",          // 内置 profile 层
+            "dsh-web-app/cordis.patch.yml",       // web profile 层
+            "dsh-client-ui-chat/lib/client.js",   // 浏览器端主 bundle
+        )
+        for (rel in anchors) {
+            if (!File(dshAi, rel).isFile) {
+                Log.w(TAG, "runtime incomplete: missing anchor @deepseek-ai/$rel")
+                return false
+            }
+        }
         // 5) **架构必须匹配**（v1.3.3，issue #23）
         //
         // 前四项都通过、但 node 是另一个 CPU 架构的二进制时，会发生最坏的情况：

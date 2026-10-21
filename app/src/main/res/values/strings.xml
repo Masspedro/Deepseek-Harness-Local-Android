@@ -462,4 +462,17 @@ You can still continue without updating, but the interface will not display.</st
     <string name="splash_loading">Loading the interface…</string>
     <string name="splash_hint">Please wait a few seconds…</string>
     <string name="error_runtime_arch_mismatch">This build contains a runtime for a different CPU architecture and cannot run on this device. Please install the correct APK (arm64-v8a for phones).</string>
+    <string name="setting_recover_chats">Recover conversations</string>
+    <string name="setting_recover_chats_sub">Find sessions on disk that are missing from the list and re-register them</string>
+    <string name="recover_scanning">Scanning…</string>
+    <string name="recover_none">No missing conversations found — nothing to recover</string>
+    <string name="recover_done">Recovered %1$d conversation(s)</string>
+    <string name="recover_failed">Recovery failed: %1$s</string>
+    <string name="recover_confirm">Found %1$d conversation(s) on disk that are not in the workspace list. Add them back?</string>
+    <string name="recover_restart_hint">Restart the engine to see them</string>
+    <string name="setting_self_check">Full check &amp; repair</string>
+    <string name="setting_self_check_sub">Diagnose runtime, storage, links, plugins and settings — repairs what it safely can</string>
+    <string name="self_check_running">Checking…</string>
+    <string name="self_check_ok">All checks passed</string>
+    <string name="self_check_issues">%1$d issue(s) found, %2$d repaired</string>
 </resources>
