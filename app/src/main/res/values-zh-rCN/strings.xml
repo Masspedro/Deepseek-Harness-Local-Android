@@ -66,6 +66,10 @@
     <string name="ob_priv_root_warn">Root 模式会让引擎以 root 身份运行，可能破坏当前运行环境、丢失会话或工作区数据。\n\n是否继续？</string>
     <string name="ob_priv_root_warn2_title">最终确认（2/2）</string>
     <string name="ob_priv_root_warn2">此模式极其危险，引擎可在沙箱外读写全部文件。\n\n确定要开启 Root 模式吗？</string>
+
+    <string name="ob_priv_root_paths_warn">已开启 Root 模式。请不要在应用目录（files/engine、files/dsh-home）或工作区目录里手动改动、移动、删除文件。\n\nroot 进程写出的文件属主是 root、权限位收紧，App 自身随后读不了；症状是「插件加载失败」「引擎起不来」，往往只能清数据或重装才能恢复。\n\n你自己的文件（文档、代码、项目）请放在外部文件夹（如 Documents/），让 AI 在那里工作。\n\n确实要改应用内的东西，请用应用自己的设置或插件，而不是 root 文件管理器。</string>
+
+    <string name="error_boot_timeout">启动重试超过 %1$d 分钟，已停止。常见原因：插件损坏、端口被占用、或上一版本残留文件。可到 设置 → 上次启动 查看各阶段耗时，或尝试 设置 → 对话恢复 / 全面体检。</string>
     <string name="ob_dialog_continue">继续</string>
     <string name="ob_dialog_cancel">取消</string>
 
@@ -460,6 +464,29 @@
     <string name="splash_starting">正在启动引擎…</string>
     <string name="splash_loading">正在加载界面…</string>
     <string name="splash_hint">请稍等几秒…</string>
+    <string name="splash_extracting">正在解压运行环境…</string>
+    <string name="splash_failed">启动失败</string>
+    <string name="splash_elapsed">%1$s · %2$s</string>
+    <string name="splash_files">%1$,d / %2$,d 个文件</string>
+    <string name="splash_runtime_reused">运行环境已就绪</string>
+    <string name="splash_show_steps">查看加载步骤</string>
+    <string name="splash_hide_steps">收起加载步骤</string>
+    <string name="splash_steps_empty">还没有记录到步骤</string>
+    <string name="splash_step_line">+%1$s   累计 %2$s   %3$s</string>
+    <string name="boot_step_guardian">恢复内置补丁</string>
+    <string name="boot_step_seed">写入 Agent 指令</string>
+    <string name="boot_step_orphans">回收孤儿进程</string>
+    <string name="boot_step_bridge">启动能力桥</string>
+    <string name="boot_step_owner">检查文件属主</string>
+    <string name="boot_step_runtime">解压运行环境</string>
+    <string name="boot_step_userdata">链接用户数据</string>
+    <string name="boot_step_spawn">拉起引擎进程</string>
+    <string name="boot_step_health">等待健康检查</string>
+    <string name="setting_boot_trace">上次启动</string>
+    <string name="setting_boot_trace_sub">查看最近一次启动各阶段耗时与文件加载量</string>
+    <string name="boot_trace_title">上次启动详情</string>
+    <string name="boot_trace_none">这台设备上还没有启动记录。</string>
+    <string name="boot_trace_running">当前有一次启动正在进行中。</string>
     <string name="error_runtime_arch_mismatch">这个安装包内置的运行环境与设备 CPU 架构不匹配，无法在本机运行。请安装对应架构的安装包（手机请选 arm64-v8a）。</string>
     <string name="setting_recover_chats">对话恢复</string>
     <string name="setting_recover_chats_sub">扫描磁盘上没出现在列表里的会话，重新登记回来</string>

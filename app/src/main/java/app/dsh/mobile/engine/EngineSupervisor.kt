@@ -240,6 +240,16 @@ class EngineSupervisor(private val ctx: Context) {
         scopeRef = scope
         if (loopJob?.isActive == true) return
         userStop = false
+        // ⚠️ v1.4.9（社区贡献 @henryz78，用户实测「点重启后一直卡在等待状态」）：
+        // [stopping] 必须在这里复位 —— 这个标志自己的 KDoc 写的就是「任何 stop 都置位、
+        // start 清零」，而实现漏了清零。后果是确定性的：
+        //   restart() → stop() 置 stopping=true → start() 拉起新监督循环
+        //     → 循环条件 while (isActive && !stopping) 首轮即为假，一次迭代都不跑
+        //     → 状态永久停在 restart() 设的 State.Starting，UI 一直转圈不动。
+        // 影响面比「重启卡住」更大：任何一次 stop()（EngineService.onDestroy 被系统回收、
+        // 通知栏退出、权限模式切换）之后，本进程内所有 start() 都再也跑不起来，
+        // 只有杀掉 App 进程才恢复 —— 与用户描述完全吻合。
+        stopping = false
         loopJob = scope.launch(Dispatchers.Default) { supervisionLoop() }
     }
 
@@ -366,6 +376,19 @@ class EngineSupervisor(private val ctx: Context) {
         tail.contains("EADDRINUSE") || tail.contains("address already in use", ignoreCase = true)
     }.getOrDefault(false)
 
+    /**
+     * 监督循环是否应当退出（v1.4.9，社区贡献 @henryz78，配合 [start] 里的 stopping 复位）。
+     *
+     * 只看 [stopping] 不够：stop() 的 `loopJob?.cancel()` 是**异步**的，而 start()
+     * 把 stopping 复位后，那个已被取消的**旧**循环若正停在 `catch (e: Exception)`
+     * ——CancellationException 也是 Exception，会被它吞掉——就判出 stopping == false，
+     * 于是不 break、继续走收尾：guardian.onFailure() 可能触发 ROLLED_BACK 静默回滚
+     * 用户 profiles，末尾的 State.Backoff 还会覆盖**新**循环刚设的 State.Starting。
+     * 所以额外要求协程活性：本协程一旦被取消，一律视为退出信号。
+     */
+    private suspend fun shouldExitLoop(): Boolean =
+        stopping || !kotlinx.coroutines.currentCoroutineContext().isActive
+
     private suspend fun supervisionLoop() {
         var backoffIndex = 0
         // 端口清场计数（v1.3.1）：防「非引擎进程永久占端口」时绕过退避无限重试
@@ -373,15 +396,55 @@ class EngineSupervisor(private val ctx: Context) {
         // 生命周期内累计清场次数：portReclaimCount 会在「额度用尽」时被归零以允许
         // 下一轮，但**累计值**必须持续增长，否则清场额度永远用不完（审查 P0）。
         var totalPortReclaims = 0
+        // 上一轮是否因插件恢复而主动重启（只用来给 BootTrace 标注启动原因）
+        var pluginRecoveryRequestedThisLoop = false
+        // v1.4.9：插件自动隔离触发的重启次数（生命周期累计，独立于 MAX_RESTART）。
+        // 旧实现会让这条路径绕过退避额度，形成「摘插件→重启→再摘」的长时间空转。
+        var pluginRecoveryRestarts = 0
+        // v1.4.9：本次「用户可见启动」的墙钟起点。所有自愈层各自有边界，但组合起来
+        // 没有总预算 —— 用户实测能空转 20 分钟以上，界面一直停在准备阶段。
+        var userVisibleBootT0 = System.currentTimeMillis()
         while (kotlinx.coroutines.currentCoroutineContext().isActive && !stopping) {
+            // 总时限检查：一旦超预算，收敛为 Failed 并说清发生了什么。
+            // 放在循环顶部而不是每轮末尾，是为了让「已进入 Healthy 后崩溃重启」
+            // 这种正常场景重新计时 —— 那时 setUserVisibleBootStart() 会被调用。
+            val bootElapsed = System.currentTimeMillis() - userVisibleBootT0
+            if (bootElapsed > EngineConfig.BOOT_WALL_CLOCK_BUDGET_MS && _state.value !is State.Healthy &&
+                _state.value !is State.SafeMode
+            ) {
+                val mins = bootElapsed / 60_000
+                Log.e(
+                    TAG,
+                    "boot exceeded ${EngineConfig.BOOT_WALL_CLOCK_BUDGET_MS}ms budget " +
+                        "(elapsed=${bootElapsed}ms, attempts=$backoffIndex, " +
+                        "pluginRecoveryRestarts=$pluginRecoveryRestarts) — giving up with a visible error",
+                )
+                _state.value = State.Failed(
+                    ctx.getString(R.string.error_boot_timeout, mins),
+                )
+                BootTrace.fail(ctx, ctx.getString(R.string.error_boot_timeout, mins))
+                return
+            }
             // 仅当引擎「自行死亡」（fork 失败 / 启动期退出）才值得让 guardian 定罪；
             // 健康超时自杀、安装异常、Healthy 后运行中退出都不算配置崩溃。
             var deterministicFailure: String? = null
             val bootT0 = System.currentTimeMillis()
             var stepT = bootT0
+            // v1.4.8：启动过程可视化。每轮尝试开一笔新记录 —— 插件恢复重启会让同一轮
+            // 循环再跑一次，两次各自的阶段耗时都值得保留（能直观看出第二次快多少）。
+            BootTrace.begin(
+                when {
+                    pluginRecoveryRequestedThisLoop -> "plugin recovery restart"
+                    backoffIndex > 0 -> "retry #${backoffIndex + 1}"
+                    restartStartedAt != null -> "user restart"
+                    else -> "cold start"
+                },
+            )
+            pluginRecoveryRequestedThisLoop = false
             fun step(name: String) {
                 val now = System.currentTimeMillis()
                 Log.i(TAG, "boot step $name: ${now - stepT}ms (total ${now - bootT0}ms)")
+                BootTrace.step(name)
                 stepT = now
             }
             try {
@@ -425,16 +488,24 @@ class EngineSupervisor(private val ctx: Context) {
                 step("home-owner-check")
 
                 _state.value = State.Installing
+                BootTrace.stage(BootTrace.Stage.EXTRACTING)
                 withContext(Dispatchers.IO) {
                     var lastPct = -1
-                    RuntimeInstaller(ctx).ensureInstalled { frac ->
-                        // 仅整 1% 变化时发布，避免 2 万次无效状态更新
-                        val pct = (frac * 100).toInt()
-                        if (pct != lastPct) {
-                            lastPct = pct
-                            _installProgress.value = frac
-                        }
-                    }
+                    val reused = RuntimeInstaller(ctx).ensureInstalled(
+                        onProgress = { frac ->
+                            // 仅整 1% 变化时发布，避免 2 万次无效状态更新
+                            val pct = (frac * 100).toInt()
+                            if (pct != lastPct) {
+                                lastPct = pct
+                                _installProgress.value = frac
+                            }
+                        },
+                        onDetail = { detail ->
+                            // "已加载 N/M 个文件"的确定性进度（v1.4.8）
+                            BootTrace.install(detail)
+                        },
+                    )
+                    if (reused) BootTrace.markRuntimeReused()
                 }
                 _installProgress.value = null
                 step("runtime-install")
@@ -446,6 +517,7 @@ class EngineSupervisor(private val ctx: Context) {
                 step("user-data")
 
                 _state.value = State.Starting
+                BootTrace.stage(BootTrace.Stage.STARTING)
                 // 旧 marker 可能来自上一次被强杀的引擎；本次 fork 前先清掉，
                 // 否则一个 stale 的 degraded 结果会把正常插件误摘掉。
                 withContext(Dispatchers.IO) { PluginRecovery.prepareForBoot(ctx) }
@@ -457,6 +529,8 @@ class EngineSupervisor(private val ctx: Context) {
                 val healthy = pollHealth(EngineConfig.DEFAULT_PORT, proc)
                 step("health-poll")
                 if (healthy) {
+                    // HTTP 已通 → 进入「加载界面」阶段：等插件探针、再由 UI 拉 WebUI 首屏。
+                    BootTrace.stage(BootTrace.Stage.LOADING)
                     var pluginRecoveryRequested = false
                     // HTTP 已监听不代表 Cordis Loader 的关键 entry 已成功激活。
                     // 等待内置 probe 写出本次 boot 的 marker；缺失只记诊断，不阻断慢设备。
@@ -490,6 +564,7 @@ class EngineSupervisor(private val ctx: Context) {
                         if (action != null) {
                             recoveredPlugin = action.packageName
                             pluginRecoveryRequested = true
+                            pluginRecoveryRequestedThisLoop = true
                             Log.e(
                                 TAG,
                                 "plugin recovery: disabled ${action.packageName}; reason=${action.reason}; " +
@@ -499,13 +574,34 @@ class EngineSupervisor(private val ctx: Context) {
                             // PluginRecovery 的持久化上限负责阻止无限重启风暴。
                             proc.stop(graceMs = 1_500)
                             deterministicFailure = null
-                            backoffIndex = 0
+                            // ⚠️ v1.4.9（用户反馈「等几十分钟引擎都准备不好」）：
+                            // 这里**不再重置 backoffIndex**，也**不能**跳过统一退避。
+                            // 旧实现重置为 0 并在下面 `if (pluginRecoveryRequested)` 里
+                            // 直接进下一轮（无 delay），于是「探针报 degraded → 摘一个插件
+                            // → 立刻重启 → 再报 degraded」形成一个**不计入 MAX_RESTART**
+                            // 的快速循环；每轮还要跑满 45s 健康检查 + 20s 探针等待，
+                            // 14 轮就是 21 分钟，正好是用户描述的「几十分钟准备不好」。
+                            // 现在：沿用统一的 backoffIndex 递增与退避，并受
+                            // pluginRecoveryRestarts 生命周期总上限约束。
+                            pluginRecoveryRestarts++
                         } else {
                             Log.e(TAG, "plugin recovery: no safe candidate; leaving profile unchanged")
                         }
                     }
                     if (pluginRecoveryRequested) {
-                        // 这次是有界的插件修复重启，不进入 ProfileGuardian 的配置定罪计数。
+                        // 这次是有界的插件修复重启，不进入 ProfileGuardian 的配置定罪计数，
+                        // 但**仍然走下面的统一退避**。超过生命周期总上限就停手，
+                        // 把状态暴露出去而不是继续空转。
+                        if (pluginRecoveryRestarts > EngineConfig.MAX_PLUGIN_RECOVERY_RESTARTS) {
+                            Log.e(
+                                TAG,
+                                "plugin recovery restart budget exhausted " +
+                                    "(${EngineConfig.MAX_PLUGIN_RECOVERY_RESTARTS} lifetime) — " +
+                                    "leaving degraded engine available instead of looping",
+                            )
+                            // 降级但可用：继续按 degraded 处理（引擎 HTTP 是通的）
+                            pluginRecoveryRequested = false
+                        }
                     } else {
                         // 端口已监听但健康探针明确报告 degraded 时，不能把坏 profile
                         // 快照成 last-good；否则后续崩溃回滚会再次恢复同一坏插件。
@@ -531,6 +627,15 @@ class EngineSupervisor(private val ctx: Context) {
                         _state.value =
                             if (safe) State.SafeMode(EngineConfig.DEFAULT_PORT, tokenUrl, notice)
                             else State.Healthy(EngineConfig.DEFAULT_PORT, tokenUrl, notice)
+                        // 启动记录收尾：引擎已可用。WebView 首屏耗时会由 UI 层补记。
+                        BootTrace.ready(ctx)
+                        // ⚠️ v1.4.9：成功进入 Healthy/SafeMode 后**重置墙钟起点与插件
+                        // 恢复额度**。预算约束的是「这一次启动要多久」，不是「进程总寿命」
+                        // —— 否则一台跑了一天的设备，引擎偶发崩溃后的正常重启会被
+                        // 误判成「启动超时」直接 Failed。
+                        userVisibleBootT0 = System.currentTimeMillis()
+                        pluginRecoveryRestarts = 0
+                        backoffIndex = 0
                         // Shizuku 模式：引擎就绪后启动 ADB 级访问桥（shz 包装器回呼用）；其他模式自动关停
                         withContext(Dispatchers.IO) {
                             ShizukuHttpBridge.start(ctx, EngineConfig.DEFAULT_PORT)
@@ -538,7 +643,7 @@ class EngineSupervisor(private val ctx: Context) {
                         // 阻塞等待进程退出（被杀/崩溃）。Healthy 后退出视为资源类偶发，
                         // 不计入 guardian（那是普通退避该管的事，与配置无关）。
                         val status = proc.exitFuture.get()
-                        if (stopping) break
+                        if (shouldExitLoop()) break
                         Log.w(TAG, "engine exited, raw status=0x${status.toString(16)}")
                     }
                 } else if (proc.exitFuture.isDone) {
@@ -550,8 +655,10 @@ class EngineSupervisor(private val ctx: Context) {
                     proc.stop()
                 }
             } catch (e: EngineStartException) {
-                if (stopping) break
+                if (shouldExitLoop()) break
                 Log.e(TAG, "supervision failure", e)
+                // v1.4.8：失败也收尾，否则启动遮罩与"上次启动"会一直显示进行中
+                BootTrace.fail(ctx, e.message ?: e.javaClass.simpleName)
                 // ⚠️ v1.3.1：su 探测失败（"no usable su"）是**环境瞬时问题**，不是坏配置。
                 // 场景：App 被强杀后立刻重启，magiskd 对该 app 的 su 会话尚未重建、
                 // 或设备刚开机 daemon 还没就绪 —— 三个探针各 2s 超时 → usableSuPrefix()
@@ -571,10 +678,12 @@ class EngineSupervisor(private val ctx: Context) {
                 // 「连续 14 次启动失败」的模糊文案反复重装。
                 Log.e(TAG, "runtime architecture mismatch — stopping (retrying cannot help)", e)
                 _state.value = State.Failed(ctx.getString(R.string.error_runtime_arch_mismatch))
+                BootTrace.fail(ctx, ctx.getString(R.string.error_runtime_arch_mismatch))
                 return
             } catch (e: Exception) {
-                if (stopping) break
+                if (shouldExitLoop()) break
                 Log.e(TAG, "supervision failure", e)
+                BootTrace.fail(ctx, e.message ?: e.javaClass.simpleName)
             }
 
             // ---- 自愈判定：仅对「引擎真死」且签名连续一致时逐步升级 ----
@@ -764,7 +873,13 @@ class EngineSupervisor(private val ctx: Context) {
                 "kill -9 " + d + "p 2>/dev/null;; esac; done; true"
         // ① 同 uid（普通模式孤儿）
         runCatching {
-            ProcessBuilder("/system/bin/sh", "-c", killCmd).start().waitFor()
+            // v1.4.9：加超时 —— 这个 kill 脚本要遍历 /proc，若某个进程的 cmdline
+            // 读取卡住（僵尸/内核态 D 状态），无界 waitFor 会让整个监督循环停住。
+            val p = ProcessBuilder("/system/bin/sh", "-c", killCmd).start()
+            if (!p.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)) {
+                runCatching { p.destroy() }
+                Log.w(TAG, "reclaimPort: same-uid sweep timed out (3s) — continuing")
+            }
         }
         // ② su 兜底（Root 模式孤儿；su 不可用时 runSu 自己会静默返回 null）
         Privilege.runSu(killCmd)

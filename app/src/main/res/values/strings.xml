@@ -66,6 +66,10 @@
     <string name="ob_priv_root_warn">Root mode runs the engine as root. It can damage the current runtime environment and lose session or workspace data.\n\nContinue?</string>
     <string name="ob_priv_root_warn2_title">Final confirmation (2/2)</string>
     <string name="ob_priv_root_warn2">This mode is extremely dangerous — the engine can read and write every file outside the sandbox.\n\nTurn on Root mode?</string>
+
+    <string name="ob_priv_root_paths_warn">Root mode is on. Do not edit, move, or delete files inside the app directories (files/engine, files/dsh-home) or the workspace folder.\n\nFiles written there by a root process are owned by root with restrictive permissions. The app then cannot read them, and the symptoms look like \'plugin failed to load\' or \'engine will not start\' - usually only fixable by clearing app data.\n\nKeep your own files (documents, code, projects) in an outside folder such as Documents/ and let the agent work there.\n\nIf you must change something inside the app directories, use the app\'s own settings or plugins instead of a root file manager.</string>
+
+    <string name="error_boot_timeout">Startup aborted after %1$d minutes of retrying. This is usually a broken plugin, a blocked port, or leftover files from a previous version. Open Settings → Last startup for the per-stage timings, or try Settings → Recover conversations / Health check.</string>
     <string name="ob_dialog_continue">Continue</string>
     <string name="ob_dialog_cancel">Cancel</string>
 
@@ -461,6 +465,29 @@ You can still continue without updating, but the interface will not display.</st
     <string name="splash_starting">Starting the engine…</string>
     <string name="splash_loading">Loading the interface…</string>
     <string name="splash_hint">Please wait a few seconds…</string>
+    <string name="splash_extracting">Extracting the runtime…</string>
+    <string name="splash_failed">Startup failed</string>
+    <string name="splash_elapsed">%1$s · %2$s</string>
+    <string name="splash_files">%1$,d / %2$,d files</string>
+    <string name="splash_runtime_reused">runtime already installed</string>
+    <string name="splash_show_steps">Show steps</string>
+    <string name="splash_hide_steps">Hide steps</string>
+    <string name="splash_steps_empty">No steps recorded yet</string>
+    <string name="splash_step_line">+%1$s   at %2$s   %3$s</string>
+    <string name="boot_step_guardian">Restore built-in patches</string>
+    <string name="boot_step_seed">Write agent instructions</string>
+    <string name="boot_step_orphans">Reap orphan processes</string>
+    <string name="boot_step_bridge">Start capability bridge</string>
+    <string name="boot_step_owner">Check file ownership</string>
+    <string name="boot_step_runtime">Extract runtime</string>
+    <string name="boot_step_userdata">Link user data</string>
+    <string name="boot_step_spawn">Launch engine process</string>
+    <string name="boot_step_health">Wait for health check</string>
+    <string name="setting_boot_trace">Last startup</string>
+    <string name="setting_boot_trace_sub">Timing and file counts from the most recent boot</string>
+    <string name="boot_trace_title">Last startup details</string>
+    <string name="boot_trace_none">No startup has been recorded yet on this install.</string>
+    <string name="boot_trace_running">A startup is currently in progress.</string>
     <string name="error_runtime_arch_mismatch">This build contains a runtime for a different CPU architecture and cannot run on this device. Please install the correct APK (arm64-v8a for phones).</string>
     <string name="setting_recover_chats">Recover conversations</string>
     <string name="setting_recover_chats_sub">Find sessions on disk that are missing from the list and re-register them</string>

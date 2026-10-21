@@ -534,16 +534,43 @@ copy_soname 'libncursesw.so.[0-9]*'  libncurses.so
 #     runtime.zip 在设备上解压到别处，路径失效（且本文件不含任何构建期绝对路径）。
 # 正解与 bin/pnpm 同款：生成**静态 shell wrapper**，用 $(dirname "$0") 自推导 node，
 # 不含任何绝对路径，构建期/运行期路径无关。
+#
+# ⚠️⚠️ 必须先 rm 再写（v1.4.9，用户实测「corepack.js 被改成 shell 脚本」）：
+#
+# Termux 的 npm 用**硬链接**把 bin/<name> 链到 dist/<name>.js（同一 inode）。
+# 本函数原来直接 `cat > "$ROOT/bin/$name"`，而 shell 的 `>` 是 **truncate 已存在
+# 的文件**，不是新建 —— 硬链接下 truncate 写的是**共享 inode**，于是 bin/corepack
+# 的 wrapper 内容被同时写进了 lib/node_modules/corepack/dist/corepack.js。
+#
+# 后果（用户报告）：dist/corepack.js 不再是 JS，而是一段 exec 自己的 shell 脚本
+#   · bin/corepack 用 node 执行 → SyntaxError
+#   · 直接执行 → exec 目标是自己 → 无限自循环
+# 而 npm/npx/pnpm 等其余 6 个没坏 —— 因为它们的 bin 条目和 dist 条目不共享 inode，
+# 唯独 corepack 这一对是硬链接。这也解释了为什么只有它一个坏。
+#
+# 修法：先 `rm -f` 断开目录项（inode 引用计数减一，dist/*.js 保留原内容），
+# 再创建全新的普通文件。写完校验：目标必须是普通文件、源 JS 必须仍是 JS。
 make_corepack_wrapper() {
   local name="$1" entry="$2"   # entry = dist 下的 js 文件名
   local js="$ROOT/lib/node_modules/corepack/dist/$entry"
+  local dst="$ROOT/bin/$name"
   [ -f "$js" ] || return 1
-  cat > "$ROOT/bin/$name" <<SHEOF
+  # 断链：确保 dst 是独立 inode（对普通文件是无害的 no-op）
+  rm -f "$dst"
+  cat > "$dst" <<SHEOF
 #!/system/bin/sh
 # Android corepack $name wrapper (shebang-safe, PATH-independent)
 exec "\$(dirname "\$0")/node" "\$(dirname "\$0")/../lib/node_modules/corepack/dist/$entry" "\$@"
 SHEOF
-  chmod 0755 "$ROOT/bin/$name"
+  chmod 0755 "$dst"
+  # 写后校验：源 JS 不得被这次写入污染（硬链接事故的回归探针）。
+  # 正常情况下 dist/$entry 的第一行是 Termux/node 的 shebang 或 JS 代码；
+  # 若变成 /system/bin/sh，说明这次写入又写穿了 -- 立即中止构建，别把坏包发出去。
+  if [ "$(head -n 1 "$js" 2>/dev/null)" = "#!/system/bin/sh" ]; then
+    echo "错误：写入 bin/$name 时污染了 dist/$entry（硬链接写穿）。" >&2
+    echo "      该文件现在是 shell 脚本，node 无法执行它。" >&2
+    exit 1
+  fi
 }
 if [ -f "$ROOT/lib/node_modules/corepack/dist/corepack.js" ]; then
   for pair in "corepack:corepack.js" "npm:npm.js" "npx:npx.js" \

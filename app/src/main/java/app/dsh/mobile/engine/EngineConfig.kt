@@ -43,6 +43,46 @@ object EngineConfig {
      */
     const val MAX_PORT_RECLAIMS = 8
 
+    /**
+     * 插件自动隔离触发的重启总次数上限（v1.4.9）。
+     *
+     * ## 为什么必须单独设限（用户反馈「等几十分钟引擎都准备不好」）
+     *
+     * 插件探针报 degraded 时会摘掉一个第三方插件并重启引擎。这条路径旧实现：
+     *   · `backoffIndex = 0`（重置退避额度）
+     *   · 且不计入 `MAX_RESTART`
+     *   · 且当轮**没有 delay**，直接进下一次 spawn
+     *
+     * 于是「摘插件 → 重启 → 再报告 degraded → 再摘」可以远比 14 次更多轮。
+     * 每轮成本 = 45s 健康检查 + 20s 探针等待 + 引擎自身启动时间，20 轮就 30 分钟以上。
+     *
+     * 更要紧的是 v1.4.7 的一个 bug 让探针**稳定误报** degraded（把已被 disabled 的
+     * `directory-picker` 行拿去比对 browse 包名）—— 对这类用户，本来自愈的路径
+     * 变成了稳定失败循环。
+     *
+     * 设为 3：与 `PluginRecovery.MAX_ATTEMPTS` 对齐（摘 3 个插件足够覆盖
+     * 「多个坏插件」的真实场景），超过就停在 degraded 可用状态，等用户处置。
+     */
+    const val MAX_PLUGIN_RECOVERY_RESTARTS = 3
+
+    /**
+     * 一次「用户可见的启动」总时限（v1.4.9）。
+     *
+     * 用户按下启动/打开 App 后，超过这个时间还没进入 Healthy/SafeMode/Failed 的
+     * 任一可见状态，就主动收敛为 Failed 并给出可操作提示，而不是继续在后台重试。
+     *
+     * ## 为什么需要它（用户反馈「等几十分钟引擎都准备不好」）
+     *
+     * 各层自愈（端口清场、插件隔离、guardian 回滚、退避重启）都有独立边界，但
+     * **组合起来没有总预算**。真实用户遇到的组合：探针稳定报 degraded（v1.4.7 bug）
+     * + 每次重启都要完整跑一遍 45s 健康检查 —— 单轮 ~70s，20 轮就是 23 分钟。
+     * 期间界面一直停在「正在准备运行环境」，没有任何错误可看。
+     *
+     * 5 分钟是「还能接受、但已经明显不正常」的分界：低端设备首次冷启动含解压
+     * 实测可达 55s（模拟器），到 5 分钟必然是某个循环在空转。
+     */
+    const val BOOT_WALL_CLOCK_BUDGET_MS = 5 * 60_000L
+
     fun engineRoot(ctx: android.content.Context): File =
         File(ctx.filesDir, "engine").apply { mkdirs() }
 
@@ -757,6 +797,60 @@ object EngineConfig {
             }
             if (fixed > 0) Log.i(TAG, "healed $fixed Termux shebang(s) in engine/bin")
         }.onFailure { Log.w(TAG, "shebang heal failed: ${it.message}") }
+        healClobberedCorepackEntry(ctx)
+    }
+
+    /**
+     * 修复被硬链接写穿的 `corepack/dist` 下的 JS 入口（v1.4.9）。
+     *
+     * ## 事故（用户实测报告 #1）
+     *
+     * Termux 的 npm 用**硬链接**把 `bin/corepack` 链到 `dist/corepack.js`（同一 inode）。
+     * 打包脚本曾用 `cat > "$ROOT/bin/corepack"` 生成 sh wrapper —— shell 的 `>`
+     * 是 truncate 已存在文件，不是新建，所以这次写入**同时改掉了共享 inode 里的
+     * dist/corepack.js**。结果该 JS 变成一段 `exec` 自己的 shell 脚本：
+     *   · `node dist/corepack.js` → SyntaxError
+     *   · 直接执行 → exec 目标是自身 → 无限自循环
+     * 而其余 6 个（npm/npx/pnpm/...）没坏，因为它们与 dist 不共享 inode。
+     *
+     * 打包脚本已修为「先 rm 再写」（断链）；这里兜底**已经装出去的旧包**：
+     * 运行时检测到 dist 下的文件是 shell wrapper、且内容指向自己，就还原成
+     * 正常的 node 入口（与同目录其它 6 个同构）。
+     *
+     * 幂等：内容正确时不动任何文件。
+     */
+    fun healClobberedCorepackEntry(ctx: android.content.Context) {
+        runCatching {
+            val dist = File(engineRoot(ctx), "lib/node_modules/corepack/dist")
+            if (!dist.isDirectory) return@runCatching
+            var healed = 0
+            dist.listFiles()?.forEach { f ->
+                if (!f.isFile || !f.name.endsWith(".js")) return@forEach
+                val text = runCatching { f.readText() }.getOrNull() ?: return@forEach
+                // 判据：它是我们的 wrapper（而不是正常 JS 入口）。正常入口第二行是
+                // `process.env.COREPACK_...` 或 `require(...)`，绝不会是 exec。
+                if (!text.contains("Android corepack") || !text.contains("/system/bin/sh")) {
+                    return@forEach
+                }
+                val base = f.name.removeSuffix(".js")
+                val restored = buildString {
+                    append("#!/data/data/com.termux/files/usr/bin/env node\n")
+                    append("process.env.COREPACK_ENABLE_DOWNLOAD_PROMPT??='1'\n")
+                    append("require('module').enableCompileCache?.();\n")
+                    append("require('./lib/corepack.cjs').runMain(['")
+                    append(base)
+                    append("', ...process.argv.slice(2)]);\n")
+                }
+                f.writeText(restored)
+                healed++
+                Log.w(
+                    TAG,
+                    "healed clobbered corepack entry: ${f.name} " +
+                        "(was a shell wrapper written through a hard link)",
+                )
+            }
+            if (healed > 0) Log.i(TAG, "healed $healed clobbered corepack entry/entries")
+        }.onFailure { Log.w(TAG, "corepack heal failed: ${it.message}") }
     }
 
     fun ensureAndroidOverlay(ctx: android.content.Context): File {
@@ -836,26 +930,41 @@ object EngineConfig {
             |  name: '@deepseek-ai/dsh-api-gateway'
             |  disabled: false
             |
-            |# WARNING (v1.4.7, user-diagnosed): do NOT use dsh-host-directory-picker-auto.
+            |# Directory picker: pin the browse backend (v1.4.8).
             |#
-            |# The auto variant mounts backend + surface dynamically via
-            |# `ctx.loader.create()` inside its apply(), then awaits `entry.fiber.await()`.
-            |# That runs inside `ctx.effect()`, i.e. exactly once during boot. If any step
-            |# throws, it unmounts whatever it already mounted and rethrows; Cordis does
-            |# not retry, so directoryPicker stays missing for the whole process:
-            |#   workspace-controller's `inject = ["directoryPicker"]` is never satisfied
-            |#   -> directoryPickerController never exists -> the WebUI reports
-            |#   "directoryPickerController is unavailable", and engine.log stays silent.
-            |# Users report: works on the very first launch after install, fails on every
-            |# launch after that.
+            |# ⚠️ How the patch engine actually behaves (verified by reading
+            |# cordis-plugin-include/lib/index.js):
+            |#     const { id, insert, name, ...overrides } = patch
+            |#     if (name && name !== target.name) { warn(...); continue }
+            |# `name` is a MATCH GUARD, not an assignable field. A patch whose name
+            |# differs from the target row is skipped with a single logger warning and
+            |# nothing else happens. The v1.4.7 attempt here wrote id: directory-picker
+            |# with name: ...-browse against a base row whose name is ...-auto, so the
+            |# patch was silently dropped and the engine kept running -auto the whole
+            |# time. Two raw strings stayed in sync, the build was green, and only a
+            |# device log ("critical row must be ...-browse") revealed that the shipped
+            |# fix had never taken effect.
             |#
-            |# Meanwhile auto's backend probe is constant on Android: platform === "linux"
-            |# (Termux node reports linux) + no DISPLAY/WAYLAND + no zenity/kdialog always
-            |# resolves to the browse backend. The outcome is fixed, so declare browse
-            |# directly: one less dynamic chain that can break, identical behaviour.
+            |# The correct shape is therefore: DISABLE the base row, then INSERT a new
+            |# row under a different id. The insert carries `name` because there is no
+            |# existing target to guard against.
+            |#
+            |# Why browse rather than auto: auto resolves its backend once per boot and
+            |# mounts backend + surface dynamically via ctx.loader.create() inside
+            |# ctx.effect(). If either mount throws, it unmounts and rethrows and Cordis
+            |# never retries, so directoryPicker is missing for the rest of the process
+            |# (workspace-controller's inject is never satisfied -> the WebUI reports
+            |# "directoryPickerController is unavailable"). On Android the resolution is
+            |# constant anyway: platform === "linux", no DISPLAY/WAYLAND, no
+            |# zenity/kdialog -> always browse. Declaring browse removes the only dynamic
+            |# link in that chain and behaves identically.
             |- id: directory-picker
-            |  name: '@deepseek-ai/dsh-host-directory-picker-browse'
-            |  disabled: false
+            |  disabled: true
+            |
+            |- insert:
+            |    - id: android-directory-picker
+            |      name: '@deepseek-ai/dsh-host-directory-picker-browse'
+            |      disabled: false
             |
             |- id: session-persistence-jsonl
             |  name: '@deepseek-ai/dsh-session-persistence-jsonl'

@@ -1,5 +1,136 @@
 # AI_CONTEXT
 
+## v1.4.9 已发布（2026-10-21）
+- 发布物：`dist/DSH-Mobile-1.4.9-arm64-v8a.apk`（241,444,474 B，versionCode 260，签名 `CN=DSH Mobile`）+ `-debug.apk`（242,941,322 B）。
+- 说明文档：`RELEASE_NOTES_v1.4.9.md`、`docs/ANNOUNCE_v1.4.9.md`；README 三语版本号已对齐。
+- runtime sha256 `50041ed0...447f`（arm64），MANIFEST 一致；corepack 已修。
+
+## v1.4.9 追加（社区贡献 @henryz78：重启后永久卡住）
+- **用户实测**「点重启后一直卡在等待状态」，引擎永不启动，UI 一直转圈。
+- **根因（他定位，P0）**：`EngineSupervisor.stopping` 的 KDoc 写着「任何 stop 都置位、
+  start 清零」，但 `start()` 里**没有清零**。restart → stop 置 stopping=true → start
+  拉起新循环 → `while (isActive && !stopping)` 首轮即假 → 一次迭代都不跑 → 永久停在
+  `State.Starting`。影响面远大于重启：**任何一次 stop()（服务被系统回收、通知栏退出、
+  权限模式切换）之后，本进程内所有 start() 都再也跑不起来，只能杀进程**。
+- **第二层（他进一步发现）**：仅复位不够。`loopJob?.cancel()` 异步，且
+  `catch (e: Exception)` 会吞掉 `CancellationException`；被取消的**旧**循环可能在
+  复位后继续走收尾，用 `State.Backoff` 覆盖**新**循环刚设的 `State.Starting`。
+  故新增 `shouldExitLoop() = stopping || !currentCoroutineContext().isActive`，
+  三处 `if (stopping) break` 全部替换。
+- **已合并**：`start()` 加 `stopping = false`（在 launch 之前）+ `shouldExitLoop()`。
+  代码注释保留 `@henryz78` 署名；README 三语新增「贡献者」章节（含 @skynit）。
+- **实机验证（emulator-5554 / Android 16，x86_64）**：
+  · 首启 → plugin health `ok:true`
+  · 点 Restart → **10.2s 引擎就绪**，boot.log 出现第 2 条 TOTAL 记录
+  · 再点 Restart → **13.2s 就绪**，累计 3 条记录
+  · 旧代码在这里会彻底卡死（首轮循环不执行），三轮连点是最强的对照证据
+- **新增测试**：`scripts/probes/_test_stopping_reset.py`（12 项）——
+  复位位置、shouldExitLoop 的 isActive 检查、三处退出点、stop 仍置位、while 条件保留。
+- **他的源码包其他改动**：MainActivity.kt 是 PR #30 内容（已合并）、EngineConfig 是
+  中文注释英文化（已合并）、README 只更新了版本号、build-local.sh 是他本机构建辅助
+  （未合入，含 `/opt/android-sdk` 等本机路径）。**他没有给自己署名**。
+- **全量**：i18n 全过；**230 项测试全过**；compileDebugKotlin / assembleDebug 成功。
+## v1.4.9 追加（用户报障第二轮：5 个问题）
+- **🔴 #1 corepack 入口被硬链接写穿（已修，最严重）**
+  用户定位非常准（`dist/corepack.js` 被写成 shell wrapper），但**根因不是「缺少 JS 判断」**：
+  Termux 的 npm 把 `bin/corepack` **硬链接**到 `dist/corepack.js`（同一 inode），
+  而 `collect-termux-runtime.sh` 用 `cat > bin/corepack` 生成 wrapper —— shell 的 `>`
+  是 **truncate 已存在文件**，不是新建，于是写的是共享 inode，源 JS 被一并覆盖。
+  其余 6 个（npm/npx/pnpm/pnpx/yarn/yarnpkg）没坏，因为它们的 bin 与 dist 不共享 inode。
+  **已在 /tmp 用真实硬链接复现**：写前同 inode `...943`，写后 `bin/corepack` 变成新 inode `...108`。
+  - 修复 A（构建期）：`make_corepack_wrapper` 加 `rm -f "$dst"` 断链 + 写后污染检测（命中即 `exit 1`）。
+  - 修复 B（运行期）：新增 `EngineConfig.healClobberedCorepackEntry()`，检测 dist 下的
+    shell wrapper 并还原成 node 入口，兜底已装出去的旧包。
+  - 修复 C（产物）：`_runtime_bak/rt-arm64-work.zip`、`rt-x86_64-current.zip` 两份源
+    运行时均已就地修好（备份 `.pre-corepack-fix`），assets/runtime.zip 恢复为 arm64。
+  - **实机验证**：x86_64 模拟器装新包 → `dist/corepack.js` 首行恢复为
+    `#!/data/data/com.termux/files/usr/bin/env node`；`bin/corepack` 是 wrapper；
+    执行 `node dist/corepack.js` 正常输出 corepack 帮助（不再是 SyntaxError / 自循环）。
+    `bin/npm --version` 会联网下载、超时属预期，未作为判据。
+- **🟠 #2 `/plugins/events` 反复 ERR_FAILED**：这是 `dsh-client-hmr` 的 **SSE 热重载端点**
+  （开发期用）。生产未启用时前端仍会尝试连接 → 网络层报 ERR_FAILED。**非崩溃性**，
+  属上游行为，本轮不改（记录为已知噪声；若日后要静音，在 client 侧关掉 HMR 探测）。
+- **🟠 #3 `getJsStatus` 未捕获异常**：在 runtime 的 `engine/lib` 与 `android-plugins/` 中
+  **全库搜索 0 命中**（已用 zip 逐文件扫过）。说明调用方是**用户自己装的第三方插件**，
+  不是我们的代码。本轮不改；已作为「第三方插件质量问题」记录。
+- **🟡 #5 AGENTS.md 表述**：`AgentContextSeed` 的 "Do not install glibc/native binaries"
+  改为区分「glibc 预编译包 ❌」与「源码编译 ✅」，并写入用户实测证据
+  （better-sqlite3 + SQLite 3.53.4 + ELF arm64 编译成功）。
+- **🟡 #4 Termux 硬编码路径**（node_prefix / clang 头搜索 / make SHELL）：**本轮未处理**，
+  属打包期 relocatable 改造，工作量大于一次补丁，留待专项。
+- **新增测试**：`scripts/probes/_test_corepack_hardlink.py`（29 项）——
+  构建脚本断链约束、运行期自愈约束、runtime.zip 里 7 个 dist JS 全部健康、
+  bin/dist 内容不得相同、真实 inode 复现。
+- **全量**：i18n 全过；218 项测试全过；compileDebugKotlin / assembleDebug(x86_64) 成功。
+## v1.4.9（2026-10-21，未出包）
+- **用户反馈「更新后等几十分钟引擎都准备不好」——根因是层层自愈叠加、没有总预算。**
+  数字对得上：14 轮 × (45s 健康检查 + 20s 探针等待 + 退避) ≈ **21 分钟**；20 轮 ≈ 30 分钟。
+  关键分支：插件探针报 degraded → `quarantineOne` 摘插件 → 重启。旧实现该路径
+  **重置 `backoffIndex = 0`、当轮无 delay、不计入 `MAX_RESTART`**，形成不计入额度的
+  快速循环。v1.4.7 的探针误报（把已 disabled 的 `directory-picker` 行比对 browse 包名）
+  让这类用户从「自愈中」变成「稳定失败循环」。
+  - 修复：①新增 `BOOT_WALL_CLOCK_BUDGET_MS = 5min` 总时限，超时收敛为 `State.Failed`
+    并显示 `error_boot_timeout`；②插件恢复重启改走统一退避、`MAX_PLUGIN_RECOVERY_RESTARTS = 3`；
+    ③Healthy/SafeMode 后重置计时与额度（只约束「这一次启动」，不约束进程寿命）。
+- **三处无界等待（比无限重试更糟：连日志都不再写）**
+  · `Privilege.shizukuExec`：`readText()` + `rp.waitFor()` 均无超时 →
+    改为读流后台线程 + `waiter.join(deadline)`，超时 `rp.destroy()` 并返回部分输出。
+    注意：Shizuku 的 `IRemoteProcess.waitFor()` **没有** timeout 重载（编译期踩到）。
+  · `Privilege.backupHome` 的 tar：Root 模式**每轮启动**都跑，`waitFor()` 无参 →
+    加 60s 预算，超时销毁进程 + 删除半个备份 + 继续启动（备份是附加保护，不能拖住启动）。
+  · `EngineSupervisor.reclaimPort` 的 kill 脚本：加 3s 预算。
+- **Root 模式提示（宝宝要求的第二项）**：二次确认弹窗追加 `ob_priv_root_paths_warn`，
+  明确「不要在应用目录 files/engine、files/dsh-home 或工作区内手动改/移动/删除文件；
+  自己的文件放外部文件夹（如 Documents/）；要改应用内配置请用应用自己的设置/插件」。
+  原因：root 写出的文件属主为 root + 权限收紧 → App 随后读不了 → 表现为插件加载失败/引擎起不来。
+- **踩坑记录（AAPT）**：Android 字符串资源里裸 `'` 会编译失败（`Invalid unicode escape sequence`），
+  多行裸换行同样失败。本次两个都踩到，最终用 `
+` 转义 + `'` 转义解决。
+- **新增回归测试**：`scripts/probes/_test_boot_retry_bounds.py`（34 项）——
+  含「21 分钟」数值模型、总时限源码约束、三处超时约束、Root 提示三语约束。
+- **验证**：i18n 全过；`compileDebugKotlin` / `assembleDebug(x86_64)` 成功；
+  插件测试 115 + BootTrace 31 + overlay 12 + retry bounds 34 = **192 项全过**；
+  模拟器冷启动基线 **57.1s**（runtime-install 45.7s + health-poll 11.2s），未出现空转。
+- **未验证**：总时限 5 分钟的到期路径未在真机跑到（需要构造 5 分钟以上的连续失败，
+  模拟器不方便稳定复现）；Root 提示弹窗因模拟器无 su 无法点出，仅验证了字符串已进 APK。
+- **未发布**：等宝宝确认后再打 arm64 正式包。
+
+## v1.4.8（2026-10-21，已出包，**未发布**）
+- **启动过程可视化（宝宝本轮需求）**：新增 `BootTrace`（进程级单例，独立于 Activity 存活）。
+  启动遮罩现在显示：粗粒度阶段（准备/解压/启动/加载）、**已用秒数**（200ms 刷新）、
+  确定性进度条、`M/N 个文件 · 72MB` 明细、可展开的逐阶段耗时列表。
+  记录同时落盘 `engine/boot.log`（128KB 环形，20 次启动量级）。
+  设置页新增「上次启动」入口，可直接看上次各阶段耗时并复制整份 boot.log。
+- **RuntimeInstaller**：`ensureInstalled` 增加 `onDetail` 回调 + 返回 `reused`；
+  `unzip` 同时统计文件数与字节数；新增 `copyAssetWithProgress` —— assets→cache
+  拷贝 240MB 实测占 35s，原来这段时间遮罩一动不动，现在按字节上报。
+- **⚠️ 关键发现：v1.4.7 的 directory-picker 修复从未生效。**
+  用引擎自己的 `applyEntryPatches`（从设备上 cordis-plugin-include 提取）实测：
+  `const { id, insert, name, ...overrides } = patch; if (name && name !== target.name) continue;`
+  —— **`name` 是匹配守卫，不是可赋值字段**。v1.4.7 写 `id: directory-picker` +
+  `name: ...-browse` 而 base 行是 `...-auto`，整条 patch 被静默跳过，只留一行
+  logger 警告。构建全绿、两个文件同步、打包正常，真机上跑的仍是 auto。
+  同时因为把探针 `CRITICAL_ROWS` 改成期望 browse，导致 probe 永久误报 degraded。
+  **v1.4.8 正确写法**：`- id: directory-picker / disabled: true` +
+  `- insert: [{ id: android-directory-picker, name: ...-browse }]`。
+  探针改为校验 `android-directory-picker` 这个新 id。
+- **实测证据（emulator-5556，Android 16）**：
+  · 冷启动遮罩显示 `7,882 / 45,244 files · 72MB`、进度条与秒数正常跳动；
+  · 热启动显示 `runtime already installed · 0.0s`；
+  · 展开步骤列表 8 行全部正确（`+246ms at 0.2s Restore built-in patches` …）；
+  · `boot.log`：`runtime-install 35554ms`、`health-poll 12497ms`、`TOTAL 50260ms`、
+    `webview-first-paint 55775ms`；
+  · **plugin health marker `ok:true`、`failedEntries:[]`、`missingServices:[]`**
+    —— 这是 v1.4.7 从未达到的状态，证明 browse 真的挂上了；
+  · 主界面 `Choose workspace` 按钮正常渲染，无 `directoryPickerController unavailable`。
+- **新增回归测试**：`scripts/probes/_test_boot_trace.py`（31 项）、
+  `scripts/probes/_test_overlay_patch_semantics.py`（9 项静态 + 3 项动态，
+  可传引擎 patch 函数路径用真实实现验证）。
+- **验证**：i18n 全过；插件测试 115 项 + BootTrace 31 + overlay 12 = 158 项全过；
+  `compileDebugKotlin` / `assembleDebug(x86_64)` 成功。
+- **未做**：arm64 release 包与上架 —— 宝宝说「先不要上架」类的约定仍有效，
+  等确认后再出正式包。
+
 ## v1.4.7（2026-10-21，已出包待发布）
 - **提交**：`db941eb`（三项修复）→ `5c92711`（PR #30）→ `b44b969`（i18n 注释）。
 - **目录选择器整链失效**：overlay 从 `dsh-host-directory-picker-auto` 换成 `...-browse`。

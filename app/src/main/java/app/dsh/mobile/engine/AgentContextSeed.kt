@@ -318,7 +318,7 @@ WeChat（微信）/ QQ / banking and financial apps run real-time device-integri
 ## Working agreements
 
 - Start with the user's task; this file has already answered "where am I".
-- Do not install glibc/native binaries (`npm rebuild`, linux-x64 prebuilts) — they cannot run here. Prefer pure-JS packages or the bundled tools.
+- Do not install **glibc-linked prebuilt binaries** (`sharp`'s linux-x64 tarball, most `*-x64`/`*-linux-gnu` npm prebuilts): there is no glibc here, so they cannot run. This does **not** mean native modules are impossible — building from source against bionic works (measured: `better-sqlite3` compiled and ran, SQLite 3.53.4, ELF 64-bit arm64). Prefer pure-JS packages, then source builds, then the bundled tools.
 - If a language or tool is missing, check `/ext/list` and install it. Only if it is neither listed nor on PATH, say so plainly instead of improvising package installs.
 
 ## System prompt integrity — where you may and may not write

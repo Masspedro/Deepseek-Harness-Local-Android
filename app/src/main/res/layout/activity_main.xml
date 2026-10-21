@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
@@ -156,20 +157,83 @@
             android:textColor="#FF9CA3AF"
             android:textSize="13sp" />
 
+        <!-- v1.4.8：已用秒数 + 当前阶段名。之前只有一句「正在启动」，用户无法判断
+             是在推进还是卡死（手表上 12s 与 40s 的观感完全一样）。 -->
+        <TextView
+            android:id="@+id/splashElapsed"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:textColor="#FF7DD3FC"
+            android:textSize="12sp"
+            android:fontFamily="monospace"
+            tools:text="3.2s" />
+
         <ProgressBar
             android:id="@+id/splashProgress"
             style="?android:attr/progressBarStyleHorizontal"
             android:layout_width="180dp"
             android:layout_height="3dp"
-            android:layout_marginTop="22dp"
+            android:layout_marginTop="18dp"
             android:indeterminate="true"
             android:progressTint="#FF7DD3FC"
             android:progressBackgroundTint="#26FFFFFF" />
 
+        <!-- v1.4.8：文件加载明细（解压阶段显示 M/N 个文件） -->
+        <TextView
+            android:id="@+id/splashDetail"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:textColor="#FF6B7684"
+            android:textSize="11sp"
+            android:fontFamily="monospace"
+            android:gravity="center"
+            tools:text="48,203 / 50,405 files" />
+
+        <!-- 展开/收起完整阶段列表。遮罩本身吞触摸，点这里不会穿透到底下界面。 -->
+        <TextView
+            android:id="@+id/splashToggle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:paddingLeft="12dp"
+            android:paddingRight="12dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:text="@string/splash_show_steps"
+            android:textColor="#FF5A9FD4"
+            android:textSize="11sp"
+            android:background="#14FFFFFF" />
+
+        <!-- 阶段列表：默认收起；展开时用 layout_weight 占满剩余空间并可滚动，
+             这样阶段很多时也不会把上方的 logo 顶出屏幕。 -->
+        <ScrollView
+            android:id="@+id/splashStepsScroll"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginTop="10dp"
+            android:visibility="gone"
+            android:scrollbars="vertical">
+
+            <TextView
+                android:id="@+id/splashSteps"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingLeft="28dp"
+                android:paddingRight="28dp"
+                android:paddingBottom="12dp"
+                android:textColor="#FF8A94A3"
+                android:textSize="11sp"
+                android:fontFamily="monospace"
+                android:lineSpacingExtra="3dp" />
+        </ScrollView>
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="18dp"
             android:text="@string/splash_hint"
             android:textColor="#FF5A6472"
             android:textSize="11sp"

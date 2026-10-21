@@ -173,7 +173,7 @@ Normal mode is the default; choose Shizuku or Root only when the task requires a
 
 ## 📦 Installation
 
-**Download a Release (recommended)**: grab the APK from [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (pick `arm64-v8a` for phones; latest is **v1.4.7**), then install with unknown sources allowed. Any v1.0.0+ build can be installed over the top.
+**Download a Release (recommended)**: grab the APK from [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (pick `arm64-v8a` for phones; latest is **v1.4.9**), then install with unknown sources allowed. Any v1.0.0+ build can be installed over the top.
 
 > 📦 **Which file to pick**: normal users want **`dsh-mobile-*-arm64-v8a.apk`** (release-signed).
 > Names ending in **`-debug`** are debug-signed builds - for log capture, or for users already on a
@@ -233,6 +233,15 @@ Alternatively, fork the repo and run the **android-build** workflow on GitHub Ac
 Found a bug or have a feature request? Open an [Issue](https://github.com/Soodok/Deepseek-Harness-Local-Android/issues). For crash reports, please attach the `logcat` output or the engine log available in the app.
 
 **QQ group (Chinese): `1128769016`** — usage questions, release news, and plugin recommendations. Bugs are still best filed as Issues so they don't get lost.
+
+## 🙏 Contributors
+
+This project is not a one-person effort. These people's work is merged into the mainline:
+
+| Contributor | Contribution |
+|---|---|
+| [@skynit](https://github.com/skynit) | Fixed the login / "Get started" modal render glitch (PR #30): traced it to viewport scaling vs. stale compositor layers, and proposed "finalise viewport under the splash + full-page re-raster" |
+| @henryz78 | Fixed the engine getting stuck forever after a restart (v1.4.9): found that the `stopping` flag was never cleared in `start()`, and further identified the race where a swallowed `CancellationException` lets the old supervision loop overwrite the new loop's state. Submitted as a source archive due to network constraints |
 
 ## License
 

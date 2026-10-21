@@ -41,12 +41,18 @@ class RuntimeInstaller(private val ctx: Context) {
 
     /** 确保运行时就绪；已安装且版本匹配且关键资产完整则跳过。
      *  @param onProgress 解压进度 0f..1f（仅解压阶段有值；频繁调用方自行节流）
+     *  @param onDetail 解压的文件数/字节数明细（v1.4.8：启动遮罩显示"已加载 N/M 个文件"）
      *
      *  m1.13 完整性校验：m1.12 事故实锤——覆盖升级后 @deepseek-ai 目录只剩空壳
      *  （JS 文件未落地）但 .runtime-version 已写成功，「engine 存在+版本匹配」即跳装
      *  → MODULE_NOT_FOUND 反复重启。故改为【版本匹配 + 关键资产存在】双重条件，
-     *  任一关键资产缺失即视为安装不完整，删除重装。 */
-    fun ensureInstalled(onProgress: (Float) -> Unit = {}) {
+     *  任一关键资产缺失即视为安装不完整，删除重装。
+     *
+     *  @return true = 复用了已安装的运行时（本次没有解压）；false = 执行了解压 */
+    fun ensureInstalled(
+        onProgress: (Float) -> Unit = {},
+        onDetail: (BootTrace.Install) -> Unit = {},
+    ): Boolean {
         val manifest = readManifest()
         // ⚠️ v1.3.1：读版本戳**可能抛 EACCES**（属性被改坏：权限位被剥 / 属主变成 root
         // ——用户反馈的「异常退出后无法使用，删掉重装才好」正是这条）。旧实现让它一路
@@ -60,14 +66,15 @@ class RuntimeInstaller(private val ctx: Context) {
         }
         if (EngineConfig.nodeBin(ctx).exists() && stampOk && isRootComplete()) {
             Log.i(TAG, "runtime ${manifest.version} already installed (assets verified)")
-            return
+            return true
         }
         if (isRootComplete()) {
             // 版本变了才重装，属正常升级
         } else {
             Log.w(TAG, "runtime install incomplete (missing assets); forcing reinstall")
         }
-        install(manifest, onProgress)
+        install(manifest, onProgress, onDetail)
+        return false
     }
 
     /**
@@ -188,7 +195,67 @@ class RuntimeInstaller(private val ctx: Context) {
         }
     }
 
-    private fun install(manifest: Manifest, onProgress: (Float) -> Unit) {
+    /**
+     * 把 APK 内置的 runtime.zip 拷到 cacheDir，并按字节上报进度（v1.4.8）。
+     *
+     * 拷贝 240MB 在低端设备上可占 30-60 秒，是"解压"阶段里最长的一段。
+     * 不报进度的话，遮罩在整段时间里只能显示一句静态文案。
+     *
+     * 用 [BootTrace.Install] 复用同一个数据模型：文件数填 0（这一步没有文件概念），
+     * 字节数是确定值，遮罩按 `totalFiles == 0` 走纯字节展示。
+     */
+    private fun copyAssetWithProgress(
+        dest: File,
+        onDetail: (BootTrace.Install) -> Unit,
+    ) {
+        val total = runCatching {
+            ctx.assets.openFd("runtime.zip").use { it.length }
+        }.getOrNull() ?: -1L
+        var done = 0L
+        var lastAt = 0L
+        ctx.assets.open("runtime.zip").use { input ->
+            dest.outputStream().use { out ->
+                val buf = ByteArray(1 shl 20)   // 1MB：240 次回调级别的粒度
+                while (true) {
+                    val n = input.read(buf)
+                    if (n <= 0) break
+                    out.write(buf, 0, n)
+                    done += n
+                    val now = System.currentTimeMillis()
+                    if (now - lastAt >= 250L) {
+                        lastAt = now
+                        runCatching {
+                            onDetail(
+                                BootTrace.Install(
+                                    doneFiles = 0,
+                                    totalFiles = 0,
+                                    doneBytes = done,
+                                    totalBytes = if (total > 0) total else 0,
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        // 收尾：拷贝完成，进度落到 100%
+        runCatching {
+            onDetail(
+                BootTrace.Install(
+                    doneFiles = 0,
+                    totalFiles = 0,
+                    doneBytes = done,
+                    totalBytes = if (total > 0) total else done,
+                ),
+            )
+        }
+    }
+
+    private fun install(
+        manifest: Manifest,
+        onProgress: (Float) -> Unit,
+        onDetail: (BootTrace.Install) -> Unit = {},
+    ) {
         Log.i(TAG, "installing runtime ${manifest.version}")
         installing = true
         try {
@@ -211,9 +278,10 @@ class RuntimeInstaller(private val ctx: Context) {
                     }
                 }
                 requireFree(600)   // 覆盖升级峰值：旧 runtime + zip 缓存 + 新解压并存
-                ctx.assets.open("runtime.zip").use { input ->
-                    assetZip.outputStream().use { input.copyTo(it) }
-                }
+                // v1.4.8：assets → cache 的拷贝本身就要几十秒（240MB，实测模拟器
+                // 38s），而旧实现这段时间里 UI 完全没有进度可显示 —— 用户看到的
+                // 是"卡在准备运行环境"一动不动。这里按字节上报，遮罩能显示真实 MB。
+                copyAssetWithProgress(assetZip, onDetail)
                 // 解压前再校验一次：此时 zip 真实大小已知
                 requireFree(assetZip.length() / (1L shl 20) + 400)
             } catch (e: Exception) {
@@ -266,7 +334,7 @@ class RuntimeInstaller(private val ctx: Context) {
                 }
             }
 
-            unzip(assetZip, root, onProgress)
+            unzip(assetZip, root, onProgress, onDetail)
             restoreExecBits(root)
             stampFile.writeText(manifest.version)
             assetZip.delete()
@@ -289,15 +357,45 @@ class RuntimeInstaller(private val ctx: Context) {
         }
     }
 
-    private fun unzip(zip: File, target: File, onProgress: (Float) -> Unit) {
+    private fun unzip(
+        zip: File,
+        target: File,
+        onProgress: (Float) -> Unit,
+        onDetail: (BootTrace.Install) -> Unit = {},
+    ) {
         // 预扫 central directory 拿总未压缩字节（ZipInputStream 流式读时 size 可能为 -1，
         // ZipFile 走 central directory 是精确的）→ 真实确定性进度而非假转圈
         var total = 0L
+        // 文件数双口径（v1.4.8）：字节数在解压小文件时几乎不动，用户看到进度条
+        // 长时间停在同一个百分比；"已加载 N/M 个文件"更直观且始终在动。
+        var totalFiles = 0
         java.util.zip.ZipFile(zip).use { zf ->
             val entries = zf.entries()
-            while (entries.hasMoreElements()) total += entries.nextElement().size
+            while (entries.hasMoreElements()) {
+                val e = entries.nextElement()
+                total += e.size
+                if (!e.isDirectory) totalFiles++
+            }
         }
         var done = 0L
+        var doneFiles = 0
+        // 明细节流：每 256 个文件或每 4MB 才回调一次，避免两万次状态更新
+        var lastDetailAt = 0L
+        fun publishDetail(force: Boolean = false) {
+            val now = System.currentTimeMillis()
+            if (!force && now - lastDetailAt < 250L) return
+            lastDetailAt = now
+            runCatching {
+                onDetail(
+                    BootTrace.Install(
+                        doneFiles = doneFiles,
+                        totalFiles = totalFiles,
+                        doneBytes = done,
+                        totalBytes = total,
+                    ),
+                )
+            }
+        }
         // 别名去重（v1.2.98）：Termux 的 SONAME 别名（libicu.so.78.3 → libicu.so.78
         // → libicu.so）在打包时若各自存一份，仅 ICU 一家就浪费 ~95MB（实测全库 89.4MB）。
         // 打包侧改为「只存一份数据，其余别名条目的 comment 写 LINK:<本体路径>」，
@@ -322,10 +420,14 @@ class RuntimeInstaller(private val ctx: Context) {
                 } else if (linkTargets.containsKey(entry.name)) {
                     // 别名条目：zip 里数据为空，跳过写入，阶段 2 统一建链
                     out.parentFile?.mkdirs()
+                    doneFiles++
+                    publishDetail()
                 } else {
                     out.parentFile?.mkdirs()
                     out.outputStream().use { done += zis.copyTo(it) }
+                    doneFiles++
                     if (total > 0) onProgress((done.toDouble() / total).toFloat().coerceIn(0f, 1f))
+                    publishDetail()
                 }
                 zis.closeEntry()
             }
@@ -334,6 +436,8 @@ class RuntimeInstaller(private val ctx: Context) {
         linkTargets.forEach { (alias, linkTo) ->
             materialiseLink(target, linkTo, File(target, alias).canonicalFile)
         }
+        // 收尾强制发一次：进度条要落到 100%、文件数要落到 N/N
+        publishDetail(force = true)
     }
 
     /** 别名条目表：条目 comment 形如 `LINK:lib/libicu.so.78.3` → 该条目只需建硬链接 */

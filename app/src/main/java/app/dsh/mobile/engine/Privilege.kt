@@ -349,9 +349,32 @@ object Privilege {
      * 以 Shizuku（adb uid 2000）身份执行 shell 命令——Shizuku 模式下 AI 的执行通道。
      * 官方链路：Shizuku.getBinder() → IShizukuService.newProcess(cmd, env, dir) →
      * IRemoteProcess 的 ParcelFileDescriptor 读输出（aidl 依赖提供接口）。
-     * @return stdout+stderr 合并输出
+     *
+     * ## ⚠️ 超时是必须的（v1.4.9，用户反馈「等几十分钟引擎都准备不好」）
+     *
+     * 旧实现三处都是**无界**的：`readText()` 阻塞到流关闭、`rp.waitFor()` 阻塞到
+     * 进程退出。这在启动热路径上是致命的 —— 它被
+     * `dshHomeNeedsOwnershipFix` / `fixHomeOwnership` / `reclaimPort` 调用，
+     * 而这些都在监督循环里**每轮启动**执行。
+     *
+     * 一旦被调用的命令卡住（`find` 卡在不可达的挂载点、`chown -R` 碰上正在
+     * 被写入的大目录、su/Shizuku 服务端自己卡死），监督循环就永久停在这一步：
+     * 引擎不 spawn、状态不前进、退避与 MAX_RESTART 完全不会触发 —— 用户看到的是
+     * 「准备阶段无限转圈」，且没有任何日志（连 boot step 都写不出来）。
+     *
+     * 现在：读流放到后台线程并设读超时，主线程按 deadline 等；超时后返回已读到的
+     * 部分输出并尽力结束进程。**超时不当成失败**（返回部分输出），避免把「环境慢」
+     * 误判成「命令失败」进而触发更重的自愈分支。
+     *
+     * @param timeoutMs 整个命令的预算（含读输出）。默认 10s：启动热路径能接受，
+     *                  也远大于正常情况的毫秒级。
+     * @return stdout+stderr 合并输出；超时返回已读到的部分
      */
-    fun shizukuExec(ctx: android.content.Context, cmd: String): String {
+    fun shizukuExec(
+        ctx: android.content.Context,
+        cmd: String,
+        timeoutMs: Long = 10_000L,
+    ): String {
         val svc = moe.shizuku.server.IShizukuService.Stub.asInterface(
             rikka.shizuku.Shizuku.getBinder()
         ) ?: throw IllegalStateException(ctx.getString(R.string.error_shizuku_binder))
@@ -360,14 +383,44 @@ object Privilege {
             arrayOf("PATH=/system/bin:/system/xbin"),
             null,
         )
-        val out = rp.inputStream.let { pfd ->
-            android.os.ParcelFileDescriptor.AutoCloseInputStream(pfd).bufferedReader().readText()
+        val deadline = System.currentTimeMillis() + timeoutMs
+        // 读流放后台：readText() 会一直阻塞到 EOF，而 EOF 只在进程退出、管道关闭后
+        // 才出现。若进程卡住，主线程绝不能跟着卡。
+        val sb = StringBuilder()
+        val reader = Thread {
+            runCatching {
+                for (stream in arrayOf(rp.inputStream, rp.errorStream)) {
+                    android.os.ParcelFileDescriptor.AutoCloseInputStream(stream)
+                        .bufferedReader().use { br ->
+                            val buf = CharArray(4096)
+                            while (true) {
+                                val n = br.read(buf)
+                                if (n <= 0) break
+                                synchronized(sb) { sb.append(buf, 0, n) }
+                            }
+                        }
+                }
+            }
+        }.apply { isDaemon = true; name = "dsh-shizuku-read"; start() }
+
+        // 等进程退出或超时；两者都不阻塞主监督循环。
+        // ⚠️ IRemoteProcess.waitFor() 是**无参数**的阻塞调用（Shizuku AIDL 接口就
+        // 这么定义），没有 Java Process 那样的 waitFor(timeout, unit) 重载。
+        // 因此这里用「后台线程调用 waitFor + 主线程按 deadline join」来做超时：
+        // 后台线程卡住也无所谓（daemon），主线程到点就返回。
+        val waiter = Thread {
+            runCatching { rp.waitFor() }
+        }.apply { isDaemon = true; name = "dsh-shizuku-wait"; start() }
+        waiter.join(maxOf(1L, deadline - System.currentTimeMillis()))
+        val finished = !waiter.isAlive
+        if (!finished) {
+            Log.w(TAG, "shizukuExec timed out after ${timeoutMs}ms; cmd=${cmd.take(120)}")
+            runCatching { rp.destroy() }
         }
-        val err = rp.errorStream.let { pfd ->
-            android.os.ParcelFileDescriptor.AutoCloseInputStream(pfd).bufferedReader().readText()
-        }
-        rp.waitFor()
-        return out + err
+        // 收尾：给读线程一个很短的窗口把缓冲冲出来，然后无论它在不在都返回
+        runCatching { reader.join(300L) }
+        val out = synchronized(sb) { sb.toString() }
+        return if (finished) out else out + "\n[timeout after ${timeoutMs}ms]"
     }
 
     /**
@@ -391,9 +444,31 @@ object Privilege {
             listOf("/system/bin/tar", "-cf", out.absolutePath, "-C", home.absolutePath, ".")
         ).also { pb ->
             val e = pb.environment()
-            env.forEach { kv -> val idx = kv.indexOf('='); if (idx > 0) e[kv.substring(0, idx)] = kv.substring(idx + 1) }
+            env.forEach { kv ->
+                val idx = kv.indexOf('=')
+                if (idx > 0) e[kv.substring(0, idx)] = kv.substring(idx + 1)
+            }
         }
-        pb.start().waitFor()
+        // ⚠️ v1.4.9（用户反馈「等几十分钟引擎都准备不好」）：这次 tar 在 Root 模式下
+        // **每轮启动都会跑**，旧实现用无参数的 waitFor() 等它结束。dsh-home 逐渐变大
+        // （会话、workspaces），或碰上存储慢/被占 I/O，tar 可以跑很久 —— 期间整个
+        // 监督循环停在 spawnEngine 里，退避与 MAX_RESTART 都不会触发，界面就是
+        // 「无限准备中」。备份是**附加保护**，绝不能拖住启动：给 60s 预算，
+        // 超时就放弃本次备份（下次启动再试），并明确写日志。
+        pb.redirectErrorStream(true)
+        val proc = pb.start()
+        val done = proc.waitFor(60, java.util.concurrent.TimeUnit.SECONDS)
+        if (!done) {
+            runCatching { proc.destroy() }
+            Log.w(TAG, "backupHome: tar timed out after 60s — skipping this backup (boot continues)")
+            runCatching { out.delete() }
+            return null
+        }
+        if (proc.exitValue() != 0) {
+            Log.w(TAG, "backupHome: tar exit=${proc.exitValue()} — backup discarded")
+            runCatching { out.delete() }
+            return null
+        }
         out.takeIf { it.isFile && it.length() > 0 }?.absolutePath
         .also {
             // 滚动保留最近 2 份（v1.2.22 事故：无清理 → 204 份 × 295MB = 57.6GB 堆爆存储；

@@ -19,6 +19,7 @@ import android.webkit.WebViewClient
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import app.dsh.mobile.engine.BootTrace
 import app.dsh.mobile.engine.EngineSupervisor
 import app.dsh.mobile.engine.Privilege
 import app.dsh.mobile.service.EngineService
@@ -79,6 +80,18 @@ class MainActivity : Activity() {
     private var splashLogo: android.view.View? = null
     private var splashStatus: android.widget.TextView? = null
     private var splashProgress: android.widget.ProgressBar? = null
+    /** 已用秒数 + 当前阶段（v1.4.8） */
+    private var splashElapsed: android.widget.TextView? = null
+    /** 文件加载明细 M/N（v1.4.8） */
+    private var splashDetail: android.widget.TextView? = null
+    /** 展开/收起阶段列表的按钮（v1.4.8） */
+    private var splashToggle: android.widget.TextView? = null
+    private var splashSteps: android.widget.TextView? = null
+    private var splashStepsScroll: android.view.View? = null
+    /** 阶段列表是否展开 */
+    private var splashStepsExpanded = false
+    /** 秒表：逐秒刷新已用时间（v1.4.8） */
+    private var splashTicker: Runnable? = null
     /** 遮罩出现时间：用于保证最短展示时长（避免一闪而过） */
     private var splashShownAt = 0L
     /** 是否已经淡出（幂等） */
@@ -160,6 +173,13 @@ class MainActivity : Activity() {
         }
         uiScope.launch {
             app.supervisor.installProgress.collectLatest { renderProgress(it) }
+        }
+        // v1.4.8：启动过程可视化。状态流驱动的是"阶段切换"，秒数与明细由秒表刷新
+        // （200ms 一次，只更新文本，不触发重排），两者互补不重复。
+        uiScope.launch {
+            BootTrace.snapshot.collectLatest { snap ->
+                if (!splashDismissed) renderSplashTrace(snap)
+            }
         }
     }
 
@@ -376,6 +396,9 @@ class MainActivity : Activity() {
                 // 错位（复现截图与判定证据见本 PR 描述）。
                 // v1.3.1 的约束仍然满足：收遮罩在两个渲染分支之后统一执行，不会提前 return。
                 applyViewport(view)
+                // v1.4.8：首屏 Paint 是用户体感的一部分 —— 引擎 healthy 到页面可用之间
+                // 还有加载 WebUI 与执行客户端插件的空档。补记进 boot.log 便于对比。
+                BootTrace.noteWebViewLoaded(this@MainActivity)
                 dismissSplash()
             }
 
@@ -594,14 +617,27 @@ class MainActivity : Activity() {
         splashLogo = findViewById(R.id.splashLogo)
         splashStatus = findViewById(R.id.splashStatus)
         splashProgress = findViewById(R.id.splashProgress)
+        splashElapsed = findViewById(R.id.splashElapsed)
+        splashDetail = findViewById(R.id.splashDetail)
+        splashToggle = findViewById(R.id.splashToggle)
+        splashSteps = findViewById(R.id.splashSteps)
+        splashStepsScroll = findViewById(R.id.splashStepsScroll)
         splashShownAt = System.currentTimeMillis()
         splashDismissed = false
+        // v1.4.8：默认收起阶段列表；每次冷启动都从收起状态开始，避免把 logo 挤走
+        splashStepsExpanded = false
+        splashStepsScroll?.visibility = android.view.View.GONE
+        splashToggle?.setText(R.string.splash_show_steps)
+        splashToggle?.setOnClickListener { toggleSplashSteps() }
+        splashDetail?.text = ""
         // 兜底：无论引擎/WebView 走哪条路径，45s 后强制收遮罩。宁可露出工具栏，
         // 也不能让一张不透明的全屏 View 永久拦截触摸（issue #17 的教训）。
         splashWatchdog?.let { v.removeCallbacks(it) }
         val watchdog = Runnable { dismissSplash() }
         splashWatchdog = watchdog
         v.postDelayed(watchdog, 45_000L)
+        // 秒表：每秒刷新"已用 N.Ns · 当前阶段"
+        startSplashTicker()
         // WebView 底色与主题一致：遮罩淡出时不会闪出白底
         runCatching { webView.setBackgroundColor(0xFF101418.toInt()) }
         val logo = splashLogo ?: return
@@ -658,6 +694,179 @@ class MainActivity : Activity() {
         splashStatus?.setText(resId)
     }
 
+    // ==================== 启动过程可视化（v1.4.8） ====================
+
+    /**
+     * 启动秒表：每秒刷新一次「已用 N.Ns · 阶段」。
+     *
+     * 为什么用 `postDelayed` 循环而不是协程：遮罩的生命周期很短（几秒），
+     * 一个 Runnable 就够，且随遮罩一起移除，不需要额外的 scope 管理。
+     */
+    private fun startSplashTicker() {
+        stopSplashTicker()
+        val v = splash ?: return
+        val r = object : Runnable {
+            override fun run() {
+                if (splash == null || splashDismissed) return
+                renderSplashTrace(BootTrace.snapshot.value)
+                v.postDelayed(this, 200L)
+            }
+        }
+        splashTicker = r
+        v.post(r)
+    }
+
+    private fun stopSplashTicker() {
+        splashTicker?.let { splash?.removeCallbacks(it) }
+        splashTicker = null
+    }
+
+    private fun toggleSplashSteps() {
+        splashStepsExpanded = !splashStepsExpanded
+        splashStepsScroll?.visibility =
+            if (splashStepsExpanded) android.view.View.VISIBLE else android.view.View.GONE
+        splashToggle?.setText(
+            if (splashStepsExpanded) R.string.splash_hide_steps else R.string.splash_show_steps,
+        )
+        if (splashStepsExpanded) renderSplashTrace(BootTrace.snapshot.value)
+    }
+
+    /** 阶段 key → 本地化文案；未知 key 原样显示（新阶段不会因缺翻译而消失） */
+    private fun stageLabel(key: String): String = when (key) {
+        "guardian-restore" -> getString(R.string.boot_step_guardian)
+        "agent-seed" -> getString(R.string.boot_step_seed)
+        "orphan-reap" -> getString(R.string.boot_step_orphans)
+        "bridge" -> getString(R.string.boot_step_bridge)
+        "home-owner-check" -> getString(R.string.boot_step_owner)
+        "runtime-install" -> getString(R.string.boot_step_runtime)
+        "user-data" -> getString(R.string.boot_step_userdata)
+        "spawn" -> getString(R.string.boot_step_spawn)
+        "health-poll" -> getString(R.string.boot_step_health)
+        else -> key
+    }
+
+    /** 当前阶段主文案（遮罩大字） */
+    private fun stageStatusRes(stage: BootTrace.Stage): Int = when (stage) {
+        BootTrace.Stage.IDLE, BootTrace.Stage.PREPARING -> R.string.splash_preparing
+        BootTrace.Stage.EXTRACTING -> R.string.splash_extracting
+        BootTrace.Stage.STARTING -> R.string.splash_starting
+        BootTrace.Stage.LOADING -> R.string.splash_loading
+        BootTrace.Stage.READY -> R.string.splash_loading
+        BootTrace.Stage.FAILED -> R.string.splash_failed
+    }
+
+    /**
+     * 把 [BootTrace] 快照渲染到遮罩上。
+     *
+     * 三个层次：
+     *  1. 主文案 —— 粗粒度阶段（准备/解压/启动/加载）；
+     *  2. 秒数行 —— `3.2s · 解压运行时`，让用户知道"还在动"以及动了多久；
+     *  3. 明细行 —— 解压时给 `M/N 个文件`，之后给最近一个阶段的耗时。
+     */
+    private fun renderSplashTrace(snap: BootTrace.Snapshot) {
+        if (splashDismissed) return
+        splashStatus?.setText(stageStatusRes(snap.stage))
+
+        val elapsed = snap.elapsedMs()
+        val lastKey = snap.steps.lastOrNull()?.key
+        val label = if (snap.stage == BootTrace.Stage.EXTRACTING) {
+            getString(R.string.boot_step_runtime)
+        } else if (lastKey != null) {
+            stageLabel(lastKey)
+        } else {
+            getString(R.string.splash_preparing)
+        }
+        splashElapsed?.text = getString(R.string.splash_elapsed, fmtSeconds(elapsed), label)
+
+        // 明细行
+        val detail = StringBuilder()
+        val ins = snap.install
+        if (snap.stage == BootTrace.Stage.EXTRACTING) {
+            when {
+                // 解压文件：文件数最直观（字节数在大量小文件上几乎不动）
+                ins.totalFiles > 0 -> {
+                    detail.append(getString(R.string.splash_files, ins.doneFiles, ins.totalFiles))
+                    if (ins.doneBytes > 0) detail.append(" · ").append(fmtSize(ins.doneBytes))
+                }
+                // 拷贝 zip（assets → cache）：没有文件概念，只有字节
+                ins.totalBytes > 0 -> {
+                    detail.append(fmtSize(ins.doneBytes))
+                        .append(" / ")
+                        .append(fmtSize(ins.totalBytes))
+                }
+            }
+        } else if (snap.runtimeReused && snap.steps.any { it.key == "runtime-install" }) {
+            detail.append(getString(R.string.splash_runtime_reused))
+            val last = snap.steps.lastOrNull { it.key == "runtime-install" }
+            if (last != null) {
+                detail.append(" · ").append(fmtSeconds(last.durationMs))
+            }
+        } else if (snap.steps.isNotEmpty()) {
+            val last = snap.steps.last()
+            detail.append(stageLabel(last.key)).append(" · ").append(fmtSeconds(last.durationMs))
+        }
+        if (snap.failure != null) {
+            detail.setLength(0)
+            detail.append(snap.failure.take(120))
+        }
+        splashDetail?.text = detail.toString()
+
+        // 进度条：解压阶段用确定性进度，其余转不确定
+        splashProgress?.let { p ->
+            val frac = if (snap.stage == BootTrace.Stage.EXTRACTING) ins.fraction else null
+            if (frac == null) {
+                if (!p.isIndeterminate) {
+                    p.isIndeterminate = true
+                }
+            } else {
+                p.isIndeterminate = false
+                p.progress = (frac * 10000).toInt()
+            }
+        }
+
+        if (splashStepsExpanded) renderSplashSteps(snap)
+    }
+
+    /** 阶段列表：每行 `+123ms  累计 456ms  阶段名` */
+    private fun renderSplashSteps(snap: BootTrace.Snapshot) {
+        val tv = splashSteps ?: return
+        if (snap.steps.isEmpty()) {
+            tv.text = getString(R.string.splash_steps_empty)
+            return
+        }
+        tv.text = snap.steps.joinToString("\n") { s ->
+            getString(
+                R.string.splash_step_line,
+                fmtMs(s.durationMs),
+                fmtSeconds(s.atMs),
+                stageLabel(s.key),
+            )
+        }
+        // 展开时滚到最底：用户最关心"现在到哪一步了"
+        splashStepsScroll?.post {
+            (splashStepsScroll as? android.widget.ScrollView)?.fullScroll(
+                android.view.View.FOCUS_DOWN,
+            )
+        }
+    }
+
+    private fun fmtSeconds(ms: Long): String {
+        val s = ms / 1000.0
+        return if (s < 60) String.format(java.util.Locale.US, "%.1fs", s)
+        else String.format(
+            java.util.Locale.US, "%d:%02d",
+            (ms / 60_000).toInt(), ((ms % 60_000) / 1000).toInt(),
+        )
+    }
+
+    private fun fmtMs(ms: Long): String = if (ms < 1000) "${ms}ms" else fmtSeconds(ms)
+
+    private fun fmtSize(bytes: Long): String {
+        val mb = bytes / (1024.0 * 1024.0)
+        return if (mb >= 1024) String.format(java.util.Locale.US, "%.1fGB", mb / 1024)
+        else String.format(java.util.Locale.US, "%.0fMB", mb)
+    }
+
     /**
      * 淡出启动遮罩（幂等）。
      *
@@ -667,6 +876,7 @@ class MainActivity : Activity() {
     private fun dismissSplash() {
         splashWatchdog?.let { wd -> splash?.removeCallbacks(wd) }
         splashWatchdog = null
+        stopSplashTicker()
         val v = splash ?: return
         if (splashDismissed) return
         splashDismissed = true
@@ -692,6 +902,11 @@ class MainActivity : Activity() {
                         splashLogo = null
                         splashStatus = null
                         splashProgress = null
+                        splashElapsed = null
+                        splashDetail = null
+                        splashToggle = null
+                        splashSteps = null
+                        splashStepsScroll = null
                     }
                     .start()
             }, 180L)
@@ -746,12 +961,23 @@ class MainActivity : Activity() {
             if (state is EngineSupervisor.State.Installing || state is EngineSupervisor.State.Starting)
                 View.VISIBLE else View.GONE
         if (state !is EngineSupervisor.State.Starting) stopStartTicker()
-        // 启动遮罩：阶段文案 + 失败/停止时兜底（不能让用户卡在遮罩里看不到错误）
+        // 启动遮罩：失败/停止时兜底（不能让用户卡在遮罩里看不到错误）。
+        // v1.4.8：阶段文案改由 BootTrace 驱动（renderSplashTrace，订阅 + 秒表），
+        // 这里只在「没有启动记录」时给一句静态兜底，避免两套文案互相覆盖。
         when (state) {
-            is EngineSupervisor.State.Installing -> setSplashStatus(R.string.splash_preparing)
-            is EngineSupervisor.State.Starting -> setSplashStatus(R.string.splash_starting)
-            is EngineSupervisor.State.Healthy, is EngineSupervisor.State.SafeMode ->
-                setSplashStatus(R.string.splash_loading)
+            is EngineSupervisor.State.Installing, is EngineSupervisor.State.Starting -> {
+                if (BootTrace.snapshot.value.startedAt <= 0) {
+                    setSplashStatus(
+                        if (state is EngineSupervisor.State.Installing) R.string.splash_preparing
+                        else R.string.splash_starting,
+                    )
+                }
+            }
+            is EngineSupervisor.State.Healthy, is EngineSupervisor.State.SafeMode -> {
+                if (BootTrace.snapshot.value.startedAt <= 0) {
+                    setSplashStatus(R.string.splash_loading)
+                }
+            }
             is EngineSupervisor.State.Failed, is EngineSupervisor.State.Backoff,
             is EngineSupervisor.State.Stopped -> dismissSplash()
             else -> Unit

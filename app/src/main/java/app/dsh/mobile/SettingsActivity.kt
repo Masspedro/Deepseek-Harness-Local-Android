@@ -16,6 +16,7 @@ import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
+import app.dsh.mobile.engine.BootTrace
 import app.dsh.mobile.engine.ChatRecovery
 import app.dsh.mobile.engine.ExtensionManager
 import app.dsh.mobile.engine.PrivMode
@@ -356,6 +357,54 @@ class SettingsActivity : Activity() {
                         .show()
                 }
             }, "self-check").start()
+        }
+
+        // —— 其他：上次启动详情（v1.4.8）——
+        // 用户报「启动慢」时，这里能直接看到每个阶段各花了多久、解压了多少文件，
+        // 不用再去翻 engine.log。数据来自 BootTrace（引擎启动时实时写入 boot.log）。
+        findViewById<LinearLayout>(R.id.rowBootTrace).setOnClickListener {
+            val snap = BootTrace.snapshot.value
+            val body = StringBuilder()
+            if (snap.startedAt <= 0) {
+                body.append(getString(R.string.boot_trace_none))
+            } else {
+                body.append(getString(R.string.boot_step_runtime)).append(": ")
+                body.append(String.format(java.util.Locale.US, "%.1fs", snap.elapsedMs() / 1000.0))
+                body.append(if (snap.running) {
+                    " (" + getString(R.string.boot_trace_running) + ")"
+                } else {
+                    ""
+                })
+                body.append("\n\n")
+                val ins = snap.install
+                if (ins.totalFiles > 0) {
+                    body.append(getString(R.string.splash_files, ins.doneFiles, ins.totalFiles))
+                    body.append("\n\n")
+                }
+                snap.steps.forEach { s ->
+                    body.append(String.format(java.util.Locale.US, "%6dms  %-24s %s%n",
+                        s.durationMs, s.key,
+                        String.format(java.util.Locale.US, "(%dms)", s.atMs)))
+                }
+                if (snap.failure != null) {
+                    body.append("\n").append(snap.failure)
+                }
+            }
+            android.app.AlertDialog.Builder(this)
+                .setTitle(R.string.boot_trace_title)
+                .setMessage(body.toString().trimEnd())
+                .setPositiveButton(android.R.string.ok, null)
+                .setNeutralButton(R.string.file_editor_copy_path) { _, _ ->
+                    val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    cm.setPrimaryClip(
+                        android.content.ClipData.newPlainText(
+                            "dsh-boot",
+                            BootTrace.readLogTail(this, 32 * 1024),
+                        ),
+                    )
+                    Toast.makeText(this, R.string.file_editor_path_copied, Toast.LENGTH_SHORT).show()
+                }
+                .show()
         }
 
         // —— 其他：重启引擎 ——

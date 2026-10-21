@@ -32,10 +32,13 @@ const CRITICAL_ROWS = {
   "typert": "@deepseek-ai/dsh-typert-registry",
   "typert-loader": "@deepseek-ai/dsh-typert-loader",
   "typert-gateway": "@deepseek-ai/dsh-api-gateway",
-  // v1.4.7：Android 上改用 browse 后端（auto 会动态挂载并可能永久失败，
-  // 见 EngineConfig overlay 里的说明）。这里必须同步，否则探针会把
-  // 正确的行误报成「critical row must be ...」。
-  "directory-picker": "@deepseek-ai/dsh-host-directory-picker-browse",
+  // ⚠️ v1.4.8：这里**不能**写 "directory-picker"。Android overlay 现在是
+  // 「禁用 base 的 directory-picker + insert 一条 android-directory-picker」，
+  // 因为 patch 的 `name` 是匹配守卫而非可赋值字段（见 EngineConfig 里的详细说明）。
+  // 原先写 "directory-picker": "...-browse" 会把那条已被禁用的 auto 行判成
+  // "critical row must be browse"，probe 常年 degraded —— 而它自己校验的根本
+  // 不是实际在跑的那一行。现在改为校验 insert 出来的新 id。
+  "android-directory-picker": "@deepseek-ai/dsh-host-directory-picker-browse",
   "workspace": "@deepseek-ai/dsh-workspace",
   "workspace-controller": "@deepseek-ai/dsh-api-workspace-controller",
   "webserver": "@deepseek-ai/dsh-host-webserver",
@@ -47,7 +50,9 @@ const CRITICAL_ROWS = {
 const SERVICE_ROWS = {
   typert: [["typert", CRITICAL_ROWS.typert]],
   typertGateway: [["typert-gateway", CRITICAL_ROWS["typert-gateway"]], ["typert", CRITICAL_ROWS.typert]],
-  directoryPicker: [["directory-picker", CRITICAL_ROWS["directory-picker"]]],
+  directoryPicker: [
+    ["android-directory-picker", CRITICAL_ROWS["android-directory-picker"]],
+  ],
   directoryPickerController: [["workspace-controller", "@deepseek-ai/dsh-api-workspace-controller"]],
   workspaceRegistry: [
     ["workspace", CRITICAL_ROWS["workspace"]],

@@ -268,7 +268,12 @@ class OnboardingActivity : Activity() {
         // 使用完整对话框 + 圆角样式
         val builder = AlertDialog.Builder(this)
             .setTitle(getString(R.string.ob_priv_root_warn2_title))
-            .setMessage(getString(R.string.ob_priv_root_warn2))
+            // v1.4.9（用户建议）：第二条确认里把「不要动应用自己的目录」说清楚。
+            // Root 引擎以 uid 0 运行，用户/AI 在应用私有目录或工作区里手改文件时，
+            // 写出的属主是 root、权限位可能是 600 —— App 自己（普通 uid）从此读不了，
+            // 表现为「插件加载失败 / 配置读不到 / 引擎起不来」，只能清数据或重装。
+            // 这类损坏我们见过太多次，值得在开启前就说明白。
+            .setMessage(getString(R.string.ob_priv_root_warn2) + "\n\n" + getString(R.string.ob_priv_root_paths_warn))
             .setCancelable(false)
             .setPositiveButton(getString(R.string.ob_dialog_continue)) { _, _ -> next() }
             .setNegativeButton(getString(R.string.ob_dialog_cancel)) { _, _ ->

@@ -167,7 +167,7 @@ Normaler Modus ist der Standard; Optionen, deren Fähigkeit noch nicht bereitste
 
 ## 📦 Installation
 
-**Release herunterladen (empfohlen)**: Hol dir die APK von [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (für Smartphones `arm64-v8a` wählen; aktuell **v1.4.7**), und installiere sie, nachdem du Installationen unbekannter Quellen erlaubt hast. Jede Version ab v1.0.0 lässt sich über die bestehende App installieren.
+**Release herunterladen (empfohlen)**: Hol dir die APK von [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (für Smartphones `arm64-v8a` wählen; aktuell **v1.4.9**), und installiere sie, nachdem du Installationen unbekannter Quellen erlaubt hast. Jede Version ab v1.0.0 lässt sich über die bestehende App installieren.
 
 **Aus dem Quelltext bauen** (JDK 17 + Android SDK, NDK r26+, CMake 3.22.1):
 
@@ -221,6 +221,15 @@ Alternativ: Forke das Repository und lasse den Workflow **android-build** auf Gi
 Fehler gefunden oder eine Funktion vorgeschlagen? Eröffne ein [Issue](https://github.com/Soodok/Deepseek-Harness-Local-Android/issues). Für Absturzberichte bitte die `logcat`-Ausgabe oder das in der App zugängliche Engine-Log anhängen.
 
 **QQ-Gruppe (Chinesisch): `1128769016`** — Fragen zur Nutzung, Versionsneuigkeiten und Plugin-Empfehlungen. Fehler bitte weiterhin als Issue melden, damit sie nicht untergehen.
+
+## 🙏 Mitwirkende
+
+Dieses Projekt ist keine Ein-Personen-Arbeit. Folgende Beiträge sind im Hauptzweig enthalten:
+
+| Mitwirkende/r | Beitrag |
+|---|---|
+| [@skynit](https://github.com/skynit) | Fehlerhafte Darstellung des Anmelde-/„Loslegen"-Dialogs behoben (PR #30): Ursache war die Viewport-Skalierung gegenüber veralteten Compositor-Ebenen; Lösung: Viewport unter dem Splash finalisieren + vollflächige Neurasterisierung |
+| @henryz78 | Behoben: Engine blieb nach einem Neustart dauerhaft hängen (v1.4.9). Fand, dass das `stopping`-Flag in `start()` nie zurückgesetzt wurde, und zusätzlich die Race-Condition, bei der eine verschluckte `CancellationException` den alten Überwachungsloop den Zustand des neuen überschreiben lässt. Wegen Netzwerkproblemen als Quellcode-Archiv eingereicht |
 
 ## Lizenz
 
