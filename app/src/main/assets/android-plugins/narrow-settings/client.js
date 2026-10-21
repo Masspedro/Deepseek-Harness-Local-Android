@@ -365,7 +365,28 @@ window.__ModuleLoader__.load({
        * @returns {boolean} 是否值得进入完整定位。
        */
       function maybePanelPresent() {
-        return document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
+        // ⚠️ v1.4.6（审查）：预判不能只认 role/aria-modal。
+        // 引擎里还有其它 dialog（turn usage、stats pills、context meter、
+        // settings-account 的 PlatformOverlay）—— 用户打开其中任何一个，
+        // 预判都会放行，然后 findPanel() ① 全失败 → ② 扫全页 div/section/aside，
+        // 对每个候选做 getComputedStyle + getBoundingClientRect。这正是 issue #26
+        // 的原始复现路径，等于预判没解决问题。
+        //
+        // 现在优先查引擎自己打的稳定属性 `data-shortcut-modal="settings"`
+        //（设置面板专用，见 dsh-client-ui-settings-general）；只有它存在才继续。
+        // 同时保留 dialog 作为次要信号，但**必须**是设置类面板才算 —— 通过
+        // 判断面板内是否含 nav 语义标签来区分（设置面板独有）。
+        if (document.querySelector('[data-shortcut-modal="settings"]')) {
+          // 引擎明确标记了设置面板：走完整定位
+          return true;
+        }
+        // 退路：没有稳定属性时，只在「dialog 内部含 nav」时继续 ——
+        // 其它 dialog（usage/pills/meter）没有 nav，扫描会白做。
+        var dialogs = document.querySelectorAll('[role="dialog"][aria-modal="true"]');
+        for (var i = 0; i < dialogs.length; i++) {
+          if (dialogs[i].querySelector("nav")) return true;
+        }
+        return false;
       }
 
       /** 重新判定。 */

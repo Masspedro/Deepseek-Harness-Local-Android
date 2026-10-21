@@ -79,9 +79,28 @@ class EngineSupervisor(private val ctx: Context) {
         repeat(6) {
             val f = logFile()
             if (f.isFile) {
-                val text = f.readText()
-                val from = logOffsetAtSpawn.coerceIn(0L, text.length.toLong()).toInt()
-                val seg = text.substring(from)
+                // ⚠️ v1.4.6（审查 P0）：logOffsetAtSpawn 是**字节数**（来自
+                // File.length()），而 String.substring 的下标是**字符数**。
+                // 日志里有中文（AI 命令输出、工作区名）时字节数 > 字符数，
+                // 直接拿字节值当字符下标会跳过本段开头 → token 行落在被跳过的
+                // 区域 → tokenUrl=null → WebView 加载裸地址 → 401/白屏。
+                // 重试 6 次用的还是同一个错误偏移，所以必然每次都失败。
+                //
+                // 正确做法：按**字节偏移**读取（RandomAccessFile.seek），再整体解码。
+                val seg = runCatching {
+                    java.io.RandomAccessFile(f, "r").use { raf ->
+                        val start = logOffsetAtSpawn.coerceIn(0L, raf.length())
+                        raf.seek(start)
+                        val buf = ByteArray((raf.length() - start).coerceAtMost(1L shl 20).toInt())
+                        var read = 0
+                        while (read < buf.size) {
+                            val n = raf.read(buf, read, buf.size - read)
+                            if (n <= 0) break
+                            read += n
+                        }
+                        String(buf, 0, read, Charsets.UTF_8)
+                    }
+                }.getOrNull().orEmpty()
                 Regex("dsh web: (http://127\\.0\\.0\\.1:\\d+/\\?token=\\S+)")
                     .findAll(seg).lastOrNull()?.groupValues?.get(1)
                     ?.let { hit -> return@runCatching hit }
@@ -104,7 +123,23 @@ class EngineSupervisor(private val ctx: Context) {
     /** 本次引擎启动时 engine.log 的长度：extractTokenUrl 只搜此偏移之后的日志段 */
     @Volatile private var logOffsetAtSpawn = 0L
     private var loopJob: Job? = null
+    /**
+     * 用户是否**显式**退出过（通知栏「退出」）。
+     *
+     * 只由 `stop(explicit = true)` 置位、`start()` 清零。用于阻止保活看门狗
+     * 与 MainActivity.onResume 在用户主动退出后又把引擎拉起来。
+     */
     private var userStop = false
+
+    /**
+     * 监督循环是否应停止（任何 stop 都置位，start 清零）。
+     *
+     * 与 [userStop] 分开：服务被动销毁（OEM 清后台、系统回收）也要求循环停下，
+     * 但那**不代表用户想退出** —— 之后必须有自动拉起的可能，否则引擎永久不启动。
+     * 旧实现把两者混成一个 `userStop`，正是「打开 App 也不转」的根因（审查 P0）。
+     */
+    @Volatile
+    private var stopping = false
     private var scopeRef: CoroutineScope? = null
 
     /**
@@ -215,7 +250,13 @@ class EngineSupervisor(private val ctx: Context) {
      *                 以释放内存）；false = 服务销毁等被动停止。
      */
     fun stop(graceMs: Long = 10_000, explicit: Boolean = false) {
-        userStop = true
+        // ⚠️ v1.4.6（审查 P0）：只有**用户显式退出**才置 userStop。
+        // 旧实现在服务被动销毁（explicit=false，如 OEM 清后台、系统回收前台服务、
+        // 划掉任务）时也置 userStop=true —— 而 isUserStopped() 会因此恒为真，
+        // EngineService.start() 与保活看门狗都被它拦住，引擎**永久不再启动**，
+        // 直到用户手动点「重启」。用户感知是「打开 App 也不转、一直空转」。
+        if (explicit) userStop = true
+        stopping = true
         loopJob?.cancel()
         process?.stop(graceMs)
         process = null
@@ -329,7 +370,10 @@ class EngineSupervisor(private val ctx: Context) {
         var backoffIndex = 0
         // 端口清场计数（v1.3.1）：防「非引擎进程永久占端口」时绕过退避无限重试
         var portReclaimCount = 0
-        while (kotlinx.coroutines.currentCoroutineContext().isActive && !userStop) {
+        // 生命周期内累计清场次数：portReclaimCount 会在「额度用尽」时被归零以允许
+        // 下一轮，但**累计值**必须持续增长，否则清场额度永远用不完（审查 P0）。
+        var totalPortReclaims = 0
+        while (kotlinx.coroutines.currentCoroutineContext().isActive && !stopping) {
             // 仅当引擎「自行死亡」（fork 失败 / 启动期退出）才值得让 guardian 定罪；
             // 健康超时自杀、安装异常、Healthy 后运行中退出都不算配置崩溃。
             var deterministicFailure: String? = null
@@ -482,7 +526,7 @@ class EngineSupervisor(private val ctx: Context) {
                         // 阻塞等待进程退出（被杀/崩溃）。Healthy 后退出视为资源类偶发，
                         // 不计入 guardian（那是普通退避该管的事，与配置无关）。
                         val status = proc.exitFuture.get()
-                        if (userStop) break
+                        if (stopping) break
                         Log.w(TAG, "engine exited, raw status=0x${status.toString(16)}")
                     }
                 } else if (proc.exitFuture.isDone) {
@@ -494,7 +538,7 @@ class EngineSupervisor(private val ctx: Context) {
                     proc.stop()
                 }
             } catch (e: EngineStartException) {
-                if (userStop) break
+                if (stopping) break
                 Log.e(TAG, "supervision failure", e)
                 // ⚠️ v1.3.1：su 探测失败（"no usable su"）是**环境瞬时问题**，不是坏配置。
                 // 场景：App 被强杀后立刻重启，magiskd 对该 app 的 su 会话尚未重建、
@@ -517,7 +561,7 @@ class EngineSupervisor(private val ctx: Context) {
                 _state.value = State.Failed(ctx.getString(R.string.error_runtime_arch_mismatch))
                 return
             } catch (e: Exception) {
-                if (userStop) break
+                if (stopping) break
                 Log.e(TAG, "supervision failure", e)
             }
 
@@ -544,15 +588,29 @@ class EngineSupervisor(private val ctx: Context) {
                 portInUse() && (deterministicFailure != null || looksLikePortConflict())
             }
             if (portEvidence) {
-                if (portReclaimCount < EngineConfig.MAX_PORT_RECLAIMS) {
+                totalPortReclaims++
+                if (totalPortReclaims <= EngineConfig.MAX_PORT_RECLAIMS) {
                     portReclaimCount++
                     withContext(Dispatchers.IO) { reclaimPort() }
                     deterministicFailure = null   // 已处置，不计入 guardian（与配置无关）
-                    backoffIndex = 0
+                    // ⚠️ v1.4.6（审查 P0）：这里**绝不能**重置 backoffIndex。
+                    // 旧实现重置它，且 `portReclaimCount` 满了又归零，于是计数永远在
+                    // 0..8 循环、退避永远停在 0~2 秒 —— MAX_RESTART(14) 永远到不了，
+                    // 端口被外来进程长期占用时就是「每 2 秒 spawn 一次 node、立刻死」
+                    // 的永久循环（耗电、发热、UI 抖动，且永不进 Failed）。
                     delay(1_200)                  // 等端口真正释放再下一轮
                 } else {
-                    Log.e(TAG, "port reclaim exceeded ${EngineConfig.MAX_PORT_RECLAIMS} attempts — giving up (occupied by a foreign process?)")
-                    portReclaimCount = 0
+                    // 累计清场额度用尽：端口被外部进程占着，不是我们能修的问题。
+                    // 明确进入 Failed 并给出可读原因，而不是无限重试。
+                    Log.e(
+                        TAG,
+                        "port reclaim exhausted (${EngineConfig.MAX_PORT_RECLAIMS} lifetime attempts) — " +
+                            "port ${EngineConfig.DEFAULT_PORT} is held by a foreign process",
+                    )
+                    _state.value = State.Failed(
+                        "port ${EngineConfig.DEFAULT_PORT} is in use by another process",
+                    )
+                    break
                 }
             }
             deterministicFailure?.let { sig ->

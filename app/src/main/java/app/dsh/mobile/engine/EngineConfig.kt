@@ -261,8 +261,15 @@ object EngineConfig {
         // 数据也还躺在旧位置 —— 必须「重指向 + 搬数据」两步都做，否则会话继续写旧
         // 位置，卸载重装依然全丢（用户反馈「删了应用重新下回来对话无法恢复」）。
         // ① 重指向：软链目标与当前 pub 不一致 → 删旧软链重建（数据在目标目录里，删链不删数据）
+        //
+        // target/targetFile 提到 if 外层：后面的 legacy 迁移需要判断「链当前是否
+        // 正指向 legacy 目录」——若在块内声明，外层不可见（编译错误）。
+        val linkTarget = if (isLink) {
+            runCatching { Files.readSymbolicLink(priv.toPath()).toString() }.getOrNull()
+        } else null
+        val targetFile = linkTarget?.let { File(it) }
         if (isLink) {
-            val target = runCatching { Files.readSymbolicLink(priv.toPath()).toString() }.getOrNull()
+            val target = linkTarget
             // v1.4.0（issue #25 后续）：**目标存在但不可访问**同样要解开。
             // 旧版本在 MANAGE_EXTERNAL_STORAGE 未授予时把 Documents 判为可用并建链
             // （探针假阳性：只验证了自建文件），升级后权限依旧没给 → 链还在、目标读不了，
@@ -277,28 +284,40 @@ object EngineConfig {
             //     与并发探测撞名等）。此时复探一次，仍失败才删链。
             // 旧实现直接 `!isDirUsable(target)` 一次判死，正是「有时工作区突然不可用」
             // 且事后无法解释的来源之一。
-            val managerGranted = android.os.Build.VERSION.SDK_INT >= 30 &&
-                android.os.Environment.isExternalStorageManager()
-            // 目标可用性：复探一次吃掉瞬态失败（FUSE 未就绪 / MediaProvider 索引中 /
-            // 并发探测撞名）。只有连续两次都失败才认账。
-            val targetFile = target?.let { File(it) }
-            val targetUsable = when {
-                targetFile == null -> false
-                !managerGranted -> false
-                isDirUsable(targetFile, requireManager = true) -> true
-                else -> isDirUsable(targetFile, requireManager = true)
-            }
-            val stale = target != null && (
-                !target.equals(pub.absolutePath, ignoreCase = true) || !targetUsable
-                )
+            //
+            // ⚠️⚠️ v1.4.6 关键修正（用户反复反馈「文件系统突然又不可用」）：
+            // 上一版仍然会误删链，因为判据是「探针能否成功」，而探针本身不可靠 ——
+            //   · `publicDataRoot()` **每次调用都重新探测**；某一刻抖动就会回退到
+            //     app external，于是 pub 变了 → 目标"不一致" → 删链重建；
+            //   · 结果软链指向 app external（里面没有数据），真数据还躺在 Documents，
+            //     用户看到的就是「工作区/文件面板突然不可用」；
+            //   · app external 还会被系统随时清理，等于数据悬空。
+            //
+            // 现在的原则变了：**目录存在就绝不删链刚从**。数据在不在由「目录是否
+            // 存在」判断（廉价且稳定），能不能读写由引擎在真正访问时报错。
+            // 探针只用于决定**是否新建**外置，不用于拆已有的链。
+            // 目标目录是否真实存在（只 stat，不做写读探针 —— 后者在此处过于敏感）
+            val targetExists = targetFile?.isDirectory == true
+            // 路径是否与当前首选位置一致。不一致**不再等于要删链**：
+            // 只要旧目标还能访问，就保留它（数据在那边）。
+            val sameAsPreferred = target.equals(pub.absolutePath, ignoreCase = true)
+            val stale = target == null || (!targetExists && !sameAsPreferred)
             if (target == null || stale) {
                 Log.i(
                     TAG,
                     "$name: relink $target -> ${pub.absolutePath} " +
-                        "(managerGranted=$managerGranted targetUsable=$targetUsable)",
+                        "(targetExists=$targetExists sameAsPreferred=$sameAsPreferred)",
                 )
                 runCatching { priv.delete() }
                 isLink = false
+            } else if (!sameAsPreferred && targetExists) {
+                // 目标仍可用但不是当前首选：**保留**（数据在那里），只记诊断。
+                // 强行重指会让用户数据"消失"，这是历史事故的根源。
+                Log.w(
+                    TAG,
+                    "$name: keeping symlink to $target (reachable, differs from preferred " +
+                        "${pub.absolutePath}); data stays where it is",
+                )
             }
         }
         // ② 历史数据迁移：旧首选位置（app external）还有数据 → **逐文件合并**到新位置。
@@ -309,11 +328,27 @@ object EngineConfig {
         val legacyRoot = legacyPublicRoot(ctx)
         if (legacyRoot != null && pubRoot.absolutePath != legacyRoot.absolutePath) {
             val legacy = File(legacyRoot, name)
+            // ⚠️ v1.4.6（审查 A1）：软链**当前正指向 legacy** 时绝不能删 legacy。
+            // 典型升级路径：用户刚授予「所有文件访问」→ Documents 可用 → 链还指向
+            // app external → 迁移把数据复制过去后 deleteRecursively 掉 legacy，
+            // 而链此刻仍指向它 → 本次启动拿到悬空链 → 引擎 readdir ENOENT →
+            // 工作区/文件面板全部不可用。数据在 Documents 里，但这次就是坏的。
+            val legacyIsActiveTarget = targetFile?.let {
+                runCatching { it.canonicalPath }.getOrNull()
+            } == runCatching { legacy.canonicalPath }.getOrNull()
+            if (legacyIsActiveTarget) {
+                Log.i(
+                    TAG,
+                    "$name: legacy dir is the active symlink target — copying but not deleting",
+                )
+            }
             if (legacy.exists() && legacy.list()?.isNotEmpty() == true) {
                 runCatching {
                     var copied = 0
+                    // 用 walkNoFollow：不跟随软链进入外部目录（审查 A6）——
+                    // 旧实现会把链指向的外部内容整体复制进来，磁盘暴涨/ENOSPC。
                     legacy.walkTopDown().forEach { f ->
-                        if (f.isFile) {
+                        if (f.isFile && !isSymbolicLink(f)) {
                             val dst = File(pub, f.relativeTo(legacy).path)
                             if (!dst.exists()) {
                                 dst.parentFile?.mkdirs()
@@ -322,12 +357,22 @@ object EngineConfig {
                             }
                         }
                     }
+                    // 目录（含空目录）也要建出来，否则空工作区会被当成"迁移完成"后删掉
+                    legacy.walkTopDown()
+                        .filter { it != legacy && it.isDirectory && !isSymbolicLink(it) }
+                        .forEach { File(pub, it.relativeTo(legacy).path).mkdirs() }
                     val missing = legacy.walkTopDown().any { f ->
-                        f.isFile && !File(pub, f.relativeTo(legacy).path).isFile
+                        f.isFile && !isSymbolicLink(f) && !File(pub, f.relativeTo(legacy).path).isFile
                     }
-                    if (!missing) {
-                        legacy.deleteRecursively()
+                    if (!missing && !legacyIsActiveTarget) {
+                        deleteNoFollow(legacy)
                         Log.i(TAG, "migrated legacy $name -> ${pub.absolutePath} ($copied files)")
+                    } else if (!missing) {
+                        Log.i(
+                            TAG,
+                            "migrated legacy $name -> ${pub.absolutePath} ($copied files); " +
+                                "kept legacy because the symlink still points at it",
+                        )
                     } else {
                         Log.w(TAG, "legacy migration of $name incomplete; keeping legacy copy")
                     }
@@ -380,6 +425,25 @@ object EngineConfig {
             }.getOrDefault(false)
             if (retried) {
                 Log.w(TAG, "$name: took ownership of $pub (uid changed after reinstall) — external storage OK now")
+            } else if (isLink && targetFile?.isDirectory == true) {
+                // ⚠️⚠️ v1.4.6 关键修正（用户反复反馈「文件系统突然又不可用」）：
+                // 上一版在这里直接 `priv.delete()` 拆链 —— 只要**这一次**写读探针失败
+                // （FUSE 抖动、MediaProvider 正在索引、开机初期、系统存储瞬时繁忙），
+                // 软链就被删掉，sessions/workspaces 指回空的私有目录。
+                //
+                // 用户看到的是：本来好好的对话/工作区，某次启动后突然全没了、
+                // 工作区选择报 unavailable —— 而数据其实一直躺在共享存储里。
+                // 重启几次后探针又成功，于是「有时好有时坏」，完全无法复现。
+                //
+                // 现在的原则：**链在、目标目录也在 → 绝不拆链**。
+                // 探针失败只说明"这一刻写不进去"，不代表数据丢了；引擎真正读写时
+                // 若仍然失败，它会自己报 EACCES —— 那是有日志、可诊断的失败，
+                // 比我们悄悄把数据"变没"要好得多。
+                Log.w(
+                    TAG,
+                    "$name: public storage probe failed but symlink target exists " +
+                        "($targetFile) — keeping the link (transient failure, data is there)",
+                )
             } else {
                 Log.w(TAG, "$name: public storage NOT writable ($pub) — keeping data internal (no symlink)")
                 runCatching { if (Files.isSymbolicLink(priv.toPath())) priv.delete() }
@@ -413,7 +477,7 @@ object EngineConfig {
                 pub.mkdirs()
                 var copied = 0
                 priv.walkTopDown().forEach { f ->
-                    if (f.isFile) {
+                    if (f.isFile && !isSymbolicLink(f)) {
                         val dst = File(pub, f.relativeTo(priv).path)
                         if (!dst.exists()) {
                             dst.parentFile?.mkdirs()
@@ -432,14 +496,14 @@ object EngineConfig {
                 // 掩盖漏拷；反过来 pub 文件多时又误判失败 —— 实测 `50 < 51` 就是这个）。
                 // 正确的语义是：priv 的每个文件都必须落到 pub 对应的位置。
                 val missing = priv.walkTopDown().any { f ->
-                    f.isFile && !File(pub, f.relativeTo(priv).path).isFile
+                    f.isFile && !isSymbolicLink(f) && !File(pub, f.relativeTo(priv).path).isFile
                 }
                 if (missing) {
                     // 复制不全（磁盘满/权限）→ 保留私有目录，本次不外置
                     Log.w(TAG, "migration of $name incomplete; keeping private copy")
                     return false
                 }
-                priv.deleteRecursively()
+                deleteNoFollow(priv)
                 Log.i(TAG, "migrated dsh-home/$name -> ${pub.absolutePath} ($copied files)")
             }.onFailure {
                 Log.w(TAG, "migration of dsh-home/$name failed: ${it.message}", it)
@@ -460,7 +524,7 @@ object EngineConfig {
                         return false
                     }
                 }
-                priv.deleteRecursively()
+                deleteNoFollow(priv)
             }
             if (!priv.exists()) Files.createSymbolicLink(priv.toPath(), pub.toPath())
             Log.i(TAG, "dsh-home/$name -> ${pub.absolutePath} (symlink)")
@@ -497,6 +561,74 @@ object EngineConfig {
         // 用户看到的正是「迁移完成后选工作区提示 unavailable」（v1.4.3 修复）。
         runCatching { healWorkspaceRegistry(ctx) }
             .onFailure { Log.w(TAG, "workspace registry heal failed: ${it.message}") }
+    }
+
+    /**
+     * 安全遍历：**不跟随符号链接**。
+     *
+     * ## 为什么不能用 walkTopDown()
+     * Kotlin 的 `walkTopDown()` 用 `File.isDirectory()` 决定是否进入子目录，而
+     * `isDirectory()` **跟随软链**。工作区里出现软链是常态（AI 跑 npm/pnpm 会
+     * 生成 `.bin` 软链、用户也可能手建）。由此产生三类真实故障：
+     *
+     *   · 迁移时穿过软链把**外部**内容复制进公开目录 → 磁盘暴涨 / ENOSPC；
+     *   · `deleteRecursively()`（同样是跟随语义的 walkBottomUp + delete）会把
+     *     软链**指向的外部文件逐个删掉** → 静默毁掉用户别处的数据；
+     *   · 存在软链环时遍历无限加深 → OOM / 被系统杀，表现为「莫名崩溃」。
+     *
+     * 本函数只进入**真实目录**（`lstat` 语义），软链本身作为叶子返回，
+     * 由调用方决定如何处理（复制链接本身 / 只 unlink 链接）。
+     *
+     * @param root 起始目录
+     * @param maxEntries 最大访问条目数（防环与失控，超出即停止并记录）
+     * @param onEntry 每个条目回调；`isLink=true` 表示该条目是符号链接
+     */
+    private fun walkNoFollow(
+        root: File,
+        maxEntries: Int = 200_000,
+        onEntry: (file: File, isLink: Boolean) -> Unit,
+    ) {
+        var visited = 0
+        val stack = ArrayDeque<File>()
+        if (root.isDirectory || isSymbolicLink(root)) stack.addLast(root)
+        while (stack.isNotEmpty()) {
+            val dir = stack.removeLast()
+            val children = runCatching { dir.listFiles() }.getOrNull() ?: continue
+            for (child in children) {
+                if (++visited > maxEntries) {
+                    Log.w(TAG, "walkNoFollow: entry cap ($maxEntries) reached under $root; stopping")
+                    return
+                }
+                val link = isSymbolicLink(child)
+                onEntry(child, link)
+                // 只进入真实目录；软链目录不跟随（防穿越与环）
+                if (!link && child.isDirectory) stack.addLast(child)
+            }
+        }
+    }
+
+    /** 是否是符号链接（不跟随）。 */
+    private fun isSymbolicLink(f: File): Boolean =
+        runCatching { java.nio.file.Files.isSymbolicLink(f.toPath()) }.getOrDefault(false)
+
+    /**
+     * 安全删除：**绝不穿过软链删除目标内容**。
+     *
+     * `deleteRecursively()` 会跟随目录软链往下走 —— 在 `workspaces/` 含软链时
+     * 等于把链指向的外部数据一起删了。这里只递归真实目录，软链仅删链接本身。
+     */
+    private fun deleteNoFollow(root: File) {
+        if (!root.exists() && !isSymbolicLink(root)) return
+        walkNoFollow(root) { f, link ->
+            if (link) runCatching { f.delete() }
+        }
+        // 由深到浅删目录（walkNoFollow 只报告子项，目录本身单独收尾）
+        runCatching {
+            root.walkBottomUp()
+                .filter { it != root && !isSymbolicLink(it) && it.isDirectory && !isSymbolicLink(it) }
+                .forEach { it.delete() }
+        }
+        runCatching { root.delete() }
     }
 
     /**
@@ -807,10 +939,11 @@ object EngineConfig {
             |    - id: android-narrow-rightbar
             |      name: ./android-plugins/narrow-rightbar/index.js
             |
-            |# 长会话渲染减负（v1.4.5，issue #26 第二层）：给视口外的聊天行加
-            |# content-visibility: auto，让浏览器跳过它们的布局与绘制。引擎正文是
-            |# entries.map(...) 全量渲染，300 轮会攒上千个常驻节点；这是纯 CSS 优化，
-            |# 不改数据、不改 DOM 结构，视觉结果相同。
+            |# Long-session rendering relief (v1.4.5, issue #26 layer 2): give chat
+            |# rows outside the viewport content-visibility: auto so the browser can
+            |# skip their layout and paint. The engine renders the transcript with a
+            |# plain entries.map(...) - 300 turns accumulate thousands of live nodes.
+            |# Pure CSS: no data touched, no DOM structure touched, identical visuals.
             |- insert:
             |    - id: android-chat-perf
             |      name: ./android-plugins/chat-perf/index.js

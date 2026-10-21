@@ -78,6 +78,15 @@ window.__ModuleLoader__.load({
         "/* 视口外的聊天行跳过布局与绘制（内容不变，滚到视口内自动渲染） */",
         flow + " > [data-chat-turn] {",
         "  content-visibility: auto;",
+        // ⚠️ v1.4.6（审查发现）：`contain-intrinsic-size: auto <length>` 的
+        // remembered-size 语法要 Chrome 98+，而本应用最低支持 Chrome 85。
+        // 在 85–97 上该声明整体失效 → 被跳过的行按高度 0 计算 → 滚动条在滚动
+        // 过程中剧烈伸缩、滚动位置跳动，比不加优化更糟。
+        //
+        // 先写单值形式（Chrome 85 起可用）作为基础兜底，再写 auto 形式让新版
+        // 浏览器额外获得 remembered size 校准。不支持的版本丢弃第二条、保留
+        // 第一条 —— 两级降级，任何 WebView 都不会退化成「高度 0」。
+        "  contain-intrinsic-size: " + ESTIMATED_ROW_HEIGHT_PX + "px;",
         "  contain-intrinsic-size: auto " + ESTIMATED_ROW_HEIGHT_PX + "px;",
         "}",
       ].join("\n");

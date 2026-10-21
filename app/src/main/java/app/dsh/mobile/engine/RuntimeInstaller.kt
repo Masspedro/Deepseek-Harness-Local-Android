@@ -421,8 +421,14 @@ class RuntimeInstaller(private val ctx: Context) {
             .filter { it.isFile }
             .filter { f ->
                 val p = f.invariantSeparatorsPath
-                // 只处理 bin/ 目录内的，或已知需要执行位的名字
-                p.contains("/bin/") || f.name in EXECUTABLE_NAMES
+                // 只处理 bin/ 与 .bin/ 目录内的，或已知需要执行位的名字。
+                // ⚠️ v1.4.6（审查）：`/bin/` 匹配不到 `node_modules/.bin/xxx`
+                //（那是 `/.bin/`，中间没有 `/bin/` 子串）。当前 runtime 里有 12 个
+                // `.bin` 条目（.bin/dsh、.bin/cordis、.bin/semver…），全部是
+                // `#!/usr/bin/env node` 脚本 —— 一个都没被置上可执行位，任何直接
+                // exec `.bin/xxx` 的路径（npm/pnpm 的 PATH 注入、工具链 shim）
+                // 都会 EACCES，表现为「某个工具偶发不可用」。
+                p.contains("/bin/") || p.contains("/.bin/") || f.name in EXECUTABLE_NAMES
             }
             .forEach { f ->
                 if (isElfOrScript(f)) grant(f)

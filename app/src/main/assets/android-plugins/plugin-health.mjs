@@ -87,21 +87,57 @@ function writeMarker(value) {
   }
 }
 
-function inspect(ctx) {
+/**
+ * 提取 entry 的错误文本，并做两件事：
+ *   ① **截断到 2KB** —— 完整 stack 可能带上整份配置，marker 会被 PluginRecovery
+ *      拼进 engine.log，用户导出反馈时就外流了；
+ *   ② **脱敏** —— 配置校验失败时的报错里可能带 apiKey/token 明文。
+ * @param {unknown} error - Cordis 保存在 fiber 上的错误对象。
+ * @returns {string} 安全、可写日志的错误摘要。
+ */
+function scrubError(error) {
+  if (!error || typeof error !== "object") return "";
+  const raw = String(error.stack || error.message || error) || "";
+  const masked = raw
+    // 常见密钥形态：sk-xxx / ghp_xxx / 长十六进制
+    .replace(/(?<![A-Za-z0-9])(sk|ghp|gho|ghs)[-_][A-Za-z0-9_-]{8,}/g, "$1_***")
+    .replace(/(?<![A-Za-z0-9])[A-Fa-f0-9]{32,}(?![A-Za-z0-9])/g, "***")
+    // key: "..." / token=...
+    .replace(/((?:api[_-]?key|token|secret|password)\s*[:=]\s*["']?)[^\s"',}]{6,}/gi, "$1***");
+  return masked.length > 2048 ? masked.slice(0, 2048) + "…(truncated)" : masked;
+}
+
+function inspect(ctx, options = {}) {
+  // timedOut=true 表示「等到超时仍有加载任务在跑」。此时未拿到 fiber 的 entry
+  // 可能是**正在 import**，而不是加载失败 —— 必须区分，否则会把正常插件摘掉。
+  const timedOut = options.timedOut === true;
   const loader = safeGet(ctx, "loader") || ctx.loader;
   const entries = loader && typeof loader.entries === "function" ? [...loader.entries()] : [];
+  // 超时窗口内仍无 fiber 的 entry 归入 pending（不参与失败判定）
+  const isPending = (entry) =>
+    timedOut && entry.fiber === void 0 && !entry.disabled && !entry.options?.group;
   const failedEntries = entries
     .filter((entry) => {
       if (entry.disabled || entry.options?.group) return false;
       // import 失败没有 fiber；插件 init 抛错则保留 fiber，但 Cordis
       // 将其状态置为 3 并保存 _error。两种情况都表示 entry 不可用。
+      //
+      // ⚠️ 但「没有 fiber」在超时窗口里也可能只是**还没加载完**（Cordis 的
+      // Entry.fiber 是在 await import() 成功之后才赋值）。这类必须排除，
+      // 否则慢设备上正常插件会被误判、被 PluginRecovery 摘掉。
+      if (isPending(entry)) return false;
       return entry.fiber === void 0 || entry.fiber.state === 3 || entry.fiber?._error !== void 0;
     })
     .map((entry) => ({
       id: String(entry.options?.id || entry.id || ""),
       name: String(entry.options?.name || ""),
-      error: entry.fiber?._error ? String(entry.fiber._error?.stack || entry.fiber._error?.message || entry.fiber._error) : "",
+      error: scrubError(entry.fiber?._error),
     }));
+  // pending 项单独列出：供诊断，但不进入 failedEntries（不被隔离）
+  const pendingEntries = entries.filter(isPending).map((entry) => ({
+    id: String(entry.options?.id || entry.id || ""),
+    name: String(entry.options?.name || ""),
+  }));
   const criticalMismatches = entries
     .filter((entry) => Object.hasOwn(CRITICAL_ROWS, entry.options?.id || ""))
     .filter((entry) => entry.options?.name !== CRITICAL_ROWS[entry.options.id])
@@ -140,6 +176,10 @@ function inspect(ctx) {
     bootId: process.env.DSH_ANDROID_BOOT_ID || "",
     pid: process.pid,
     at: Date.now(),
+    // 超时判定：仍处于加载中的 entry 不算失败（见 inspect 顶部说明）。
+    // timedOut 只用于诊断与日志，不参与 ok —— 否则慢设备永远报 degraded。
+    timedOut,
+    pendingEntries,
     ok: missingServices.length === 0 && failedEntries.length === 0,
     missingServices,
     failedEntries,
@@ -163,10 +203,21 @@ function apply(ctx) {
     if (finished) return;
     const loader = safeGet(ctx, "loader") || ctx.loader;
     const tasks = loader && typeof loader.getTasks === "function" ? loader.getTasks() : [];
-    if (tasks.length > 0 && Date.now() - started < MAX_WAIT_MS) return;
+    const elapsed = Date.now() - started;
+    // 仍在加载中且没超时 → 继续等。
+    if (tasks.length > 0 && elapsed < MAX_WAIT_MS) return;
+    // ⚠️ v1.4.6 关键修复（用户反馈「装了插件重启显示加载失败」）：
+    // 原来超时后**无条件** inspect，而 Cordis 的 Entry.fiber 是在 `await import()`
+    // **成功之后**才赋值的 —— import 期间的 entry 看起来就是「fiber 未定义 = 失败」。
+    // 于是：慢设备上某个正常插件 import 超过 15 秒 → 被判失败 → 监督器摘掉它 →
+    // 用户看到「插件加载失败」，重装又好了（因为第二次加载更快/有缓存）。
+    //
+    // 现在超时后仍然 inspect（报告当前状态），但**标记 timedOut 并跳过失败判定**：
+    // 未完成的 entry 归入 pending，由 PluginRecovery 忽略，绝不据此隔离插件。
+    const timedOut = tasks.length > 0;
     finished = true;
     if (timer !== void 0) clearInterval(timer);
-    inspect(ctx);
+    inspect(ctx, { timedOut });
   };
   timer = setInterval(check, POLL_MS);
   check();

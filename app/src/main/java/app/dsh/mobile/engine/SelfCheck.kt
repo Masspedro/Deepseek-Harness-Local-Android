@@ -220,14 +220,19 @@ object SelfCheck {
                     out += if (reachable) {
                         Item("link.$name", "Link: $name", Item.Status.OK, "→ $target")
                     } else {
-                        // 目标不可达：这是引擎 scandir EACCES 的直接来源。
-                        // 修复 = 解开软链回退到私有目录（数据不在这里，删链不动数据）。
-                        val fixed = runCatching { link.delete() }.getOrDefault(false)
+                        // ⚠️ v1.4.6（审查 P0）：这里**绝不删链**。
+                        // 旧实现判为不可达就 `link.delete()` —— 但「不可达」可能只是
+                        // FUSE 瞬时拒绝、权限被系统临时收回、开机未挂载。删链之后
+                        // sessions/workspaces 回退到**空的私有目录**，用户看到
+                        // 「所有对话/工作区消失」，而数据其实还在公开目录里。
+                        // 这正好违反 EngineConfig 里「删链是不可逆的用户可见故障」的约束。
+                        //
+                        // 体检只报告；真正的修复交给引擎启动前的 externaliseSubdir
+                        //（那里有完整校验与重建逻辑，且不会在运行中改动数据）。
                         Item(
-                            "link.$name", "Link: $name",
-                            if (fixed) Item.Status.FIXED else Item.Status.FAIL,
-                            "target unreachable: $target; " +
-                                if (fixed) "link removed (falls back to private dir)" else "cannot remove link",
+                            "link.$name", "Link: $name", Item.Status.WARN,
+                            "target currently unreachable: $target — will be re-checked on next engine start " +
+                                "(not deleted: the data may still be there)",
                         )
                     }
                 }
@@ -273,9 +278,12 @@ object SelfCheck {
                 if (broken == 0) {
                     Item("registry", "Workspace registry", Item.Status.OK, "$total workspace(s)")
                 } else {
+                    // ⚠️ v1.4.6（审查）：这里并**没有**真正修复任何东西，不能报 FIXED。
+                    // 旧实现报 FIXED 会让设置页显示「发现 0 个问题，已修复 1 个」，
+                    // 用户以为已处理，实际下次启动才修。
                     Item(
-                        "registry", "Workspace registry", Item.Status.FIXED,
-                        "$broken of $total path(s) invalid — repaired on next engine start",
+                        "registry", "Workspace registry", Item.Status.WARN,
+                        "$broken of $total path(s) invalid — will be repaired on next engine start",
                     )
                 }
             )
@@ -324,9 +332,16 @@ object SelfCheck {
             val names = (0 until bundles.length()).mapNotNull {
                 bundles.optString(it).takeIf(String::isNotBlank)
             }
-            // 每个 bundle 的目录是否真的存在
-            val missing = names.filter {
-                !File(File(pj.parentFile, "node_modules"), it).isDirectory
+            // 每个 bundle 的目录是否真的存在。
+            // ⚠️ v1.4.6（审查）：引擎解析 bundle 目录的顺序是
+            // **installation anchor 优先、profile 次之**（dsh-app-boot 的
+            // resolveBundleDir）。内置 bundle（dsh-base / dsh-web-app）装在
+            // engine/lib/node_modules 下，不在 profiles/web/node_modules 下 ——
+            // 只查后者会让每台设备每次体检都误报「missing bundle」。
+            val installModules = File(EngineConfig.engineRoot(ctx), "lib/node_modules")
+            val profileModules = File(pj.parentFile, "node_modules")
+            val missing = names.filter { name ->
+                !File(profileModules, name).isDirectory && !File(installModules, name).isDirectory
             }
             listOf(
                 if (missing.isEmpty()) {

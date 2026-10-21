@@ -140,6 +140,17 @@ object ChatRecovery {
             }
         val global = root.optJSONObject("global") ?: JSONObject().also { root.put("global", it) }
         val ids = global.optJSONArray("workspaceIds") ?: JSONArray().also { global.put("workspaceIds", it) }
+        // ⚠️ v1.4.6（审查 P0）：引擎的 WorkspaceRegistry.validateStoredState 会校验
+        // 「tables 里的每个工作区都必须出现在 workspaceIds 顺序表里」，缺失直接
+        // 抛 `workspace 'X' is absent from registry order` → **引擎起不来**。
+        // 旧实现新建空数组就往下写，一旦 tables 有记录而 order 为空，就把引擎弄挂。
+        // 这里先把现有 tables 的 id 全部补进 order（保留已有顺序，新 id 追加）。
+        runCatching {
+            val known = (0 until ids.length()).mapNotNull { ids.optString(it).takeIf(String::isNotBlank) }.toMutableSet()
+            for (wid in tables.keys().asSequence().toList()) {
+                if (known.add(wid)) ids.put(wid)
+            }
+        }
 
         // cwd（规整后）→ 工作区 id
         val byCwd = HashMap<String, String>()
@@ -153,17 +164,11 @@ object ChatRecovery {
         var added = 0
         val touched = HashSet<String>()
 
-        // 没有 cwd 信息的会话统一归到「默认工作区」：优先复用已存在的
-        // workspaces/ 下第一个目录对应的工作区，避免凭空造一堆只有一条会话的工作区。
-        val fallbackWid: String? = orphans.firstOrNull { it.cwd.isBlank() }?.let {
-            byCwd[norm(EngineConfig.workspaces(ctx).absolutePath + "/demo")]
-                ?: tables.keys().asSequence().firstOrNull()
-        }
-
         for (o in orphans) {
-            val key = if (o.cwd.isBlank()) "" else norm(o.cwd)
-            var wid = if (o.cwd.isBlank()) fallbackWid else byCwd[key]
-            if (wid == null && o.cwd.isNotBlank()) {
+            // cwd 必然非空（headerOf 里拿不到就返回 null，不会进 orphans）
+            val key = norm(o.cwd)
+            var wid = byCwd[key]
+            if (wid == null) {
                 // 没有匹配的工作区：按 cwd 新建一个（只登记，不创建/移动目录）
                 if (o.cwd.isBlank()) continue   // 无 cwd 且无任何工作区可归：跳过，不造垃圾
                 wid = java.util.UUID.randomUUID().toString()
@@ -229,9 +234,50 @@ object ChatRecovery {
      * 若后续要做精确归位，再在后台解压 header（不阻塞恢复本身）。
      */
     private fun headerOf(file: File): Pair<String, Long>? {
-        val created = file.parentFile?.lastModified() ?: file.lastModified()
-        // cwd 留空串：由 recover() 决定落到哪个工作区（见那里的 pickTargetWorkspace）
-        return "" to created
+        // ⚠️ v1.4.6（审查 P0）：这里必须拿到**真实 cwd**，不能留空。
+        //
+        // 原因：引擎的 dsh-workspace 在读取 sessionIds 时会用 candidateMatches
+        // 按「会话 header 的 cwd」过滤 —— 登记到 A 工作区、但 cwd 属于 B 的会话
+        // 会被**静默过滤掉**。旧实现返回空 cwd，于是所有会话被塞进第一个工作区，
+        // 用户看到「已恢复 N 个」，重启后一个都没有；更糟的是这些 id 已写进
+        // registry，下次扫描认为「已登记」，永久无法自愈。
+        //
+        // 取 cwd 的成本：会话文件是 zstd，要解压第一行。为避免每个会话起一个
+        // node 进程（几百个会话会等到超时），这里读引擎自己维护的投影缓存
+        // `storages/session_projcache/sessions/<id>.json`（明文 JSON，含 cwd）。
+        val created = file.lastModified()
+        val id = file.parentFile?.name ?: return null
+        val cwd = cwdFromProjectionCache(file, id) ?: return null  // 拿不到就不恢复（宁可少恢复，不可错归）
+        return cwd to created
+    }
+
+    /**
+     * 从引擎的投影缓存里读会话 cwd。
+     *
+     * 引擎在 `storages/session_projcache/sessions/<session-id>.json` 里缓存每个
+     * 会话的元数据（明文 JSON）。这里只读 `cwd` 字段 —— 解析失败返回 null，
+     * 由调用方跳过该会话（不做猜测）。
+     *
+     * @param sessionFile 会话文件本身（用于定位同级的 dsh-home）
+     * @param sessionId 会话 id（目录名）
+     * @returns 绝对 cwd，或 null
+     */
+    private fun cwdFromProjectionCache(sessionFile: File, sessionId: String): String? {
+        // sessionFile = .../dsh-home/sessions/<slug>/<id>/session.v4.jsonl.zstd
+        // 向上找到 dsh-home（含 storages 子目录的那一层）
+        var dir: File? = sessionFile.parentFile
+        repeat(4) {
+            val cur = dir ?: return null
+            val cache = File(cur, "storages/session_projcache/sessions/$sessionId.json")
+            if (cache.isFile) {
+                val cwd = runCatching {
+                    JSONObject(cache.readText()).optString("cwd").takeIf(String::isNotBlank)
+                }.getOrNull()
+                if (cwd != null) return cwd
+            }
+            dir = cur.parentFile
+        }
+        return null
     }
 
     /** 注册表里已登记的所有 session id（含归档的）。 */
@@ -253,7 +299,13 @@ object ChatRecovery {
     }
 
     /** 路径规整：统一分隔符、去尾斜杠、忽略大小写差异（POSIX 上大小写敏感，但这里只做等值判断）。 */
-    private fun norm(p: String): String = p.trim().replace('\\', '/').trimEnd('/')
+    private fun norm(p: String): String {
+        // 引擎的 workspace path 是 fs.realpath 规范化后的值；会话 header 的 cwd
+        // 是 process.cwd()（软链下二者字符串不同）。必须 realpath 后才能比较，
+        // 否则同一个工作区会被判成两个，进而新建重复工作区（审查第 9 条）。
+        val resolved = runCatching { File(p).canonicalPath }.getOrNull()
+        return (resolved ?: p).trim().replace(File.separatorChar, '/').trimEnd('/')
+    }
 
     private fun isoNow(): String =
         SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
