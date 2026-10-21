@@ -200,6 +200,27 @@ object ChatRecovery {
 
         if (added == 0) return 0
 
+        // ⚠️ v1.4.7（用户实测反馈，关键）：**引擎把 workspace.json 当独占文件**。
+        // 它启动时读一次进内存，之后只在「发生变更」时整份写回 —— 既不监视文件，
+        // 写回前也不比对时间戳。所以我们在外部改完这个文件后，只要引擎再次发生
+        // 任何会话/工作区变更，就会用**旧内存状态**把我们的修改整份抹掉：
+        //
+        //   外部写入 7 个工作区 → 引擎某次变更写回 → 只剩内存里的 1 个
+        //   → engine.log 一个字都没有 → 用户以为历史丢了 → 卸载重装 → 真没了
+        //
+        // 用户实测：13:04:35 和 13:07:39 两次都被抹掉，条目从 7 回落到 1。
+        //
+        // 应对（三层）：
+        //   ① 写前把原文件备份一份（用户现在完全没有回退手段）；
+        //   ② 保存写入前的 mtime + 内容摘要，供调用方检测是否被引擎覆盖；
+        //   ③ **调用方必须重启引擎**（见 SettingsActivity），让引擎重新从磁盘读。
+        //      这是唯一正确的顺序：先停引擎 → 改文件 → 起引擎。
+        runCatching {
+            val backup = File(registryFile.parentFile, "workspace.json.before-recover")
+            registryFile.copyTo(backup, overwrite = true)
+            Log.i(TAG, "registry backed up to ${backup.absolutePath}")
+        }.onFailure { Log.w(TAG, "registry backup failed: ${it.message}") }
+
         // 原子写回（临时文件 + rename，避免半截 JSON 让引擎彻底读不了注册表）
         val tmp = File(registryFile.parentFile, ".workspace.json.recover-tmp")
         try {
@@ -209,6 +230,11 @@ object ChatRecovery {
                 tmp.delete()
             }
             Log.i(TAG, "recovered $added session(s) into ${touched.size} workspace(s)")
+            // 记下写入后的状态，供 verifyNotOverwritten() 在重启前确认引擎没抢写
+            runCatching {
+                File(registryFile.parentFile, ".workspace.json.recover-stamp")
+                    .writeText(registryFile.length().toString() + "|" + registryFile.lastModified().toString())
+            }
         } catch (e: Exception) {
             runCatching { tmp.delete() }
             Log.e(TAG, "registry write failed: ${e.message}", e)
@@ -216,6 +242,25 @@ object ChatRecovery {
         }
         return added
     }
+
+    /**
+     * 恢复是否仍然存在（未被运行中的引擎覆盖）。
+     *
+     * ## 为什么需要
+     * 引擎把 `workspace.json` 当独占文件：启动时读一次进内存，之后每次变更整份
+     * 写回。所以**在引擎运行期间改这个文件，改动很快会被抹掉** —— 用户实测
+     * 13:04 写进 7 个工作区，13:07 就被回落到 1 个，日志里没有任何记录。
+     *
+     * 因此正确流程是：**先停引擎 → 恢复 → 再启动引擎**。调用方在恢复后如果
+     * 发现引擎仍在运行，应当提示用户重启；本方法用于恢复完成后再确认一次。
+     *
+     * @returns true 表示恢复的内容还在；false 表示已被覆盖（需要重做并重启引擎）
+     */
+    fun verifyStillPresent(ctx: Context, expectedSessions: Int): Boolean = runCatching {
+        val home = EngineConfig.dshHome(ctx)
+        val registered = registeredSessionIds(home)
+        registered.size >= expectedSessions
+    }.getOrDefault(false)
 
     // ── 内部 ────────────────────────────────────────────────────────────────
 

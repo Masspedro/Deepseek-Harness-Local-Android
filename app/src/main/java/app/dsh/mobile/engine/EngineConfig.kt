@@ -836,9 +836,25 @@ object EngineConfig {
             |  name: '@deepseek-ai/dsh-api-gateway'
             |  disabled: false
             |
+            |# WARNING (v1.4.7, user-diagnosed): do NOT use dsh-host-directory-picker-auto.
+            |#
+            |# The auto variant mounts backend + surface dynamically via
+            |# `ctx.loader.create()` inside its apply(), then awaits `entry.fiber.await()`.
+            |# That runs inside `ctx.effect()`, i.e. exactly once during boot. If any step
+            |# throws, it unmounts whatever it already mounted and rethrows; Cordis does
+            |# not retry, so directoryPicker stays missing for the whole process:
+            |#   workspace-controller's `inject = ["directoryPicker"]` is never satisfied
+            |#   -> directoryPickerController never exists -> the WebUI reports
+            |#   "directoryPickerController is unavailable", and engine.log stays silent.
+            |# Users report: works on the very first launch after install, fails on every
+            |# launch after that.
+            |#
+            |# Meanwhile auto's backend probe is constant on Android: platform === "linux"
+            |# (Termux node reports linux) + no DISPLAY/WAYLAND + no zenity/kdialog always
+            |# resolves to the browse backend. The outcome is fixed, so declare browse
+            |# directly: one less dynamic chain that can break, identical behaviour.
             |- id: directory-picker
-            |  name: '@deepseek-ai/dsh-host-directory-picker-auto'
-            |  inject: [webServer, loader]
+            |  name: '@deepseek-ai/dsh-host-directory-picker-browse'
             |  disabled: false
             |
             |- id: session-persistence-jsonl

@@ -484,4 +484,5 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="self_check_running">Wird geprüft…</string>
     <string name="self_check_ok">Alle Prüfungen bestanden</string>
     <string name="self_check_issues">%1$d Problem(e) gefunden, %2$d repariert</string>
+    <string name="recover_confirm_yes">Wiederherstellen</string>
 </resources>

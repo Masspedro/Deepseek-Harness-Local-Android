@@ -32,7 +32,10 @@ const CRITICAL_ROWS = {
   "typert": "@deepseek-ai/dsh-typert-registry",
   "typert-loader": "@deepseek-ai/dsh-typert-loader",
   "typert-gateway": "@deepseek-ai/dsh-api-gateway",
-  "directory-picker": "@deepseek-ai/dsh-host-directory-picker-auto",
+  // v1.4.7：Android 上改用 browse 后端（auto 会动态挂载并可能永久失败，
+  // 见 EngineConfig overlay 里的说明）。这里必须同步，否则探针会把
+  // 正确的行误报成「critical row must be ...」。
+  "directory-picker": "@deepseek-ai/dsh-host-directory-picker-browse",
   "workspace": "@deepseek-ai/dsh-workspace",
   "workspace-controller": "@deepseek-ai/dsh-api-workspace-controller",
   "webserver": "@deepseek-ai/dsh-host-webserver",

@@ -474,4 +474,5 @@
     <string name="self_check_running">正在检查…</string>
     <string name="self_check_ok">全部检查通过</string>
     <string name="self_check_issues">发现 %1$d 个问题，已修复 %2$d 个</string>
+    <string name="recover_confirm_yes">恢复</string>
 </resources>

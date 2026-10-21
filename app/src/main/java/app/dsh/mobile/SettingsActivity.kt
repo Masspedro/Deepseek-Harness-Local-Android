@@ -273,12 +273,25 @@ class SettingsActivity : Activity() {
                     android.app.AlertDialog.Builder(this)
                         .setTitle(R.string.setting_recover_chats)
                         .setMessage(getString(R.string.recover_confirm, result.orphans.size))
-                        .setPositiveButton(R.string.file_editor_discard) { _, _ ->
+                        .setPositiveButton(R.string.recover_confirm_yes) { _, _ ->
                             recoverSub.text = getString(R.string.recover_scanning)
                             Thread({
+                                // ⚠️ v1.4.7（用户实测反馈，关键）：**必须先把引擎停掉**。
+                                // 引擎把 workspace.json 当独占文件：启动时读一次进内存，
+                                // 之后每次变更整份写回，既不监视文件也不比对时间戳。
+                                // 在引擎运行期间改这个文件，改动会被它的旧内存状态抹掉 ——
+                                // 用户实测：写进 7 个工作区，3 分钟后回落到 1 个，日志无记录。
+                                // 于是「恢复成功 → 重启 → 什么都没有 → 卸载」，
+                                // 私有目录被清空，历史真的丢了。
+                                val sup = (application as DshApp).supervisor
+                                runCatching { sup.stop(graceMs = 3_000, explicit = false) }
+                                // 给引擎一点时间真正退出并落盘
+                                Thread.sleep(800)
                                 val n = runCatching {
                                     ChatRecovery.recover(this, result.orphans)
                                 }.getOrElse { -1 }
+                                // 恢复完再启动：引擎这次启动会重新从磁盘读 registry
+                                runCatching { sup.start((application as DshApp).appScope) }
                                 runOnUiThread {
                                     recoverSub.text = if (n >= 0) {
                                         getString(R.string.recover_done, n) + " · " +

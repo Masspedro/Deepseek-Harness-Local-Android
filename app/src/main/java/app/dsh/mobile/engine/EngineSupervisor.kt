@@ -462,13 +462,25 @@ class EngineSupervisor(private val ctx: Context) {
                     // 等待内置 probe 写出本次 boot 的 marker；缺失只记诊断，不阻断慢设备。
                     val health = withContext(Dispatchers.IO) { awaitPluginHealth(proc, bootId) }
                     if (health != null) {
-                        Log.i(
-                            TAG,
-                            "plugin health: ok=${health.ok} missing=${health.missingServices.joinToString(",")} " +
-                                "failed=${health.failedEntries.joinToString(",") { "${it.id}:${it.name}" }}",
-                        )
+                        val summary =
+                            "plugin health: ok=${health.ok} " +
+                                "missing=[${health.missingServices.joinToString(",")}] " +
+                                "failed=[${health.failedEntries.joinToString(",") { "${it.id}:${it.name}" }}]"
+                        Log.i(TAG, summary)
+                        // ⚠️ v1.4.7（用户建议）：健康摘要也要进 engine.log。
+                        // 此前只写 logcat / marker 文件，而用户反馈问题时导出的是
+                        // engine.log —— 里面一个字都没有，导致「目录选择器整条链失效」
+                        // 这类问题在日志里完全不可见，只能靠卸载重装碰运气。
+                        // 写文件失败不影响启动。
+                        runCatching { EngineLog.append(logFile(), "[health] " + summary) }
                     } else {
                         Log.w(TAG, "plugin health marker missing or unreadable; keeping engine available")
+                        runCatching {
+                            EngineLog.append(
+                                logFile(),
+                                "[health] marker missing/unreadable (probe did not report)",
+                            )
+                        }
                     }
                     if (health?.ok == true) {
                         withContext(Dispatchers.IO) { PluginRecovery.onHealthy(ctx) }

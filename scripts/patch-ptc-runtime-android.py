@@ -59,6 +59,7 @@ import sys
 import zipfile
 
 MARKER = "[dsh-android] keep LD_LIBRARY_PATH"
+ENV_MARKER = "[dsh-android] Inject the runtime library path unconditionally"
 
 OLD_SET = '''const STARTUP_ENVIRONMENT_NAMES = new Set([
 	"PATH",
@@ -86,18 +87,41 @@ NEW_SET = '''const STARTUP_ENVIRONMENT_NAMES = new Set([
 	"LD_LIBRARY_PATH"
 ]);'''
 
+# 第二处：env 构造后显式注入库路径，不依赖从父进程继承。
+#
+# 为什么仅靠白名单不够（issue #29，用户「连续 7 天都是这个问题」）：
+# 白名单只决定「不被删除」，前提是父进程（引擎）确实带着这个变量。
+# 显式注入是无条件的：无论父进程有没有，worker 都拿到正确的库路径。
+ENV_OLD = '\t\tconst env = Object.fromEntries(Object.keys(process.env).filter((key) => !STARTUP_ENVIRONMENT_NAMES.has(key.toUpperCase()) && key.toUpperCase() !== "ELECTRON_RUN_AS_NODE").map((key) => [key, void 0]));'
+
+ENV_NEW = '\t\tconst env = Object.fromEntries(Object.keys(process.env).filter((key) => !STARTUP_ENVIRONMENT_NAMES.has(key.toUpperCase()) && key.toUpperCase() !== "ELECTRON_RUN_AS_NODE").map((key) => [key, void 0]));\n\t\t// [dsh-android] Inject the runtime library path unconditionally. Android\'s\n\t\t// linker has no ldconfig, so a bionic node resolves libz/libssl/... only\n\t\t// through LD_LIBRARY_PATH. Keeping it in STARTUP_ENVIRONMENT_NAMES above\n\t\t// preserves an inherited value; this block guarantees one even when the\n\t\t// parent engine was started without it (issue #29: users still hit\n\t\t// "libz.so.1 not found" in PTC mode because inheritance is not reliable).\n\t\t// Derived from the worker executable\'s own location: <engine>/bin/node\n\t\t// -> <engine>/lib:<engine>/usr/lib, so no app-side wiring is needed.\n\t\ttry {\n\t\t\tconst path = globalThis.process?.getBuiltinModule?.("node:path");\n\t\t\tconst fs = globalThis.process?.getBuiltinModule?.("node:fs");\n\t\t\tif (path && fs && executable) {\n\t\t\t\tconst root = path.dirname(path.dirname(executable));\n\t\t\t\tconst libs = [path.join(root, "lib"), path.join(root, "usr/lib")]\n\t\t\t\t\t.filter((candidate) => fs.existsSync(candidate));\n\t\t\t\tif (libs.length > 0) env.LD_LIBRARY_PATH = libs.join(":");\n\t\t\t}\n\t\t} catch (_androidEnvProbe) {\n\t\t\t/* best effort: a path probe failure must not break the worker launch */\n\t\t}\n'
+
 TARGET = "lib/node_modules/@deepseek-ai/dsh-ptc-runtime-node/lib/index.js"
 
 
 def patch_text(text: str) -> tuple[str, bool]:
-    if MARKER in text:
+    if MARKER in text and ENV_MARKER in text:
         return text, False
-    if OLD_SET not in text:
-        raise SystemExit(
-            "错误：ptc-runtime-node 的 STARTUP_ENVIRONMENT_NAMES 形态未识别"
-            "（上游已变？）—— 中止，避免静默漏打补丁"
-        )
-    return text.replace(OLD_SET, NEW_SET, 1), True
+    changed = False
+    # (1) STARTUP_ENVIRONMENT_NAMES keeps LD_LIBRARY_PATH
+    if MARKER not in text:
+        if OLD_SET not in text:
+            raise SystemExit(
+                "ERROR: ptc-runtime-node STARTUP_ENVIRONMENT_NAMES shape not recognised "
+                "(upstream changed?) - aborting instead of silently skipping the patch"
+            )
+        text = text.replace(OLD_SET, NEW_SET, 1)
+        changed = True
+    # (2) inject the library path explicitly after the env literal
+    if ENV_MARKER not in text:
+        if ENV_OLD not in text:
+            raise SystemExit(
+                "ERROR: ptc-runtime-node env construction shape not recognised "
+                "(upstream changed?) - aborting instead of silently skipping the patch"
+            )
+        text = text.replace(ENV_OLD, ENV_NEW, 1)
+        changed = True
+    return text, changed
 
 
 def patch_dir(root: str) -> None:

@@ -475,4 +475,5 @@ You can still continue without updating, but the interface will not display.</st
     <string name="self_check_running">Checking…</string>
     <string name="self_check_ok">All checks passed</string>
     <string name="self_check_issues">%1$d issue(s) found, %2$d repaired</string>
+    <string name="recover_confirm_yes">Recover</string>
 </resources>

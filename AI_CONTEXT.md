@@ -1,5 +1,33 @@
 # AI_CONTEXT
 
+## v1.4.7（2026-10-21，已出包待发布）
+- **提交**：`db941eb`（三项修复）→ `5c92711`（PR #30）→ `b44b969`（i18n 注释）。
+- **目录选择器整链失效**：overlay 从 `dsh-host-directory-picker-auto` 换成 `...-browse`。
+  用户定位：auto 在 `apply()` 用 `ctx.loader.create()` 动态挂载，跑在 `ctx.effect()` 里只执行一次，
+  抛错即回滚且 Cordis 不重试 → `directoryPicker` 服务永久缺失 → 前端报 unavailable。
+  Android 上 auto 的探测恒定落到 browse，故直接声明 browse。`plugin-health.mjs` 的
+  `CRITICAL_ROWS["directory-picker"]` 同步改包名。
+- **PTC libz.so.1**：`scripts/patch-ptc-runtime-android.py` 加第二处补丁 —— env 墓碑构造后
+  从 `executable` 反推 `<root>/lib:<root>/usr/lib` **无条件注入** `LD_LIBRARY_PATH`。
+  仅靠 v1.4.3 的白名单不够（父进程未设置时白名单放行空值）。两架构 runtime 重打，
+  MANIFEST sha = `d78baea18c09f958b42f66d2e501ae91ae35b42fbf68f479bd9980fb9cdd4101`（实测一致）。
+- **恢复被引擎覆盖**：`ChatRecovery.recover()` 写前备份 `workspace.json.before-recover`、
+  写后落 `.workspace.json.recover-stamp`、新增 `verifyStillPresent()`；设置页流程改为
+  「停引擎（grace 3s）→ sleep 800ms → 写注册表 → 启动」。
+- **PR #30（@skynit，登录弹窗错位）**：因分支基于 v1.4.5 且与 v1.4.6 冲突，
+  **未走 merge，改为 `git apply --3way` 只取 `MainActivity.kt`**（EngineConfig 注释部分
+  main 已等价英文化）。已评论并关闭 PR。新增 `applyViewport()` / `scheduleReraster()` /
+  `VIEWPORT_SETTLE_MS=120`。**真机回归未做**（提交方设备不在线），日志关键字 `reraster:`。
+- **分支清理**：已删除远程 `fix/a11y-watchdog-and-bridge-timeouts`、`upstream-staging-021`（均 204）。
+- **验证**：插件测试 115 项全过；`check-i18n.py` 全过（顺手修了 overlay 里 directory-picker
+  注释的中文，D 项报 `CJK in Kotlin string literal`）；`compileDebugKotlin` / `assembleRelease` 成功；
+  APK versionCode=258/1.4.7/arm64-v8a，签名 `CN=DSH Mobile`，SHA-256 证书指纹
+  `d28ca4f5...92c8`；runtime 内 `bin/node`、`bin/bash`、`bin/rg`、`lib/libz.so.1` 均 AArch64；
+  APK 内三份 `.so` 均 AArch64。
+- **发布物**：`dist/DSH-Mobile-1.4.7-arm64-v8a.apk`（241,555,066 字节）。
+- **未验证/风险**：登录弹窗修复无真机确认；CPU 满核与语音面板 1-2 帧残影仍未复现；
+  三份审查里的 P1 项（anchor 覆盖不足、安装非原子、`reclaimPort` 匹配过宽等）**仍未修**。
+
 ## Current progress
 - **开源仓库 Issues/PR 处理（2026-10-14，已完成）**：
   - **PR #11 已合并**（`1f317ea`，squash；贡献者 @jahdaganj02ki-sketch）：界面三语（en/de/zh，默认英语，移除「跟随系统」）+ 新增 values-de（402 键）+ 删除过时的 values-en（169 键旧部分翻译）+ 屏幕方向三态 OrientationPrefs（竖屏/横屏/自动，旧布尔键自动迁移）+ 冷启动桌面布局修复 + CI 全量触发/build-monitor/Gradle 管道退出码修复 + check-i18n 重复键检查。**合并前维护者修复了阻塞项**（`fa8d85e`）：自动发布 job 原条件在上游同样成立（会每次 push main 自动发 debug 签名包、破坏人工发布流程）→ 加 `github.repository == 'jahdaganj02ki-sketch/...'` 门禁，**实测上游运行该 job 显示 skipped ✓、Releases 无新增污染 ✓**。

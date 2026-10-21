@@ -1,7 +1,7 @@
 {
-  "version": "v1.4.4-arm64-dsh0.2.1-rc.2",
+  "version": "v1.4.7-arm64-dsh0.2.1-rc.2",
   "url": "",
-  "sha256": "fa79d72c421e8929230f59a04c138d2ac8d6f5fe8003de1443456ddbdb0f6355",
+  "sha256": "d78baea18c09f958b42f66d2e501ae91ae35b42fbf68f479bd9980fb9cdd4101",
   "_说明": {
     "version": "v1.2.102-x86_64",
     "url": "远程 runtime.zip 下载地址（assets 内置包缺失时启用）；留空表示仅支持内置包",
