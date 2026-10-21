@@ -806,6 +806,14 @@ object EngineConfig {
             |- insert:
             |    - id: android-narrow-rightbar
             |      name: ./android-plugins/narrow-rightbar/index.js
+            |
+            |# 长会话渲染减负（v1.4.5，issue #26 第二层）：给视口外的聊天行加
+            |# content-visibility: auto，让浏览器跳过它们的布局与绘制。引擎正文是
+            |# entries.map(...) 全量渲染，300 轮会攒上千个常驻节点；这是纯 CSS 优化，
+            |# 不改数据、不改 DOM 结构，视觉结果相同。
+            |- insert:
+            |    - id: android-chat-perf
+            |      name: ./android-plugins/chat-perf/index.js
 
             |""".trimMargin()
         runCatching {
@@ -834,7 +842,7 @@ object EngineConfig {
             // 新增插件的步骤：① 在 assets 建目录（含这三个文件）
             //               ② 在此列表追加目录名
             //               ③ 在 overlay 的 insert 段追加一条 entry（指向 index.js）
-            listOf("narrow-sidebar", "narrow-settings", "narrow-rightbar").forEach { pkg ->
+            listOf("narrow-sidebar", "narrow-settings", "narrow-rightbar", "chat-perf").forEach { pkg ->
                 listOf("package.json", "index.js", "client.js").forEach { fileName ->
                     val src = ctx.assets.open("android-plugins/$pkg/$fileName")
                         .use { it.readBytes() }
