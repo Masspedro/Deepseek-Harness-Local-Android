@@ -965,6 +965,15 @@ object EngineConfig {
             |    - id: android-directory-picker
             |      name: '@deepseek-ai/dsh-host-directory-picker-browse'
             |      disabled: false
+            |    # v1.4.10 (user report: "cannot pick an external folder after the
+            |    # update, even with storage permission granted"):
+            |    # The picker is a PAIR - a host backend plus a client surface. Pinning only
+            |    # the backend (v1.4.8/v1.4.9) leaves the service present but the UI widget
+            |    # unregistered, so the workspace chooser never opens. auto mounts both via
+            |    # SURFACE_PACKAGES; when pinning by hand both rows are required.
+            |    - id: android-directory-picker-surface
+            |      name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'
+            |      disabled: false
             |
             |- id: session-persistence-jsonl
             |  name: '@deepseek-ai/dsh-session-persistence-jsonl'

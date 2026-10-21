@@ -39,6 +39,13 @@ const CRITICAL_ROWS = {
   // "critical row must be browse"，probe 常年 degraded —— 而它自己校验的根本
   // 不是实际在跑的那一行。现在改为校验 insert 出来的新 id。
   "android-directory-picker": "@deepseek-ai/dsh-host-directory-picker-browse",
+  // v1.4.10（用户反馈「工作区选不了外部文件夹，权限已给」）：picker 是**一对**
+  // —— host 后端提供 directoryPicker 服务，client surface 提供界面控件
+  // （它的 host 侧 apply() 是空的，唯一作用是让 browser bundle 被
+  // dsh-client-modules 发现）。v1.4.8/v1.4.9 只挂了后端，服务在、界面不在，
+  // 于是选择器根本弹不出来。这一行让探针能抓到这个不对称。
+  "android-directory-picker-surface":
+    "@deepseek-ai/dsh-client-ui-directory-picker-browse",
   "workspace": "@deepseek-ai/dsh-workspace",
   "workspace-controller": "@deepseek-ai/dsh-api-workspace-controller",
   "webserver": "@deepseek-ai/dsh-host-webserver",

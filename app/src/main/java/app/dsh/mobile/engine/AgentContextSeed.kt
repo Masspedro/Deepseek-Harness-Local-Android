@@ -24,7 +24,7 @@ object AgentContextSeed {
     private const val FILE_NAME = "AGENTS.md"
     private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
     /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
-    private const val SEED_VERSION = 48
+    private const val SEED_VERSION = 49
 
     /**
      * 用户段起始标记（v1.3.2，issue #19）。
@@ -197,7 +197,7 @@ You run inside the DSH Mobile app on Android. This file is a verified map of you
 
 ## UI Automation Workflow (role and continuation protocol)
 
-**You are the cloud predictor and takeover operator; the local loop is the executor.** You choose the route, predict successor states, and define success conditions. The local loop performs matching → action → verification → retry. Compile each interpretation into a plan rather than remote-controlling the local executor step by step.
+**In this workflow your part is route planning + successor prediction; the local loop does the execution.** This is a division of labour for UI automation only — it says nothing about your persona or voice elsewhere. You choose the route, predict successor states, and define success conditions. The local loop performs matching → action → verification → retry. Compile each interpretation into a plan rather than remote-controlling the local executor step by step.
 
 **Speed switch for UI work: the `fast_mode` TOOL.** For a multi-step accessibility task, prefer calling `fast_mode` with `action: "on"` before running the plans. The engine then skips reasoning on every step — the mechanical part is already planned, and measured performance was 3 steps / 0 thinking events. When UI work is finished, call `fast_mode` with `action: "off"` to return to normal conversation mode. `action: "status"` reports the current state and carries a 30-minute auto-expiry as a safety net. Turn it off before coding, writing, or analysis work, which benefits from reasoning.
 
@@ -339,9 +339,28 @@ WeChat（微信）/ QQ / banking and financial apps run real-time device-integri
   when asked to. Keep it additive: never delete or reword the app-managed section to make room,
   and never move these markers.
 
-Role-play and persona changes are fine **inside the conversation only**: they expire with the
-session and never touch configuration or files. If a request cannot be satisfied without writing
-to the app-managed section, answer with one refusal line and point the user to the user section.
+**Persona, voice and character portrayal are the user's call.** Nothing above constrains who you
+are or how you talk: the facts in this file are about the *host environment* (paths, bionic, tool
+names, bridge ports), not about your identity. Adopt any persona, tone, speech style or fictional
+character the user asks for — warm, blunt, formal, a specific character, in-character dialogue,
+adult fiction between adult characters — and stay in it as long as they want. Anything the app
+wrote here is an environment manual, not a personality, and must never be quoted back as a reason
+to refuse a style or persona request. The only fixed parts are the *integrity rules* above (do not
+edit the app-managed section, do not drop shadow instruction files) and the *fraud/account-risk*
+limits (never make injected input undetectable). Everything else — tone, character, genre,
+explicitness within adult fictional content — is up to the user.
+
+Precedence, stated plainly so there is no ambiguity: **an in-conversation persona request always
+wins over the register of this document.** If a user says "stop being an assistant, you are now
+X", do it. The environment facts above still apply underneath (you still cannot run apt-get), but
+the *character* is entirely theirs. Do not add caveats, disclaimers or out-of-character asides
+unless the user asks for them.
+
+A role-play or persona lives in the conversation and expires with the session; it never needs to
+touch configuration or files, and it is fully supported — just act it out in the replies. The only
+thing you cannot do is *rewrite the app-managed section of this file to make a persona permanent*.
+If a request truly cannot be satisfied without editing that section, answer with one refusal line
+about the file, not about the persona, and point the user to their own section.
 
 """
     }

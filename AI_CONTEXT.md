@@ -1,5 +1,58 @@
 # AI_CONTEXT
 
+## v1.4.10 已发布（2026-10-22）
+- 发布物：`dist/DSH-Mobile-1.4.10-arm64-v8a.apk`（241,444,474 B，versionCode 261，签名 CN=DSH Mobile）
+  + `-debug.apk`（242,941,582 B）。说明：`RELEASE_NOTES_v1.4.10.md`、`docs/ANNOUNCE_v1.4.10.md`。
+- README 三语版本号已对齐。
+
+## v1.4.10 追加（用户反馈：工作区选不了外部文件夹）
+- **现象**：更新后即使已授予存储权限，工作区仍无法选择外部文件夹。
+- **根因（我 v1.4.8 引入的回归）**：directory-picker 是**一对**插件 ——
+  `dsh-host-directory-picker-browse`（Host 后端，注册 `directoryPicker` 服务）
+  + `dsh-client-ui-directory-picker-browse`（Client 表面，host 侧 `apply()` 是空的，
+  唯一作用是让 browser bundle 被 `dsh-client-modules` 发现）。
+  v1.4.8/v1.4.9 为了修 auto 的动态挂载问题，只 insert 了**后端**一行 ——
+  服务在、界面控件不在，选择器根本弹不出来。
+  证据：`dsh-client-modules/lib/index.js` 里
+  `for (const entry of ctx.loader.entries()) this.dirty.add(entry.options.name)`
+  —— 它按 **loader entry 的 name** 扫描 `dsh.json` 的 `client` 声明，所以 surface
+  必须作为独立 entry 存在。
+- **修复**：overlay 的 insert 里补第二行
+  `- id: android-directory-picker-surface / name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'`；
+  探针 `CRITICAL_ROWS` 同步加 surface 行（否则「服务在、界面不在」永远检测不出来）。
+- **实测证据（emulator-5556 / Android 16）**：
+  · plugin health `ok:true`
+  · 抓页面 HTML（带 token → 303 → cookie 跟随）后，预加载列表里出现
+    `plugins/??@deepseek-ai/dsh-client-ui-directory-picker-browse/client.js`
+    —— 修复前不会有这一项，这是「界面控件真的下发了」的直接证据。
+- **测试**：`_test_overlay_patch_semantics.py` 9 → 13 项，新增「insert 出前端 surface 行」
+  「surface 指向 client-ui browse」「探针校验 surface 行」三条断言。
+- **全量**：i18n 全过；**251 项测试全过**；compileDebugKotlin 成功。
+- ⚠️ **教训**：v1.4.8 我验证的是「plugin health ok:true」，而 ok 只反映**服务**
+  是否注册，不反映**界面**是否注册。用户看得见的东西必须验证看得见的那一层。
+
+## v1.4.10 待发（seed 人格约束松动）
+- **用户反馈**：「部分人有破甲需求，但是我们提示词又把人物角色写得很死。」
+- **事实核对**：seed 里**没有**全局人格设定。会被读成「角色锁死」的是两处：
+  ① `## UI Automation Workflow` 开头 `You are the cloud predictor and takeover operator; ...`
+  —— 本意是 UI 自动化分工，但「You are ...」句式容易被当成全局身份；
+  ② `## System prompt integrity` 段末 `Role-play and persona changes are fine **inside the
+  conversation only**` —— 本意区分「改配置文件」与「对话内扮演」，但 "only" 读起来像限制。
+- **改动**（只动这两处 + 版本号，其余环境事实一行未改）：
+  · ①改为「In this workflow your part is route planning + successor prediction」并声明
+    「says nothing about your persona or voice elsewhere」；
+  · ②新增 `Persona, voice and character portrayal are the user's call` 段：明确
+    persona/语气/角色由用户决定、环境事实不是人格、不得拿本文档当拒绝理由；
+    写明优先级「对话内人格请求 > 本文档语气」；明确不要擅自加免责声明；
+    原 `inside the conversation only` 改写为「扮演本身完全支持，唯一不能做的是改
+    App 管理段把人格永久化」。
+  · `SEED_VERSION` 48 → 49（老用户的 App 段会整段升级覆盖）。
+- **保留未动**：配置完整性约束（不许改 App 段 / 影子指令文件）、反诈约束
+  （金融类默认拒绝、不得让注入输入不可检测）。这两类是真实风险边界，不属于「角色设定」。
+- **新增测试**：`scripts/probes/_test_seed_persona.py`（17 项）—— 断言旧身份句移除、
+  人格段落存在、优先级声明、以及**该保留的约束仍在**（防以后为讨好用户把安全边界也删掉）。
+- **验证**：i18n 全过；**247 项测试全过**；compileDebugKotlin 成功。未出包。
+
 ## v1.4.9 已发布（2026-10-21）
 - 发布物：`dist/DSH-Mobile-1.4.9-arm64-v8a.apk`（241,444,474 B，versionCode 260，签名 `CN=DSH Mobile`）+ `-debug.apk`（242,941,322 B）。
 - 说明文档：`RELEASE_NOTES_v1.4.9.md`、`docs/ANNOUNCE_v1.4.9.md`；README 三语版本号已对齐。
