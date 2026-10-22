@@ -1,5 +1,19 @@
 # AI_CONTEXT
 
+## v1.4.12 已发布（2026-10-22）
+- 发布物：`dist/DSH-Mobile-1.4.12-arm64-v8a.apk`（185.3 MB，versionCode 263，签名 CN=DSH Mobile）
+  + `-debug.apk`（186.5 MB）。说明：`RELEASE_NOTES_v1.4.12.md`、`docs/ANNOUNCE_v1.4.12.md`。
+- README 三语版本号已对齐 v1.4.12。
+- **PR #34 已在 GitHub 正式合并**（merge commit `6d658ec`），@henryz78 已进入 contributors
+  （`Soodok 284 / skynit 1 / henryz78 1 / jahdaganj02ki-sketch 1`）。
+  过程记录：我先在本地手工 merge（`f2d1f95`）再推送，GitHub **不会**自动把 PR 标为 merged
+  —— 必须调 `PUT /pulls/34/merge` 才会产生 contributor 记录。之后本地 reset --hard 到
+  `origin/main` 对齐（本地多出的 `1d6c676` 被丢弃，内容已在 `6d658ec` 里）。
+- 本轮交付：runtime 去重（启动 52.17s → 23.63s，APK 241MB → 185MB）+ 数据导出。
+- 验证：267 项测试全过；i18n 全过；APK 架构/签名/版本逐项核对。
+- **数据导出已端到端实测**（成功 + 悬空软链失败两条路径），结果贴在 PR #34 评论里。
+
+
 ## v1.4.12 待发（合并 PR #34：数据导出）
 - **PR #34（@henryz78）**：设置 → 其他 → 导出数据。把 sessions/、workspaces/、
   storages/workspace.json 打成 zip 存到用户选的位置；只导出不导入（按 #31 约定）。
