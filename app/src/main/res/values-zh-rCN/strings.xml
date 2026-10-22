@@ -502,4 +502,13 @@
     <string name="self_check_ok">全部检查通过</string>
     <string name="self_check_issues">发现 %1$d 个问题，已修复 %2$d 个</string>
     <string name="recover_confirm_yes">恢复</string>
+    <string name="setting_export_data">导出数据</string>
+    <string name="setting_export_data_sub">把对话、工作区和工作区列表打包成 .zip。不包含 API 密钥与登录态。</string>
+    <string name="export_preparing">正在准备导出…</string>
+    <string name="export_progress">正在导出… %1$d / %2$d 个文件</string>
+    <string name="export_done">已导出对话文件 %1$d 个、工作区文件 %2$d 个</string>
+    <string name="export_failed">导出失败：%1$s</string>
+    <string name="export_log_hint">未保留任何备份文件。详细原因已写入 engine.log（以 [export] 开头的行）。</string>
+    <string name="export_no_creds">不包含 API 密钥与登录态，恢复后需要重新登录。</string>
+    <string name="export_no_registry">注意：未找到工作区列表（workspace.json），恢复后对话可能不会出现在列表里。</string>
 </resources>

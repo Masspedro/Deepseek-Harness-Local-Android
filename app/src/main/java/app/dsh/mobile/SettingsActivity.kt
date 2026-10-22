@@ -252,6 +252,22 @@ class SettingsActivity : Activity() {
             startActivity(Intent(this, app.dsh.mobile.AsrAppActivity::class.java))
         }
 
+        // —— 其他：数据导出（issue #31 第一步）——
+        // 系统文件选择器让用户选保存位置（无需额外存储权限），结果在 onActivityResult 里处理。
+        exportSub = findViewById(R.id.txtExportSub)
+        findViewById<LinearLayout>(R.id.rowExportData).setOnClickListener {
+            if (exporting) return@setOnClickListener
+            val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
+                .format(java.util.Date())
+            val pick = Intent(Intent.ACTION_CREATE_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("application/zip")
+                .putExtra(Intent.EXTRA_TITLE, "dsh-backup-$stamp.zip")
+            runCatching { startActivityForResult(pick, REQ_EXPORT) }.onFailure {
+                exportSub?.text = getString(R.string.export_failed, it.message ?: it.javaClass.simpleName)
+            }
+        }
+
         // —— 其他：对话恢复（v1.4.4）——
         // 扫描 sessions/ 下未登记进工作区的会话文件，用户确认后登记回去。
         // 全程后台线程：扫几百个会话目录 + 读写注册表，不能在主线程做。
@@ -461,6 +477,75 @@ class SettingsActivity : Activity() {
         findViewById<LinearLayout>(R.id.rowAbout).setOnClickListener {
             startActivity(Intent(this, AboutActivity::class.java))
         }
+    }
+
+    /** 导出行的副标题（进度 / 结果都写在这里，与「对话恢复」行同一交互） */
+    private var exportSub: TextView? = null
+    @Volatile private var exporting = false
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQ_EXPORT) return
+        val uri = data?.data
+        if (resultCode == RESULT_OK && uri != null) runExport(uri)
+    }
+
+    /**
+     * 后台导出到 [uri]。失败时删掉已创建的半成品文件，避免用户误以为备份可用。
+     * 详细过程与失败原因见 engine.log 的 `[export]` 行（DataExport 负责写）。
+     */
+    private fun runExport(uri: Uri) {
+        exporting = true
+        exportSub?.text = getString(R.string.export_preparing)
+        Thread({
+            var lastShown = 0L
+            val result = runCatching {
+                val out = contentResolver.openOutputStream(uri)
+                    ?: throw java.io.IOException("cannot open $uri")
+                out.use { stream ->
+                    app.dsh.mobile.engine.DataExport.export(this, stream) { done, total ->
+                        // 节流：最多每 200ms 刷新一次文字，最后一个文件必刷
+                        val now = System.currentTimeMillis()
+                        if (done == total || now - lastShown >= 200) {
+                            lastShown = now
+                            runOnUiThread { exportSub?.text = getString(R.string.export_progress, done, total) }
+                        }
+                    }
+                }
+            }
+            if (result.isFailure) {
+                runCatching { android.provider.DocumentsContract.deleteDocument(contentResolver, uri) }
+            }
+            runOnUiThread {
+                exporting = false
+                result.onSuccess { s ->
+                    val done = getString(R.string.export_done, s.sessionFiles, s.workspaceFiles)
+                    exportSub?.text = done
+                    val msg = buildString {
+                        append(done).append("\n\n").append(getString(R.string.export_no_creds))
+                        if (!s.hasRegistry) append("\n\n").append(getString(R.string.export_no_registry))
+                    }
+                    if (!isFinishing && !isDestroyed) {
+                        AlertDialog.Builder(this)
+                            .setTitle(R.string.setting_export_data)
+                            .setMessage(msg)
+                            .setPositiveButton(android.R.string.ok, null)
+                            .show()
+                    }
+                }.onFailure { e ->
+                    val failed = getString(R.string.export_failed, e.message ?: e.javaClass.simpleName)
+                    exportSub?.text = failed
+                    // 失败也弹窗：只改行内小字很容易看漏（真机实测反馈）
+                    if (!isFinishing && !isDestroyed) {
+                        AlertDialog.Builder(this)
+                            .setTitle(R.string.setting_export_data)
+                            .setMessage(failed + "\n\n" + getString(R.string.export_log_hint))
+                            .setPositiveButton(android.R.string.ok, null)
+                            .show()
+                    }
+                }
+            }
+        }, "data-export").start()
     }
 
     /** 从包管理器读取 versionName（AGP 8+ 默认关闭 BuildConfig，避免依赖它） */
@@ -881,6 +966,7 @@ class SettingsActivity : Activity() {
 
         /** 麦克风权限请求码（权限中心「麦克风」行） */
         const val REQ_MIC = 4203
+        const val REQ_EXPORT = 4204
         const val PREFS_UI = DshApp.PREFS_UI
         const val KEY_PAGE_SCALE = "page_scale"
         const val KEY_LANDSCAPE = "landscape"

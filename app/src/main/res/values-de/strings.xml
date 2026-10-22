@@ -512,4 +512,13 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="self_check_ok">Alle Prüfungen bestanden</string>
     <string name="self_check_issues">%1$d Problem(e) gefunden, %2$d repariert</string>
     <string name="recover_confirm_yes">Wiederherstellen</string>
+    <string name="setting_export_data">Daten exportieren</string>
+    <string name="setting_export_data_sub">Unterhaltungen, Arbeitsbereiche und die Arbeitsbereichsliste als .zip sichern. API-Schlüssel und Anmeldungen sind nicht enthalten.</string>
+    <string name="export_preparing">Export wird vorbereitet…</string>
+    <string name="export_progress">Exportiere… %1$d / %2$d Dateien</string>
+    <string name="export_done">%1$d Unterhaltungsdatei(en) und %2$d Arbeitsbereichsdatei(en) exportiert</string>
+    <string name="export_failed">Export fehlgeschlagen: %1$s</string>
+    <string name="export_log_hint">Es wurde keine Sicherungsdatei behalten. Details stehen in engine.log (Zeilen mit [export]).</string>
+    <string name="export_no_creds">API-Schlüssel und Anmeldungen sind nicht enthalten. Nach dem Wiederherstellen erneut anmelden.</string>
+    <string name="export_no_registry">Hinweis: Die Arbeitsbereichsliste (workspace.json) wurde nicht gefunden. Unterhaltungen erscheinen nach dem Wiederherstellen eventuell nicht in der Liste.</string>
 </resources>

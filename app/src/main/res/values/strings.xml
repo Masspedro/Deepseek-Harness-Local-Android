@@ -503,4 +503,13 @@ You can still continue without updating, but the interface will not display.</st
     <string name="self_check_ok">All checks passed</string>
     <string name="self_check_issues">%1$d issue(s) found, %2$d repaired</string>
     <string name="recover_confirm_yes">Recover</string>
+    <string name="setting_export_data">Export data</string>
+    <string name="setting_export_data_sub">Save conversations, workspaces and the workspace list as a .zip. API keys and logins are not included.</string>
+    <string name="export_preparing">Preparing export…</string>
+    <string name="export_progress">Exporting… %1$d / %2$d files</string>
+    <string name="export_done">Exported %1$d conversation file(s) and %2$d workspace file(s)</string>
+    <string name="export_failed">Export failed: %1$s</string>
+    <string name="export_log_hint">No backup file was kept. Details are in engine.log (lines starting with [export]).</string>
+    <string name="export_no_creds">API keys and logins are not included. Sign in again after restoring.</string>
+    <string name="export_no_registry">Warning: the workspace list (workspace.json) was not found, so conversations may not appear in the list after restoring.</string>
 </resources>
