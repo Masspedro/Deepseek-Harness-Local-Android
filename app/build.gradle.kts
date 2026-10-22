@@ -1,4 +1,5 @@
 import java.security.MessageDigest
+import java.util.zip.ZipFile
 
 plugins {
     id("com.android.application")
@@ -20,8 +21,8 @@ android {
         // 关键决策：targetSdk 28 —— sideload 分发，豁免 Android 10+ 的 W^X 限制，
         // 允许从 filesDir 直接 execve bionic 二进制（Termux 同款策略）。
         targetSdk = 28
-        versionCode = 261
-        versionName = "1.4.10"
+        versionCode = 263
+        versionName = "1.4.12"
 
         ndk {
             abiFilters += listOf(targetAbi)
@@ -90,7 +91,57 @@ val prepareRuntime by tasks.registering {
             logger.warn("runtime: 源缺失 " + src.absolutePath + "，保持 assets 现状")
             return@doLast
         }
-        src.copyTo(assetsZip, overwrite = true)
+        // ── 去重（v1.4.11）：上游 0.2.1-rc.2 改成了「逐包嵌套」依赖布局，
+        // 每个 @deepseek-ai 包里都嵌了一份完整 zod（612 个文件）——全库 3 万多个
+        // 冗余文件、200MB+。实测冷启动 runtime-install：
+        //   · work（未去重）     41.99s
+        //   · zodded（去重）     11.81s   ← 降 72%
+        //   · trimmed（再裁 .d.ts/src）13.74s
+        // 选 zodded 而不是 trimmed：trimmed 删掉了类型声明与源码，仓库里有 773 处
+        // exports 指向这些文件；运行时虽然不加载，但用户插件做 tsc 校验时会缺文件。
+        // zodded 只合并冗余副本（版本语义完全不变），风险最低。
+        //
+        // 去重产物按 abi 缓存。判断缓存是否可用用**实际内容**而不是时间戳：
+        // 复制/解压都会改 mtime，时间戳比较在 CI 上不可靠。这里只检查缓存包
+        // 里还有没有嵌套 zod —— 有就必须重建。
+        val srcAbi = if (abi == "x86_64") "x86_64" else "arm64"
+        val zodded = File(projRoot, "_runtime_bak/rt-" + srcAbi + "-zodded.zip")
+        val dedupeScript = File(projRoot, "scripts/dedupe-zod.py")
+        fun stillHasNestedZod(f: File): Boolean {
+            if (!f.isFile) return true
+            // 注意：Kotlin DSL 里 `java` 会被 Gradle 的 `java` extension 遮蔽，
+            // 所以必须用完整 import 后的类型名（见文件顶部的 ZipFile import）。
+            return ZipFile(f).use { zf ->
+                zf.entries().asSequence().any { e ->
+                    !e.isDirectory &&
+                        e.name.contains("/node_modules/zod/") &&
+                        !e.name.startsWith("lib/node_modules/zod/")
+                }
+            }
+        }
+        val cacheOk = zodded.isFile && !runCatching { stillHasNestedZod(zodded) }.getOrDefault(true)
+        if (cacheOk) {
+            logger.lifecycle("runtime: 使用去重包 " + zodded.name + "（无嵌套 zod）")
+            zodded.copyTo(assetsZip, overwrite = true)
+        } else if (dedupeScript.isFile) {
+            // 缓存缺失或仍有嵌套：现跑一次去重
+            logger.lifecycle("runtime: 正在生成去重包（约 1 分钟）…")
+            val rc = providers.exec {
+                commandLine("python", dedupeScript.absolutePath, src.absolutePath,
+                    zodded.absolutePath, "--backup-dir", File(projRoot, "_runtime_bak").absolutePath)
+                isIgnoreExitValue = true
+            }.result.get().exitValue
+            if (rc == 0 && zodded.isFile && !stillHasNestedZod(zodded)) {
+                zodded.copyTo(assetsZip, overwrite = true)
+                logger.lifecycle("runtime: 去重完成 " + zodded.name)
+            } else {
+                logger.warn("runtime: 去重失败（exit=" + rc + "），回退到未去重源（启动会明显变慢）")
+                src.copyTo(assetsZip, overwrite = true)
+            }
+        } else {
+            logger.warn("runtime: 去重脚本缺失，使用未去重源（启动会慢 2-3 倍）")
+            src.copyTo(assetsZip, overwrite = true)
+        }
         val sha = MessageDigest.getInstance("SHA-256").digest(assetsZip.readBytes())
             .joinToString("") { b -> "%02x".format(b) }
         val updated = manifest.readLines().joinToString("\n") { line ->

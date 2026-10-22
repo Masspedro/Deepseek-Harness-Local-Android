@@ -622,12 +622,15 @@ object EngineConfig {
      * @param root 起始目录
      * @param maxEntries 最大访问条目数（防环与失控，超出即停止并记录）
      * @param onEntry 每个条目回调；`isLink=true` 表示该条目是符号链接
+     * @param skipDir 返回 true 的真实目录既不回调、也不进入（如 node_modules）
+     * @return false = 触及 [maxEntries] 上限、遍历不完整（数据导出必须据此报错，不能静默截断）
      */
-    private fun walkNoFollow(
+    internal fun walkNoFollow(
         root: File,
         maxEntries: Int = 200_000,
+        skipDir: (File) -> Boolean = { false },
         onEntry: (file: File, isLink: Boolean) -> Unit,
-    ) {
+    ): Boolean {
         var visited = 0
         val stack = ArrayDeque<File>()
         if (root.isDirectory || isSymbolicLink(root)) stack.addLast(root)
@@ -637,18 +640,20 @@ object EngineConfig {
             for (child in children) {
                 if (++visited > maxEntries) {
                     Log.w(TAG, "walkNoFollow: entry cap ($maxEntries) reached under $root; stopping")
-                    return
+                    return false
                 }
                 val link = isSymbolicLink(child)
+                if (!link && child.isDirectory && skipDir(child)) continue
                 onEntry(child, link)
                 // 只进入真实目录；软链目录不跟随（防穿越与环）
                 if (!link && child.isDirectory) stack.addLast(child)
             }
         }
+        return true
     }
 
     /** 是否是符号链接（不跟随）。 */
-    private fun isSymbolicLink(f: File): Boolean =
+    internal fun isSymbolicLink(f: File): Boolean =
         runCatching { java.nio.file.Files.isSymbolicLink(f.toPath()) }.getOrDefault(false)
 
     /**

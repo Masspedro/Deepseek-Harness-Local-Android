@@ -1,5 +1,40 @@
 # AI_CONTEXT
 
+## v1.4.12 待发（合并 PR #34：数据导出）
+- **PR #34（@henryz78）**：设置 → 其他 → 导出数据。把 sessions/、workspaces/、
+  storages/workspace.json 打成 zip 存到用户选的位置；只导出不导入（按 #31 约定）。
+- 逐条核对我提的 7 条硬门槛：不跟随软链（复用 `walkNoFollow`）、不能静默截断
+  （`walkNoFollow` 新增返回 false + 导出据此报错）、不加依赖（只用 java.util.zip）、
+  进度节流 200ms、凭据不进包、失败弹窗且删除半成品、`[export]` 前缀日志、三语对齐。
+- **他自己做了三轮真机测试**：普通目录 / 目录换成软链 / 软链指向不存在位置（失败并
+  删掉半成品）。还验证了中文文件名、空目录、两层 node_modules、目录软链、文件软链。
+- 代码审查要点（我逐项确认）：
+  · `walkNoFollow` 改动兼容 —— 新参数有默认值，`deleteNoFollow` 忽略返回值；
+  · `SettingsActivity` 原本**没有** `onActivityResult`，不存在覆盖冲突；
+  · `REQ_EXPORT = 4204` 与 MainActivity 的 WebView 文件选择器请求码不冲突；
+  · 失败时用 `DocumentsContract.deleteDocument` 删半成品，避免"看起来成功"。
+- **合并冲突**：5 个文件（EngineConfig / strings×3 / layout / SettingsActivity /
+  build.gradle.kts / AI_CONTEXT），全部是「我后来加的行 vs 他加的行」同位置冲突，
+  一律取 PR 侧；已确认 `build.gradle.kts` 的 zodded 去重逻辑完好。
+- **验证**：compileDebugKotlin 通过。
+- **待定**：他问第二版要不要导社区插件清单（不带本体、不带凭据）——值得做，
+  回复里会确认方向。
+
+## v1.4.11 待发（启动性能：runtime 去重接入构建）
+- **起因**：1.4 升 0.21rc 后启动怎么优化都慢，低端机用户宁愿退回 1.3；问是否分叉维护 0.20。
+  **结论：不需要分叉 —— 根因是打包退化且可修。**
+- **根因**：上游改成「逐包嵌套」依赖布局，每个 `@deepseek-ai` 包都嵌了一份完整 zod
+  （612 文件），全库 30,681 个二级嵌套文件。1.3=13,656 文件 / 1.4=**45,244** 文件（3.3 倍）。
+- **关键**：`dedupe-zod.py` 与 `rt-arm64-zodded.zip` 早就存在，但 build.gradle.kts 写死用
+  `-work.zip`，**去重包从没被引用**。
+- **实测（x86_64 模拟器 runtime-install / 总耗时）**：
+  work 41.99s/52.17s · zodded **11.81s/23.63s（-55%）** · trimmed 13.74s/18.44s。
+  去重后 health-poll 也从 9.8s → 4.6s。
+- **选 zodded 不选 trimmed**：trimmed 删掉 .d.ts/src，全库 773 处 exports 指向它们。
+- **接入**：prepareRuntime 自动选 `rt-<abi>-zodded.zip`；缓存按内容校验（查嵌套 zod）
+  而非时间戳；失败/缺脚本都回退未去重源。arm64 APK **241MB → 185MB**。
+- **测试**：`_test_runtime_dedupe.py` 16 项；全量 267 项全过。
+
 ## v1.4.10 已发布（2026-10-22）
 - 发布物：`dist/DSH-Mobile-1.4.10-arm64-v8a.apk`（241,444,474 B，versionCode 261，签名 CN=DSH Mobile）
   + `-debug.apk`（242,941,582 B）。说明：`RELEASE_NOTES_v1.4.10.md`、`docs/ANNOUNCE_v1.4.10.md`。

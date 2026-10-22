@@ -1070,6 +1070,62 @@
 
                 </LinearLayout>
 
+                <!-- 数据导出（issue #31 第一步）：sessions + workspaces + workspace.json 打成 zip，
+                     保存到用户在系统文件选择器里选的位置。不含凭据。 -->
+                <LinearLayout
+                    android:id="@+id/rowExportData"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="14dp"
+                    android:background="?android:attr/selectableItemBackground">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:padding="8dp"
+                        android:src="@drawable/ic_download"
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:tint="#FF66BB6A" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:layout_marginStart="14dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_export_data"
+                            android:textColor="#FFFFFFFF"
+                            android:textSize="16sp" />
+
+                        <TextView
+                            android:id="@+id/txtExportSub"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_export_data_sub"
+                            android:textColor="#FF8A94A3"
+                            android:textSize="12sp"
+                            android:layout_marginTop="2dp" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_chevron" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="0.5dp"
+                    android:layout_marginStart="66dp"
+                    android:background="#22FFFFFF" />
+
                 <!-- 对话恢复（v1.4.4）：扫描磁盘上的会话文件，把没登记进工作区的
                      重新登记，解决「迁移/重装后历史对话在列表里消失」。
                      放在「重启引擎」之前 —— 同属"修数据"类操作，顺序上先诊断后重启。 -->
