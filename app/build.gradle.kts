@@ -21,8 +21,8 @@ android {
         // 关键决策：targetSdk 28 —— sideload 分发，豁免 Android 10+ 的 W^X 限制，
         // 允许从 filesDir 直接 execve bionic 二进制（Termux 同款策略）。
         targetSdk = 28
-        versionCode = 263
-        versionName = "1.4.12"
+        versionCode = 264
+        versionName = "1.4.13"
 
         ndk {
             abiFilters += listOf(targetAbi)
@@ -124,7 +124,6 @@ val prepareRuntime by tasks.registering {
             logger.lifecycle("runtime: 使用去重包 " + zodded.name + "（无嵌套 zod）")
             zodded.copyTo(assetsZip, overwrite = true)
         } else if (dedupeScript.isFile) {
-            // 缓存缺失或仍有嵌套：现跑一次去重
             logger.lifecycle("runtime: 正在生成去重包（约 1 分钟）…")
             val rc = providers.exec {
                 commandLine("python", dedupeScript.absolutePath, src.absolutePath,
@@ -141,6 +140,52 @@ val prepareRuntime by tasks.registering {
         } else {
             logger.warn("runtime: 去重脚本缺失，使用未去重源（启动会慢 2-3 倍）")
             src.copyTo(assetsZip, overwrite = true)
+        }
+        // ── PTC 补丁校验（v1.4.13）：**必须**在复制完之后、算 sha 之前执行。
+        //
+        // 血的教训：v1.4.12 我把构建切到去重包，而那份 zodded.zip 是**在我加 PTC
+        // 补丁之前**生成的 —— 结果 run_code 子进程又拿不到 LD_LIBRARY_PATH，
+        // 用户报「PTC 模式又用不了了」（CANNOT LINK EXECUTABLE ... libz.so.1 not found）。
+        //
+        // 根因不是补丁写错，而是**补丁只存在于某个 zip 产物里，没有进入构建流程**：
+        // 一旦换了源包，补丁就静默消失。所以这里把「校验 + 必要时现场打补丁」变成
+        // 构建的硬步骤：缺补丁就打（幂等），打完还缺就**中止构建**，绝不发坏包。
+        val ptcScript = File(projRoot, "scripts/patch-ptc-runtime-android.py")
+        val ptcTarget = "lib/node_modules/@deepseek-ai/dsh-ptc-runtime-node/lib/index.js"
+        fun ptcPatched(f: File): Boolean {
+            if (!f.isFile) return false
+            return runCatching {
+                ZipFile(f).use { zf ->
+                    val e = zf.getEntry(ptcTarget) ?: return@use false
+                    val text = zf.getInputStream(e).bufferedReader().readText()
+                    // 两处补丁都要在：白名单 + 无条件注入
+                    text.contains("\"LD_LIBRARY_PATH\"") &&
+                        text.contains("Inject the runtime library path unconditionally")
+                }
+            }.getOrDefault(false)
+        }
+        if (!ptcPatched(assetsZip)) {
+            if (ptcScript.isFile) {
+                logger.lifecycle("runtime: PTC 补丁缺失，正在应用…")
+                val rc = providers.exec {
+                    commandLine("python", ptcScript.absolutePath, assetsZip.absolutePath)
+                    isIgnoreExitValue = true
+                }.result.get().exitValue
+                if (rc != 0 || !ptcPatched(assetsZip)) {
+                    throw GradleException(
+                        "runtime: PTC 补丁应用失败（exit=$rc）。" +
+                            "发出去的包会让 run_code 报 libz.so.1 not found —— 中止构建。"
+                    )
+                }
+                logger.lifecycle("runtime: PTC 补丁已应用")
+            } else {
+                throw GradleException(
+                    "runtime: 找不到 " + ptcScript.absolutePath +
+                        "，且当前 runtime 没有 PTC 补丁 —— run_code 会失败。中止构建。"
+                )
+            }
+        } else {
+            logger.lifecycle("runtime: PTC 补丁已存在")
         }
         val sha = MessageDigest.getInstance("SHA-256").digest(assetsZip.readBytes())
             .joinToString("") { b -> "%02x".format(b) }

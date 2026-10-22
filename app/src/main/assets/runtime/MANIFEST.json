@@ -1,11 +1,11 @@
 {
-  "version": "v1.4.12-arm64-dsh0.2.1-rc.2",
+  "version": "v1.2.102-arm64-v8a",
   "url": "",
-  "sha256": "312f4bf0c14447f4c0ae79f1dde26ee6a0350d30ecacaaf7c8d627b829619bd1",
+  "sha256": "a1e171f875a8df3403f52e2d1e19bd01a38e37407ea5038a450b71c273c00898",
   "_说明": {
-    "version": "v1.2.102-arm64-v8a",
+  "version": "v1.2.102-arm64-v8a",
     "url": "远程 runtime.zip 下载地址（assets 内置包缺失时启用）；留空表示仅支持内置包",
-    "sha256": "312f4bf0c14447f4c0ae79f1dde26ee6a0350d30ecacaaf7c8d627b829619bd1",
+  "sha256": "a1e171f875a8df3403f52e2d1e19bd01a38e37407ea5038a450b71c273c00898",
     "构建方式": "由 .github/workflows/android-build.yml 的 collect-runtime job 自动填充 url/sha256 后打包"
   }
 }

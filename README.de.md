@@ -167,7 +167,7 @@ Normaler Modus ist der Standard; Optionen, deren Fähigkeit noch nicht bereitste
 
 ## 📦 Installation
 
-**Release herunterladen (empfohlen)**: Hol dir die APK von [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (für Smartphones `arm64-v8a` wählen; aktuell **v1.4.12**), und installiere sie, nachdem du Installationen unbekannter Quellen erlaubt hast. Jede Version ab v1.0.0 lässt sich über die bestehende App installieren.
+**Release herunterladen (empfohlen)**: Hol dir die APK von [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (für Smartphones `arm64-v8a` wählen; aktuell **v1.4.13**), und installiere sie, nachdem du Installationen unbekannter Quellen erlaubt hast. Jede Version ab v1.0.0 lässt sich über die bestehende App installieren.
 
 **Aus dem Quelltext bauen** (JDK 17 + Android SDK, NDK r26+, CMake 3.22.1):
 

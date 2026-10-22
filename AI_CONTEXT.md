@@ -1,5 +1,26 @@
 # AI_CONTEXT
 
+## v1.4.13 待发（紧急修 PTC 回归）
+- **用户反馈**：「PTC 模式又用不了了」，报错 `CANNOT LINK EXECUTABLE ... libz.so.1 not found`。
+- **根因（我 v1.4.12 引入）**：把构建切到 `rt-arm64-zodded.zip`，而那份去重包是
+  **在我加 PTC 补丁之前生成的** —— 补丁整体丢失。v1.4.9 修好的 #29 就这么被回退了。
+- **本质问题**：补丁只存在于「某个 zip 产物」里，**没有进入构建流程**。只要换源包，
+  补丁就静默消失。这是流程缺陷，不是补丁写错。
+- **修复**：
+  · 给两份去重包（arm64/x86_64）重新打 PTC 补丁（脚本幂等，两处补丁都验证到）；
+  · **把校验接进 `prepareRuntime`**：复制完 → 检查白名单 + 无条件注入两处是否都在 →
+    缺则现场跑 `patch-ptc-runtime-android.py` → 打完还缺就 `throw GradleException`
+    **中止构建**，绝不发坏包。
+- **实测对照（模拟器，`env -i` 模拟 PTC 子进程）**：
+  · 带 `LD_LIBRARY_PATH` → node 正常输出 `2`
+  · 不带 → `CANNOT LINK EXECUTABLE ... libz.so.1 not found`（正是用户报错）
+  证明补丁缺失就是根因。
+- **构建流程实测**：把去重包换回未打补丁版本 → 构建日志出现
+  `runtime: PTC 补丁缺失，正在应用… → PTC 补丁已应用`，成功兜底。
+- **测试**：`_test_runtime_dedupe.py` 16 → 21 项，新增 5 条 PTC 断言
+  （运行时文件存在、白名单、无条件注入、构建期强制校验、缺失时中止构建）。
+- **全量**：272 项全过；i18n 全过。
+
 ## v1.4.12 已发布（2026-10-22）
 - 发布物：`dist/DSH-Mobile-1.4.12-arm64-v8a.apk`（185.3 MB，versionCode 263，签名 CN=DSH Mobile）
   + `-debug.apk`（186.5 MB）。说明：`RELEASE_NOTES_v1.4.12.md`、`docs/ANNOUNCE_v1.4.12.md`。
