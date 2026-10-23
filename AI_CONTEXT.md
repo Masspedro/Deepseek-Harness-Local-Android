@@ -1,5 +1,37 @@
 # AI_CONTEXT
 
+## v1.4.14 待发（PTC 环境变量补全：issue #35 + 全量审计）
+- **issue #35**：PTC 报 `OpenSSL configuration error: ... Permission denied calling
+  fopen(/data/data/com.termux/files/usr/etc/tls/openssl.cnf)`，exit 13。用户诊断正确：
+  `OPENSSL_CONF` 不在 `STARTUP_ENVIRONMENT_NAMES` 白名单里。
+- **宝宝追加要求「全部查一下」**，于是做了全量审计：把 `EngineConfig.buildEnv` 注入的
+  所有变量 vs PTC 白名单逐项对比 —— **13 个扩展工具链变量全部缺失**：
+  CPATH / LIBRARY_PATH / RUSTFLAGS / PYTHONHOME / PERL5LIB / RUBYLIB /
+  MAGICK_CONFIGURE_PATH / GIT_EXEC_PATH / GIT_TEMPLATE_DIR / GIT_CONFIG_NOSYSTEM /
+  GIT_SSL_CAINFO / CURL_CA_BUNDLE / GOTMPDIR。
+  后果：PTC 里 git/python/perl/ruby/imagemagick/go/rust 全部静默失效。
+- **补丁升级为 v2**（28 个变量）：运行时必需（LD_LIBRARY_PATH、OPENSSL_CONF、
+  SSL_CERT_FILE、TMPDIR、HOME、PREFIX、ANDROID_*）+ 扩展工具链 13 个。
+  注入块改为从 executable 反推 root，再 `pick()` 探测 openssl.cnf / cert.pem / tmp。
+- **关键实现细节（踩了三次坑）**：
+  ① 补丁脚本要能**升级旧版补丁**（旧版只有 LD_LIBRARY_PATH），加 `ALLOWLIST_V2_MARKER`
+     检测；剥旧块时要注意 `]);` 的定位和残留尾逗号（`"TMP",
+]);` → `"TMP"
+]);`）；
+  ② 用 Python 写 Kotlin/JS 代码时 `
+` 会被当真实换行 —— 必须用 `chr(92)` 拼接；
+  ③ x86_64 包还原后留下尾逗号导致 `OLD_SET` 不匹配，需单独修。
+- **实测（模拟器 end-to-end）**：写脚本从 PTC 源码**解析真实白名单**（28 个），
+  按它构造 env 再真跑 worker：
+  `parsed allowlist size: 28` → `final env: LD_LIBRARY_PATH,OPENSSL_CONF,SSL_CERT_FILE`
+  → `EXIT: 0 | OUT: WORKER-OK`（加载 tls/https/fs 全部通过）。
+- **注意**：模拟器上 `/data/data/com.termux` 不存在（ENOENT 静默通过），所以**修复前
+  也跑得通**；用户真机装了 Termux 才会 EACCES。这个差异在 v1.2 的代码注释里就写过。
+- **构建期校验扩展**：`ptcPatched()` 现在同时检查 LD_LIBRARY_PATH / 无条件注入 /
+  OPENSSL_CONF / SSL_CERT_FILE 四项，缺任何一项都中止构建。
+- **测试**：`_test_runtime_dedupe.py` 21 → 33 项，新增 12 条扩展变量断言。
+- **全量**：272 项全过；i18n 全过。
+
 ## v1.4.13 待发（紧急修 PTC 回归）
 - **用户反馈**：「PTC 模式又用不了了」，报错 `CANNOT LINK EXECUTABLE ... libz.so.1 not found`。
 - **根因（我 v1.4.12 引入）**：把构建切到 `rt-arm64-zodded.zip`，而那份去重包是

@@ -60,6 +60,9 @@ import zipfile
 
 MARKER = "[dsh-android] keep LD_LIBRARY_PATH"
 ENV_MARKER = "[dsh-android] Inject the runtime library path unconditionally"
+# v2（2026-10-23）：白名单扩展到 OpenSSL / 扩展工具链变量。
+# 旧版补丁只有 LD_LIBRARY_PATH，必须能识别并升级。
+ALLOWLIST_V2_MARKER = '"MAGICK_CONFIGURE_PATH"'
 
 OLD_SET = '''const STARTUP_ENVIRONMENT_NAMES = new Set([
 	"PATH",
@@ -84,7 +87,32 @@ NEW_SET = '''const STARTUP_ENVIRONMENT_NAMES = new Set([
 	// the linker finds them. Dropping it here made every PTC `run_code` child die
 	// with `CANNOT LINK EXECUTABLE ... libz.so.1 not found` while the main engine
 	// (which does inherit the variable) stayed healthy (issue #29).
-	"LD_LIBRARY_PATH"
+	"LD_LIBRARY_PATH",
+	"OPENSSL_CONF",
+	"SSL_CERT_FILE",
+	"TMPDIR",
+	"HOME",
+	"PREFIX",
+	"ANDROID_DATA",
+	"ANDROID_ROOT",
+	"ANDROID_STORAGE",
+	// Extension toolchains (audit 2026-10-23). buildEnv exports these for the
+	// bundled git / python / perl / ruby / imagemagick / go / rust extensions;
+	// without them a PTC worker silently loses the extension and falls back to
+	// broken host defaults. All are plain filesystem paths or flags - no secrets.
+	"CPATH",
+	"LIBRARY_PATH",
+	"RUSTFLAGS",
+	"PYTHONHOME",
+	"PERL5LIB",
+	"RUBYLIB",
+	"MAGICK_CONFIGURE_PATH",
+	"GIT_EXEC_PATH",
+	"GIT_TEMPLATE_DIR",
+	"GIT_CONFIG_NOSYSTEM",
+	"GIT_SSL_CAINFO",
+	"CURL_CA_BUNDLE",
+	"GOTMPDIR"
 ]);'''
 
 # 第二处：env 构造后显式注入库路径，不依赖从父进程继承。
@@ -94,16 +122,28 @@ NEW_SET = '''const STARTUP_ENVIRONMENT_NAMES = new Set([
 # 显式注入是无条件的：无论父进程有没有，worker 都拿到正确的库路径。
 ENV_OLD = '\t\tconst env = Object.fromEntries(Object.keys(process.env).filter((key) => !STARTUP_ENVIRONMENT_NAMES.has(key.toUpperCase()) && key.toUpperCase() !== "ELECTRON_RUN_AS_NODE").map((key) => [key, void 0]));'
 
-ENV_NEW = '\t\tconst env = Object.fromEntries(Object.keys(process.env).filter((key) => !STARTUP_ENVIRONMENT_NAMES.has(key.toUpperCase()) && key.toUpperCase() !== "ELECTRON_RUN_AS_NODE").map((key) => [key, void 0]));\n\t\t// [dsh-android] Inject the runtime library path unconditionally. Android\'s\n\t\t// linker has no ldconfig, so a bionic node resolves libz/libssl/... only\n\t\t// through LD_LIBRARY_PATH. Keeping it in STARTUP_ENVIRONMENT_NAMES above\n\t\t// preserves an inherited value; this block guarantees one even when the\n\t\t// parent engine was started without it (issue #29: users still hit\n\t\t// "libz.so.1 not found" in PTC mode because inheritance is not reliable).\n\t\t// Derived from the worker executable\'s own location: <engine>/bin/node\n\t\t// -> <engine>/lib:<engine>/usr/lib, so no app-side wiring is needed.\n\t\ttry {\n\t\t\tconst path = globalThis.process?.getBuiltinModule?.("node:path");\n\t\t\tconst fs = globalThis.process?.getBuiltinModule?.("node:fs");\n\t\t\tif (path && fs && executable) {\n\t\t\t\tconst root = path.dirname(path.dirname(executable));\n\t\t\t\tconst libs = [path.join(root, "lib"), path.join(root, "usr/lib")]\n\t\t\t\t\t.filter((candidate) => fs.existsSync(candidate));\n\t\t\t\tif (libs.length > 0) env.LD_LIBRARY_PATH = libs.join(":");\n\t\t\t}\n\t\t} catch (_androidEnvProbe) {\n\t\t\t/* best effort: a path probe failure must not break the worker launch */\n\t\t}\n'
+ENV_NEW = '\t\tconst env = Object.fromEntries(Object.keys(process.env).filter((key) => !STARTUP_ENVIRONMENT_NAMES.has(key.toUpperCase()) && key.toUpperCase() !== "ELECTRON_RUN_AS_NODE").map((key) => [key, void 0]));\n\t\t// [dsh-android] Inject the runtime library path unconditionally. Android\'s\n\t\t// linker has no ldconfig, so a bionic node resolves libz/libssl/... only\n\t\t// through LD_LIBRARY_PATH. Keeping it in STARTUP_ENVIRONMENT_NAMES above\n\t\t// preserves an inherited value; this block guarantees one even when the\n\t\t// parent engine was started without it (issue #29: users still hit\n\t\t// "libz.so.1 not found" in PTC mode because inheritance is not reliable).\n\t\t// Derived from the worker executable\'s own location: <engine>/bin/node\n\t\t// -> <engine>/lib:<engine>/usr/lib, so no app-side wiring is needed.\n\t\ttry {\n\t\t\tconst path = globalThis.process?.getBuiltinModule?.("node:path");\n\t\t\tconst fs = globalThis.process?.getBuiltinModule?.("node:fs");\n\t\t\tif (path && fs && executable) {\n\t\t\t\tconst root = path.dirname(path.dirname(executable));\n\t\t\t\tconst libs = [path.join(root, "lib"), path.join(root, "usr/lib")]\n\t\t\t\t\t.filter((candidate) => fs.existsSync(candidate));\n\t\t\t\tif (libs.length > 0) env.LD_LIBRARY_PATH = libs.join(":");\n\t\t\t\t// Rest of the Termux layout the worker needs (issue #35 + audit).\n\t\t\t\t// A bionic node packaged by Termux hard-codes /data/data/com.termux/...\n\t\t\t\t// for its openssl config and TLS store. On a device that ALSO has Termux\n\t\t\t\t// installed those paths exist but are unreadable from our sandbox (EACCES\n\t\t\t\t// -> exit 13), so a wrong inherited value is worse than none at all.\n\t\t\t\tconst pick = (rel, key) => {\n\t\t\t\t\tconst candidate = path.join(root, rel);\n\t\t\t\t\tif (fs.existsSync(candidate)) env[key] = candidate;\n\t\t\t\t};\n\t\t\t\tpick("etc/tls/openssl.cnf", "OPENSSL_CONF");\n\t\t\t\tpick("etc/tls/cert.pem", "SSL_CERT_FILE");\n\t\t\t\tconst tmpDir = path.join(root, "tmp");\n\t\t\t\tif (fs.existsSync(tmpDir)) env.TMPDIR = tmpDir;\n\t\t\t}\n\t\t} catch (_androidEnvProbe) {\n\t\t\t/* best effort: a path probe failure must not break the worker launch */\n\t\t}\n'
 
 TARGET = "lib/node_modules/@deepseek-ai/dsh-ptc-runtime-node/lib/index.js"
 
 
 def patch_text(text: str) -> tuple[str, bool]:
-    if MARKER in text and ENV_MARKER in text:
+    if MARKER in text and ENV_MARKER in text and ALLOWLIST_V2_MARKER in text:
         return text, False
     changed = False
-    # (1) STARTUP_ENVIRONMENT_NAMES keeps LD_LIBRARY_PATH
+    # (1) STARTUP_ENVIRONMENT_NAMES keeps LD_LIBRARY_PATH + extension vars
+    if MARKER in text and ALLOWLIST_V2_MARKER not in text:
+        # 旧版补丁（只加了少数几个变量）：把「注释块 + 注入的变量行」整段剥掉，
+        # 回到上游形态再重新打完整版。
+        # 形态：\t// [dsh-android] keep LD_LIBRARY_PATH\n ... \t"ANDROID_STORAGE"\n]);
+        i = text.find("\t// [dsh-android] keep LD_LIBRARY_PATH")
+        if i > 0:
+            tail = text.find("]);", i)
+            if tail > i:
+                text = text[:i] + text[tail:]
+                # 剥完可能留下 `"TMP",\n]);` 的尾逗号；OLD_SET 用的是无逗号形态
+                text = text.replace('\t"TMP",' + chr(10) + ']);',
+                                    '\t"TMP"' + chr(10) + ']);', 1)
     if MARKER not in text:
         if OLD_SET not in text:
             raise SystemExit(

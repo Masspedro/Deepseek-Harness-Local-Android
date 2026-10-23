@@ -21,8 +21,8 @@ android {
         // 关键决策：targetSdk 28 —— sideload 分发，豁免 Android 10+ 的 W^X 限制，
         // 允许从 filesDir 直接 execve bionic 二进制（Termux 同款策略）。
         targetSdk = 28
-        versionCode = 264
-        versionName = "1.4.13"
+        versionCode = 265
+        versionName = "1.4.14"
 
         ndk {
             abiFilters += listOf(targetAbi)
@@ -159,8 +159,11 @@ val prepareRuntime by tasks.registering {
                     val e = zf.getEntry(ptcTarget) ?: return@use false
                     val text = zf.getInputStream(e).bufferedReader().readText()
                     // 两处补丁都要在：白名单 + 无条件注入
+                    // 三处都必须存在：动态库路径（#29）、OpenSSL 配置与证书（#35）
                     text.contains("\"LD_LIBRARY_PATH\"") &&
-                        text.contains("Inject the runtime library path unconditionally")
+                        text.contains("Inject the runtime library path unconditionally") &&
+                        text.contains("OPENSSL_CONF") &&
+                        text.contains("SSL_CERT_FILE")
                 }
             }.getOrDefault(false)
         }
