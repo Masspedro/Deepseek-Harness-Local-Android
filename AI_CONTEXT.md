@@ -1,5 +1,13 @@
 # AI_CONTEXT
 
+## 例行清单（宝宝确认，2026-10-24 起）
+每次**发布前**固定动作（顺序执行）：
+1. `python scripts/check-issue-replies.py`（需 GITHUB_TOKEN）——扫描用户在我们最后回复
+   之后的留言；有输出必须先逐条跟进再打包。背景：10-22 曾让活跃贡献者 @henryz78
+   的方案确认等了近两天，这类等待最伤贡献积极性。
+2. 全套测试 + i18n。
+3. 发布后顺手再扫一遍（用户常在新版发布后回来反馈）。
+
 ## v1.4.16 已发布（2026-10-24）
 - 发布物：`dist/DSH-Mobile-1.4.16-arm64-v8a.apk`（185.3 MB，versionCode 266，签名 CN=DSH Mobile）
   + `-debug.apk`（186.5 MB）。说明：`RELEASE_NOTES_v1.4.16.md`、`docs/ANNOUNCE_v1.4.16.md`。
