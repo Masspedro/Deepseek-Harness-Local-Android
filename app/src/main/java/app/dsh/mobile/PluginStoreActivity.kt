@@ -12,6 +12,7 @@ import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import app.dsh.mobile.engine.NativePluginCheck
 import app.dsh.mobile.engine.PluginCenter
 import app.dsh.mobile.engine.PluginCenter.PluginInfo
 
@@ -219,9 +220,72 @@ class PluginStoreActivity : Activity() {
         return card
     }
 
-    /** 执行安装并刷新按钮状态 */
+    /**
+     * 安装入口（v1.4.15）：先做原生模块预检，再决定是否直接装。
+     *
+     * 为什么要预检 —— 用户反馈 `ERR_PNPM_IGNORED_BUILDS`：pnpm 12 默认拒绝执行依赖的
+     * build 脚本，带原生模块的插件会「装成功但二进制没编译」，`build/` 目录都不存在。
+     * 在 Android 上这类插件多数根本编译不出来（缺 clang 头文件搜索路径、node_prefix
+     * 写死成 Termux 路径），所以与其让用户拿到一个用不了的插件，不如装前说清楚。
+     */
     private fun runInstall(pkg: String, btn: TextView) {
-        val original = btn.text.toString()
+        btn.text = getString(R.string.plugin_checking)
+        btn.isEnabled = false
+        Thread({
+            val r = runCatching { NativePluginCheck.check(pkg) }
+                .getOrElse { NativePluginCheck.Result.Unknown(it.message ?: "check failed") }
+            runOnUiThread {
+                btn.isEnabled = true
+                when (r) {
+                    is NativePluginCheck.Result.PureJs -> doInstall(pkg, btn)
+                    is NativePluginCheck.Result.Unknown -> {
+                        // 查不到（离线 / git 源）：不拦，但要告诉用户「没验证过」
+                        btn.text = getString(R.string.plugin_install)
+                        confirmInstall(
+                            pkg, btn,
+                            title = getString(R.string.plugin_check_unknown_title),
+                            message = getString(R.string.plugin_check_unknown_body, r.reason),
+                        )
+                    }
+                    is NativePluginCheck.Result.Risk -> {
+                        btn.text = getString(R.string.plugin_install)
+                        confirmInstall(
+                            pkg, btn,
+                            title = getString(R.string.plugin_native_title),
+                            message = getString(
+                                R.string.plugin_native_body,
+                                r.reasons.joinToString("\n• ", prefix = "• "),
+                            ),
+                        )
+                    }
+                }
+            }
+        }, "plugin-precheck").apply { isDaemon = true; start() }
+    }
+
+    /** 预检有风险时的二次确认；点「仍然安装」才真的装。 */
+    private fun confirmInstall(pkg: String, btn: TextView, title: String, message: String) {
+        if (isFinishing || isDestroyed) return
+        android.app.AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton(R.string.plugin_install_anyway) { _, _ -> doInstall(pkg, btn) }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /** 真正执行安装并刷新按钮状态 */
+    private fun doInstall(pkg: String, btn: TextView) {
+        // v1.4.16 审查 P2：PureJs 分支不弹确认框，预检期间（最长 20s）用户可能
+        // 已离开页面或搜索重渲染让 btn 脱离视图树 —— 此时不再启动安装。
+        if (isFinishing || isDestroyed) {
+            android.util.Log.w("PluginStore", "install of $pkg dropped: activity gone")
+            return
+        }
+        if (!btn.isAttachedToWindow) {
+            android.util.Log.w("PluginStore", "install of $pkg dropped: row re-rendered")
+            return
+        }
         btn.text = getString(R.string.plugin_installing)
         btn.isEnabled = false
         btn.setTextColor(0xFF8A94A3.toInt())

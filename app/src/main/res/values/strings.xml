@@ -151,6 +151,18 @@
     <string name="plugin_installing">Installing…</string>
     <string name="plugin_installed">Installed</string>
     <string name="plugin_failed">Failed: %1$s</string>
+    <string name="plugin_checking">Checking…</string>
+    <string name="plugin_native_title">This plugin needs native code</string>
+    <string name="plugin_native_body">It declares build steps or native modules:
+
+%1$s
+
+On Android these usually cannot be compiled (no toolchain headers at the expected paths), so it may install but not work. Install anyway?</string>
+    <string name="plugin_check_unknown_title">Could not verify this plugin</string>
+    <string name="plugin_check_unknown_body">The registry lookup failed (%1$s), so compatibility is unknown. If it needs native modules it may not work on Android.
+
+Install anyway?</string>
+    <string name="plugin_install_anyway">Install anyway</string>
     <string name="plugin_empty">No compatible community plugins yet — they will appear here automatically</string>
     <string name="plugin_search_hint">Search community plugins…</string>
     <string name="plugin_searching">Searching npm…</string>

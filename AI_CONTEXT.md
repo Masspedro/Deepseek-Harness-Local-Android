@@ -1,5 +1,123 @@
 # AI_CONTEXT
 
+## v1.4.16 已发布（2026-10-24）
+- 发布物：`dist/DSH-Mobile-1.4.16-arm64-v8a.apk`（185.3 MB，versionCode 266，签名 CN=DSH Mobile）
+  + `-debug.apk`（186.5 MB）。说明：`RELEASE_NOTES_v1.4.16.md`、`docs/ANNOUNCE_v1.4.16.md`。
+- README 三语版本号对齐 v1.4.16。
+- 内容 = v1.4.15（插件装前预检 + 启动快速隔离）+ v1.4.16（审查修复 3 P1 + 5 P2）。
+- 注意：版本号从 265/1.4.14 直接跳到 266/1.4.16（v1.4.15 提交时漏了 bump，本版合并发布）。
+
+
+## v1.4.16 整体代码审查（三路并行 checker）+ P1 全修 / P2 精选修复
+- **审查规模**：3 个 checker 并行（引擎核心 / 构建链 / UI 与导出），覆盖 v1.4.9→v1.4.15 全部改动。
+  合计 P0=0、**P1=3**、P2=12、P3=20、顺带 9。
+- **P1-1（引擎）墙钟预算重置点错误**：`userVisibleBootT0` 只在进 Healthy 时重置，
+  注释引用了**不存在**的 `setUserVisibleBootStart()`。后果：健康运行 >5 分钟后引擎崩溃，
+  第一次自动重试就在循环顶部被误判「启动超时 N 分钟」直接 Failed——监督器的核心职责失效。
+  **已修**：引擎退出（`exitFuture.get()` 返回）后决定重启时重置。
+  **实测**：模拟器强杀运行中的 node → 9.3s 自动重启成功、无误判。
+- **P1-2（构建）`.abi` 入库使 CI 门禁全失效**：`.abi` 被 git 跟踪（恒 arm64-v8a）→
+  CI checkout 后 `prepareRuntime` 命中 skip 分支整体 return → **PTC 补丁校验在 CI 永不执行**；
+  且 CI 的 collect 不跑 dedupe → CI 渠道 APK 从未享受 52s→24s 优化；fresh clone 还会打出
+  无 runtime.zip 的空壳 APK 且构建成功。**已修**：`.abi` 出库 + gitignore；skip 分支只免
+  复制/去重、仍跑补丁校验；源缺失且 assets 无包时 throw GradleException（实测空壳路径会炸）。
+- **P1-3（构建）gradle 校验项不含 v2 标记**：4 项检查对 v1.4.13 形态（7 变量）也能通过，
+  27 个扩展变量缺失无告警。**已修**：加第 5 项 `MAGICK_CONFIGURE_PATH`（与脚本 ALLOWLIST_V2_MARKER 对齐）。
+- **P2 已修（4 项）**：
+  · ①四个共享字段补 @Volatile（process/loopJob/userStop/scopeRef）；
+  · ②快速隔离节流：独立 `fastIsolations` 计数 + `MAX_FAST_ISOLATIONS=3` 上限 + 隔离后不再
+    重置 backoffIndex（旧实现会连续摘光所有插件，实测复现过先摘无辜的再摘真凶）；
+  · ③插件安装/卸载串行化：`PluginCenter` 改单线程执行器，消除并发 pnpm 损坏 profile 的风险；
+  · ④`stillHasNestedZod` 在 dedupe 结果检查处补 runCatching（损坏缓存不再炸构建）；
+  · ⑤PureJs 安装分支补 Activity/视图存活检查（预检 20s 窗口内离开页面不再静默安装）。
+- **P2/P3 未修（记录在案，按需再修）**：stop() 主线程阻塞最长 ~28s（ANR 风险）；
+  shizukuExec 超时返回部分输出污染探测调用方；BootTrace 主线程落盘；
+  DataExport 删半成品失败被吞但文案说未保留；dedupe 丢 zip 条目 comment（潜伏）；
+  dedupe 无版本一致性断言；make_corepack_wrapper 校验不覆盖 dst；
+  stop() 的锁与双循环竞态窗口；搜索无序返回等。
+- **验证**：312 项测试全过；i18n 全过；compileDebugKotlin 通过；
+  实机冒烟（冷启动 34.3s + 强杀自动重启 9.3s 无误判）。
+
+
+## 鸿蒙适配评估（2026-10-23，宝宝拍板：不适配）
+- **结论：不做**。结论记录于此，避免将来重新调研。
+- **关键区分**：
+  · HarmonyOS 2.0–4.x = Android 分支，**可直接装 APK**，理论上现有包就能跑
+    （未真机验证；若有群友反馈，装一下即可确认，无需开发）。
+  · HarmonyOS NEXT（5.0+）= 无 Android 运行时，APK 装不上，需 HAP + OHOS NDK 全面移植。
+- **NEXT 移植的四个坎（按难度）**：
+  ① node 运行时：现用 bionic ELF，NEXT 是 musl，须整套交叉编译
+     （社区有先例：51CTO 交叉编译教程 / 知乎 musl 构建指南 / 官方 lycium 工具）；
+  ② 子进程：引擎是常驻 node 子进程，NEXT 默认限制 fork（官方 native_child_process.h
+     是受控替代），fork+exec 属于敏感能力，**上架审核要说明必要性 —— 过审是真实风险**；
+  ③ PTY 终端：无公开 pty API，dsh_pty_exec 那套走不通，终端只能砍或降级；
+  ④ 无障碍自动化（scr/loop）与扩展系统（依赖 Termux 包）：API 完全不同/生态不存在，
+     第一版带不过去。
+- **若将来重启**：第一步只需验证「OHOS musl node 在 NEXT 真机跑起 dsh web」，
+  这一步的成败直接决定整个项目可行性（约一周 PoC，不需要全套投入）。
+  前置条件：NEXT 真机 + 华为开发者账号。
+
+
+## v1.4.15 实测记录（2026-10-23，emulator-5554/Android 16/x86_64）
+- **全套**：300 项测试全过；i18n 全过；compileDebugKotlin + assembleRelease(arm64) 成功。
+- **冷启动回归**：TOTAL 65.2s（首次解压 46.2s）；plugin health `ok:true`；
+  PTC 白名单 10 个抽查变量全在设备上；corepack 入口正常。
+- **装前预检实测**：
+  · `node-pty` → Install → **弹出「This plugin needs native code」**，正文列出两条原因
+    （`depends on node-addon-api`、`scripts.install: node scripts/install.js`）；
+  · `lodash` → Install → **直接 Installing，无误拦**。
+- **启动隔离实测（决定性）**：往已装插件的入口注入 `process.abort()` 再重启：
+  ```
+  boot (retry #2)  FAILED 2757ms  isolated plugin dsh-whale-widget
+  boot (retry #2)  FAILED 3782ms  isolated plugin @michengai/dsh-skills-manager
+  boot (retry #2)  TOTAL 16883ms  (engine ready)
+  ```
+  engine.log 有两条 `[plugin] isolated X after 2 failed boot(s)`；
+  `files/dsh-home/plugin-recovery/` 下每次隔离都有带时间戳的清单备份。
+  **设计行为符合预期**：一次只摘一个（先摘 mtime 最新的 whale-widget，再摘真正坏的那个），
+  每次先备份，连续失败 2 次才动手，恢复全程自动。
+- **意外收获**：语法错误级损坏走的是**旧链路**（degraded → quarantineOne），
+  engine.log 可见 `failed to import: SyntaxError` → 探针报 failed → 自动禁用 → 重启恢复。
+  即：软损坏走 quarantineOne（v1.4.4 链），硬死亡走快速隔离（本次新增），
+  两层防护各管一段，互不重叠。
+- **结论：可以发布。**
+
+## v1.4.15 待发（插件兼容性：装前预检 + 启动快速隔离）
+- **用户反馈**：①「装一些插件会直接导致无法启动」；②「插件中心装插件提示
+  ERR_PNPM_IGNORED_BUILDS」。
+- **根因（两层）**：
+  ① corepack 自动拉 **pnpm 12.15.0**，该版本默认**拒绝执行**依赖的 build 脚本；
+     带原生模块的插件「装成功但二进制没编译」——实测 `pnpm add better-sqlite3`
+     返回成功，但 `node_modules/better-sqlite3/build/` 根本不存在。
+  ② 上游其实有完整批准机制（`build-approval.js`：pnpm 失败 → 解析
+     `Ignored build scripts:` → 写 `pnpm-workspace.yaml` 的 `allowBuilds` → UI 让用户批准），
+     但**我们的插件中心是自写 UI，直接调 `dsh plugin add`，完全绕过了它**。
+  ③ 而且 Android 上这类模块多数根本编译不出来（issue #33 已指出 clang 头文件搜索
+     路径错误、node_prefix 写死 Termux）。批准了也只是把 "ignored builds" 变成 "gyp ERR"。
+- **方案（用户拍板：装前检测并拦截 + 启动前隔离）**：
+  · 新增 `NativePluginCheck`：查 registry 的 version manifest，六个信号判风险
+    （install 钩子 / gypfile / binary 字段 / files 含 binding.gyp 或 prebuilds /
+    原生依赖 / 平台专用 optionalDependencies 无 android 变体）；
+  · 插件中心装前调用，命中就弹确认框（列出具体原因），用户可「仍然安装」；
+  · 网络失败返回 Unknown（不拦，只提示「未验证」）；
+  · `PluginRecovery.isolateRecentBundleOnBootFailure()`：引擎连续 2 次启动失败时，
+    按 node_modules 里 package.json 的 mtime 找最后安装的第三方 bundle，**只摘一个**、
+    先备份清单；同一批安装（差值 <60s）分不清主次时不猜；接进监督器失败路径。
+- **实测判据**（registry.npmmirror.com/latest，模拟器上验证）：
+  RISK: better-sqlite3(dep:node-addon-api) / sharp(platformVariants 24) /
+        node-pty(scripts.install) / canvas(scripts.install+binary)
+  PURE: lodash / chalk / axios / esbuild / @deepseek-ai/dsh-workspace
+  **sharp 是这次补上的关键**：它没有 scripts、没有 gypfile、files 为空，唯一信号是
+  optionalDependencies 列了 24 个平台变体且无 android。
+- **实机验证（emulator-5558 / Android 16）**：
+  · 搜 better-sqlite3 → 点 Install → **弹出「This plugin needs native code」**
+    （正文列出 `depends on node-addon-api`），有 CANCEL / INSTALL ANYWAY；
+  · 搜 lodash → 点 Install → **直接开始安装**（显示 Installing…），无误拦。
+- **测试**：新增 `_test_native_plugin_check.py` 28 项（6 类风险判据 + 5 类纯 JS 放行 +
+  平台变体边界 + 源码结构约束 + UI 接入）。全量 **300 项全过**；i18n 全过。
+- **未做**：真正让 pnpm 执行 build（需要先修 issue #33 的 clang/clang++ 头文件搜索路径
+  与 node_prefix，工作量单独一版）。
+
 ## v1.4.14 待发（PTC 环境变量补全：issue #35 + 全量审计）
 - **issue #35**：PTC 报 `OpenSSL configuration error: ... Permission denied calling
   fopen(/data/data/com.termux/files/usr/etc/tls/openssl.cnf)`，exit 13。用户诊断正确：

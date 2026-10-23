@@ -20,6 +20,12 @@ import java.util.concurrent.TimeUnit
  * （GET /plugin/list、POST /plugin/install），AI 也能自助安装。
  */
 object PluginCenter {
+    // v1.4.16 审查 P2：安装/卸载串行化。旧实现每次 new 一个裸 Thread 直接跑
+    // pnpm —— 两个插件并发安装会同时操作同一 profile，轻则锁错误、重则
+    // node_modules / pnpm-store 状态损坏。单线程执行器从根上消除并发。
+    private val installExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "dsh-plugin-ops").apply { isDaemon = true }
+    }
 
     private const val TAG = "PluginCenter"
 
@@ -167,7 +173,7 @@ object PluginCenter {
      * @param onDone (成功, 详情或错误信息) —— 在后台线程回调
      */
     fun install(ctx: Context, pkg: String, onDone: (Boolean, String) -> Unit) {
-        Thread({
+        installExecutor.execute({
             var ok = false
             var msg = "?"
             try {
@@ -203,7 +209,7 @@ object PluginCenter {
             }
             Log.i(TAG, "install $pkg -> ok=$ok: $msg")
             onDone(ok, msg)
-        }, "dsh-plugin-install").apply { isDaemon = true; start() }
+        })
     }
 
     /**
@@ -214,7 +220,7 @@ object PluginCenter {
      * 插件只能靠 CLI 手工处理。
      */
     fun uninstall(ctx: Context, pkg: String, onDone: (Boolean, String) -> Unit) {
-        Thread({
+        installExecutor.execute({
             var ok = false
             var msg = "?"
             try {
@@ -250,6 +256,6 @@ object PluginCenter {
             }
             Log.i(TAG, "uninstall $pkg -> ok=$ok: $msg")
             onDone(ok, msg)
-        }, "dsh-plugin-uninstall").apply { isDaemon = true; start() }
+        })
     }
 }

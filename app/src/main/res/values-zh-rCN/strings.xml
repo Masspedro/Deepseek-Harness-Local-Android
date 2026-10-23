@@ -150,6 +150,18 @@
     <string name="plugin_installing">安装中…</string>
     <string name="plugin_installed">已安装</string>
     <string name="plugin_failed">失败：%1$s</string>
+    <string name="plugin_checking">检查中…</string>
+    <string name="plugin_native_title">这个插件需要原生代码</string>
+    <string name="plugin_native_body">它声明了构建步骤或原生模块：
+
+%1$s
+
+在 Android 上这些通常编译不出来（缺少编译工具链头文件），可能会装成功但用不了。仍要安装吗？</string>
+    <string name="plugin_check_unknown_title">无法确认这个插件</string>
+    <string name="plugin_check_unknown_body">查询插件源失败（%1$s），因此兼容性未知。如果它需要原生模块，可能在 Android 上不可用。
+
+仍要安装吗？</string>
+    <string name="plugin_install_anyway">仍然安装</string>
     <string name="plugin_empty">暂无兼容的社区插件——上线后会自动出现在这里</string>
     <string name="plugin_search_hint">搜索社区插件…</string>
     <string name="plugin_searching">正在搜索 npm…</string>

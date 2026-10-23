@@ -26,6 +26,12 @@ object PluginRecovery {
     private const val STATE_FILE = "plugin-recovery.state"
     private const val BACKUP_DIR = "plugin-recovery"
     private const val MAX_ATTEMPTS = 3
+    /** 引擎连续启动失败多少次后启用「快速隔离」（见 isolateRecentBundleOnBootFailure）。
+     *  取 2：第一次可能是环境抖动（su 忙、端口刚释放），第二次还失败基本就是插件问题。 */
+    const val FAST_ISOLATE_STREAK = 2
+    /** 快速隔离的生命周期总上限（v1.4.16 审查 P2）。
+     *  防止根因与插件无关时（runtime 损坏等）把所有第三方插件逐个摘光。 */
+    const val MAX_FAST_ISOLATIONS = 3
 
     data class FailedEntry(val id: String, val name: String, val error: String = "")
 
@@ -43,6 +49,81 @@ object PluginRecovery {
     )
 
     fun markerFile(ctx: Context): File = File(EngineConfig.dshHome(ctx), HEALTH_MARKER)
+
+    /**
+     * 引擎**压根起不来**时的快速隔离（v1.4.15）。
+     *
+     * ## 与 [quarantineOne] 的区别
+     *
+     * [quarantineOne] 处理的是「引擎起来了、HTTP 通了，但插件探针报 degraded」——
+     * 那时有 marker 文件可以归因到具体 entry。
+     *
+     * 用户反馈的另一类更糟：**装完插件后引擎再也起不来**，走不到探针那一步，
+     * marker 根本不存在。这时只能靠「node_modules 里哪个第三方包的 package.json
+     * 最近被改写过」来判断，也就是最后安装的那个。
+     *
+     * ## 判定条件（保守，宁可不动手）
+     *
+     *   ① 引擎已连续 [FAST_ISOLATE_STREAK] 次无法启动（由监督器保证）
+     *   ② profile 里存在第三方 bundle
+     *   ③ 能唯一确定「最近安装」的那个包（与次新的差 ≥ 60s）
+     *
+     * 满足就摘掉它并备份清单。**不猜测、不批量摘**：一次只动一个；
+     * 同一批装进来的多个包分不清主次时宁可不动，交给 ProfileGuardian 的慢通道。
+     *
+     * @return 被摘掉的包名；不满足条件时返回 null
+     */
+    fun isolateRecentBundleOnBootFailure(ctx: Context): Action? {
+        val profileDir = File(EngineConfig.dshHome(ctx), "profiles/web")
+        val manifestFile = File(profileDir, "package.json")
+        if (!manifestFile.isFile) return null
+        val manifest = runCatching { JSONObject(manifestFile.readText()) }.getOrNull() ?: return null
+        val bundles = manifest.optJSONObject("dsh")
+            ?.optJSONObject("profile")
+            ?.optJSONArray("bundles")
+            ?: return null
+        val names = (0 until bundles.length())
+            .mapNotNull { bundles.optString(it).takeIf(String::isNotBlank) }
+        val userBundles = names.filter(::isUserBundle)
+        if (userBundles.isEmpty()) {
+            Log.i(TAG, "boot failure: no third-party bundle to isolate")
+            return null
+        }
+
+        // 用 node_modules 里该包 package.json 的 mtime 判断「最近安装」——
+        // pnpm 装完会重写它，比 profile 清单的 mtime 更贴近真实安装时刻。
+        val candidates = userBundles.map { name ->
+            val pj = File(File(profileDir, "node_modules"), "$name/package.json")
+            name to pj.lastModified()
+        }.filter { it.second > 0 }.sortedByDescending { it.second }
+        if (candidates.isEmpty()) return null
+        val newest = candidates.first().first
+        val newestAt = candidates.first().second
+
+        // 同一批安装（差值 < 60s）分不清主次时不动手
+        if (candidates.size > 1 && newestAt - candidates[1].second < 60_000L) {
+            Log.i(TAG, "boot failure: multiple bundles installed together; not guessing")
+            return null
+        }
+
+        return runCatching {
+            backupManifest(ctx, manifestFile, newest)
+            val next = JSONArray()
+            names.filterNot { it == newest }.forEach(next::put)
+            val dsh = manifest.optJSONObject("dsh") ?: JSONObject().also { manifest.put("dsh", it) }
+            val profile = dsh.optJSONObject("profile") ?: JSONObject().also { dsh.put("profile", it) }
+            profile.put("bundles", next)
+            atomicWrite(manifestFile, manifest.toString(2) + "\n")
+            Log.e(
+                TAG,
+                "boot failure: isolated most recently installed bundle $newest " +
+                    "(engine could not start; manifest backed up)",
+            )
+            Action(newest, "engine failed to start after install", 1)
+        }.onFailure {
+            Log.e(TAG, "failed to isolate $newest: ${it.message}", it)
+        }.getOrNull()
+    }
 
     /** 每次 fork 前清掉旧标记，避免上一次崩溃的诊断结果误伤下一次启动。 */
     fun prepareForBoot(ctx: Context) {

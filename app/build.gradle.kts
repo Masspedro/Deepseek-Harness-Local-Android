@@ -21,8 +21,8 @@ android {
         // 关键决策：targetSdk 28 —— sideload 分发，豁免 Android 10+ 的 W^X 限制，
         // 允许从 filesDir 直接 execve bionic 二进制（Termux 同款策略）。
         targetSdk = 28
-        versionCode = 265
-        versionName = "1.4.14"
+        versionCode = 266
+        versionName = "1.4.16"
 
         ndk {
             abiFilters += listOf(targetAbi)
@@ -81,16 +81,28 @@ val prepareRuntime by tasks.registering {
     outputs.upToDateWhen { false }
     doLast {
         val last = if (stamp.exists()) stamp.readText().trim() else ""
-        if (last == abi) {
-            logger.lifecycle("runtime: 已是 " + abi + "，跳过")
-            return@doLast
-        }
+        if (last == abi && assetsZip.isFile) {
+            // v1.4.16（审查 P1）：skip 分支只免掉**大文件复制与去重**，
+            // 不再整体 return —— 下面的 PTC 补丁强制校验必须每次构建都跑。
+            // 旧实现 `return@doLast` 让 CI（.abi 随 git checkout 存在且恒为 arm64-v8a）
+            // 永远跳过校验：v1.4.13 建的「缺补丁即中止构建」门禁在 CI 全链路不可达，
+            // fresh clone 还会打出缺 runtime.zip 的空壳 APK 且构建成功。
+            logger.lifecycle("runtime: 已是 " + abi + "，跳过复制/去重（仍执行补丁校验）")
+        } else {
         val src = if (abi == "x86_64") File(projRoot, "_runtime_bak/rt-x86_64-current.zip")
                   else File(projRoot, "_runtime_bak/rt-arm64-work.zip")
         if (!src.exists()) {
-            logger.warn("runtime: 源缺失 " + src.absolutePath + "，保持 assets 现状")
-            return@doLast
-        }
+            // 源缺失且 assets 里也没有可用包 → 这里必须硬失败而不是静默通过：
+            // 否则 fresh clone（runtime.zip 被 gitignore）会打出没有引擎的 APK。
+            if (!assetsZip.isFile) {
+                throw GradleException(
+                    "runtime: 源缺失 " + src.absolutePath + " 且 assets/runtime.zip 不存在 — " +
+                        "会打出没有引擎的空壳 APK。请先运行 scripts/collect-termux-runtime.sh " +
+                        "或从 Release 获取 runtime.zip。"
+                )
+            }
+            logger.warn("runtime: 源缺失 " + src.absolutePath + "，使用 assets 现有包")
+        } else {
         // ── 去重（v1.4.11）：上游 0.2.1-rc.2 改成了「逐包嵌套」依赖布局，
         // 每个 @deepseek-ai 包里都嵌了一份完整 zod（612 个文件）——全库 3 万多个
         // 冗余文件、200MB+。实测冷启动 runtime-install：
@@ -130,7 +142,12 @@ val prepareRuntime by tasks.registering {
                     zodded.absolutePath, "--backup-dir", File(projRoot, "_runtime_bak").absolutePath)
                 isIgnoreExitValue = true
             }.result.get().exitValue
-            if (rc == 0 && zodded.isFile && !stillHasNestedZod(zodded)) {
+            // v1.4.16 审查 P2：runCatching 与上面 cacheOk 分支一致 ——
+            // dedupe 中途被杀留下的半成品 zip 会让 ZipFile 构造抛异常，
+            // 未捕获会直接炸构建而不是走「回退未去重源」的兜底。
+            val zoddedOk = zodded.isFile &&
+                runCatching { !stillHasNestedZod(zodded) }.getOrDefault(false)
+            if (rc == 0 && zoddedOk) {
                 zodded.copyTo(assetsZip, overwrite = true)
                 logger.lifecycle("runtime: 去重完成 " + zodded.name)
             } else {
@@ -141,7 +158,10 @@ val prepareRuntime by tasks.registering {
             logger.warn("runtime: 去重脚本缺失，使用未去重源（启动会慢 2-3 倍）")
             src.copyTo(assetsZip, overwrite = true)
         }
-        // ── PTC 补丁校验（v1.4.13）：**必须**在复制完之后、算 sha 之前执行。
+        } // src.exists()
+        } // stamp/else（skip 分支的另一半）
+        // ── PTC 补丁校验（v1.4.13，v1.4.16 起对 skip 分支同样生效）：
+        // **必须**在复制完之后、算 sha 之前执行，且无论上面走哪条分支都要跑。
         //
         // 血的教训：v1.4.12 我把构建切到去重包，而那份 zodded.zip 是**在我加 PTC
         // 补丁之前**生成的 —— 结果 run_code 子进程又拿不到 LD_LIBRARY_PATH，
@@ -150,6 +170,7 @@ val prepareRuntime by tasks.registering {
         // 根因不是补丁写错，而是**补丁只存在于某个 zip 产物里，没有进入构建流程**：
         // 一旦换了源包，补丁就静默消失。所以这里把「校验 + 必要时现场打补丁」变成
         // 构建的硬步骤：缺补丁就打（幂等），打完还缺就**中止构建**，绝不发坏包。
+        // v1.4.16 审查 P1：旧实现把这段放在 skip 分支 return 之后，CI 上永不执行。
         val ptcScript = File(projRoot, "scripts/patch-ptc-runtime-android.py")
         val ptcTarget = "lib/node_modules/@deepseek-ai/dsh-ptc-runtime-node/lib/index.js"
         fun ptcPatched(f: File): Boolean {
@@ -158,12 +179,16 @@ val prepareRuntime by tasks.registering {
                 ZipFile(f).use { zf ->
                     val e = zf.getEntry(ptcTarget) ?: return@use false
                     val text = zf.getInputStream(e).bufferedReader().readText()
-                    // 两处补丁都要在：白名单 + 无条件注入
-                    // 三处都必须存在：动态库路径（#29）、OpenSSL 配置与证书（#35）
+                    // 五个标记都要在（v1.4.16 审查 P1-2：旧版只有 4 项，且不含
+                    // v2 白名单标记 —— 一份只带 LD_LIBRARY_PATH 的 v1.4.13 形态
+                    // 补丁也能通过校验，27 个扩展工具链变量缺失无告警）。
+                    // MAGICK_CONFIGURE_PATH 是 v2 白名单的独有成员，用作版本标记
+                    //（与 patch 脚本的 ALLOWLIST_V2_MARKER 对齐）。
                     text.contains("\"LD_LIBRARY_PATH\"") &&
                         text.contains("Inject the runtime library path unconditionally") &&
                         text.contains("OPENSSL_CONF") &&
-                        text.contains("SSL_CERT_FILE")
+                        text.contains("SSL_CERT_FILE") &&
+                        text.contains("\"MAGICK_CONFIGURE_PATH\"")
                 }
             }.getOrDefault(false)
         }

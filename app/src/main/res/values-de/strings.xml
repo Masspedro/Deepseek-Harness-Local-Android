@@ -152,6 +152,18 @@
     <string name="plugin_installing">Wird installiert …</string>
     <string name="plugin_installed">Installiert</string>
     <string name="plugin_failed">Fehlgeschlagen: %1$s</string>
+    <string name="plugin_checking">Wird geprüft…</string>
+    <string name="plugin_native_title">Dieses Plugin benötigt nativen Code</string>
+    <string name="plugin_native_body">Es deklariert Build-Schritte oder native Module:
+
+%1$s
+
+Unter Android lassen sich diese meist nicht kompilieren (fehlende Toolchain-Header), es kann also installiert werden, aber nicht funktionieren. Trotzdem installieren?</string>
+    <string name="plugin_check_unknown_title">Plugin konnte nicht geprüft werden</string>
+    <string name="plugin_check_unknown_body">Die Registry-Abfrage ist fehlgeschlagen (%1$s), die Kompatibilität ist unbekannt. Falls es native Module braucht, funktioniert es unter Android möglicherweise nicht.
+
+Trotzdem installieren?</string>
+    <string name="plugin_install_anyway">Trotzdem installieren</string>
     <string name="plugin_empty">Noch keine kompatiblen Community-Plugins — sie erscheinen hier automatisch</string>
     <string name="plugin_search_hint">Community-Plugins suchen …</string>
     <string name="plugin_searching">npm wird durchsucht …</string>

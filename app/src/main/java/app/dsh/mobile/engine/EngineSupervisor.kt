@@ -117,19 +117,21 @@ class EngineSupervisor(private val ctx: Context) {
         else -> "http://127.0.0.1:${EngineConfig.DEFAULT_PORT}/"
     }
 
-    private var process: EngineProcess? = null
+    // v1.4.16 审查 P2：以下四个字段被监督协程与主线程/服务线程并发读写，
+    // 与 stopping/restarting 同理需要 @Volatile 保证可见性。
+    @Volatile private var process: EngineProcess? = null
     /** 启动前摘掉的插件名；恢复成功后的首个 Healthy 状态会带上它，随后清空。 */
     @Volatile private var recoveredPlugin: String? = null
     /** 本次引擎启动时 engine.log 的长度：extractTokenUrl 只搜此偏移之后的日志段 */
     @Volatile private var logOffsetAtSpawn = 0L
-    private var loopJob: Job? = null
+    @Volatile private var loopJob: Job? = null
     /**
      * 用户是否**显式**退出过（通知栏「退出」）。
      *
      * 只由 `stop(explicit = true)` 置位、`start()` 清零。用于阻止保活看门狗
      * 与 MainActivity.onResume 在用户主动退出后又把引擎拉起来。
      */
-    private var userStop = false
+    @Volatile private var userStop = false
 
     /**
      * 监督循环是否应停止（任何 stop 都置位，start 清零）。
@@ -140,7 +142,7 @@ class EngineSupervisor(private val ctx: Context) {
      */
     @Volatile
     private var stopping = false
-    private var scopeRef: CoroutineScope? = null
+    @Volatile private var scopeRef: CoroutineScope? = null
 
     /**
      * 用户是否显式退出过且尚未重新启动（通知栏「退出」置位）。
@@ -401,13 +403,22 @@ class EngineSupervisor(private val ctx: Context) {
         // v1.4.9：插件自动隔离触发的重启次数（生命周期累计，独立于 MAX_RESTART）。
         // 旧实现会让这条路径绕过退避额度，形成「摘插件→重启→再摘」的长时间空转。
         var pluginRecoveryRestarts = 0
+        // v1.4.16 审查 P2：快速隔离的独立节流。旧实现隔离后只重置 backoffIndex，
+        // 下一轮失败又满足「连续 2 次」——若启动失败根因与插件无关（runtime 损坏等），
+        // 会按 mtime 从新到旧把所有第三方插件逐个摘光（实测复现：先摘无辜的
+        // whale-widget 再摘真凶 skills-manager，好在那次真凶在第二个）。
+        // 现在每次隔离后要求再失败 2 次才允许下一次，并设生命周期总上限。
+        var fastIsolations = 0
         // v1.4.9：本次「用户可见启动」的墙钟起点。所有自愈层各自有边界，但组合起来
         // 没有总预算 —— 用户实测能空转 20 分钟以上，界面一直停在准备阶段。
         var userVisibleBootT0 = System.currentTimeMillis()
         while (kotlinx.coroutines.currentCoroutineContext().isActive && !stopping) {
             // 总时限检查：一旦超预算，收敛为 Failed 并说清发生了什么。
-            // 放在循环顶部而不是每轮末尾，是为了让「已进入 Healthy 后崩溃重启」
-            // 这种正常场景重新计时 —— 那时 setUserVisibleBootStart() 会被调用。
+            // 预算只约束「从空闲/停止状态到引擎可用」的这一段连续尝试，两个重置点：
+            //   ① 引擎进入 Healthy/SafeMode（成功收尾，见下方 ready 分支）
+            //   ② 健康运行的引擎退出后决定自动重启时（新一轮启动从死亡时刻起算）
+            // 缺了 ② 会出现：健康跑了一天 → 崩溃 → 第一次重试就被误判
+            // 「启动超时 N 分钟」直接 Failed（审查 P1，v1.4.16 修复）。
             val bootElapsed = System.currentTimeMillis() - userVisibleBootT0
             if (bootElapsed > EngineConfig.BOOT_WALL_CLOCK_BUDGET_MS && _state.value !is State.Healthy &&
                 _state.value !is State.SafeMode
@@ -645,6 +656,11 @@ class EngineSupervisor(private val ctx: Context) {
                         val status = proc.exitFuture.get()
                         if (shouldExitLoop()) break
                         Log.w(TAG, "engine exited, raw status=0x${status.toString(16)}")
+                        // v1.4.16（审查 P1）：健康运行的引擎退出、即将自动重启时，
+                        // 重置启动墙钟——新一轮「用户可见启动」从旧引擎死亡时起算。
+                        // 旧实现只有 Healthy 分支一个重置点，健康跑超 5 分钟后崩溃，
+                        // 第一次重试就会在循环顶部被误判「启动超时」直接 Failed。
+                        userVisibleBootT0 = System.currentTimeMillis()
                     }
                 } else if (proc.exitFuture.isDone) {
                     // 启动期内进程自己死了——唯一进入自愈判定的信号
@@ -735,6 +751,38 @@ class EngineSupervisor(private val ctx: Context) {
                 }
             }
             deterministicFailure?.let { sig ->
+                // ⚠️ v1.4.15：插件导致「装完就起不来」的快速通道。
+                // ProfileGuardian 要求同签名连续 5 次失败才回滚，而每轮要跑满 45s
+                // 健康检查 —— 用户等 4 分钟才恢复正常，观感就是「装了插件 App 废了」。
+                // 这里在连续 FAST_ISOLATE_STREAK 次启动失败后，先尝试摘掉最近安装的
+                // 第三方 bundle（只动一个、带备份），成功则立刻给它一轮干净的启动额度。
+                if (backoffIndex + 1 >= PluginRecovery.FAST_ISOLATE_STREAK &&
+                    fastIsolations < PluginRecovery.MAX_FAST_ISOLATIONS
+                ) {
+                    val isolated = runCatching {
+                        PluginRecovery.isolateRecentBundleOnBootFailure(ctx)
+                    }.getOrNull()
+                    if (isolated != null) {
+                        fastIsolations++
+                        recoveredPlugin = isolated.packageName
+                        Log.e(
+                            TAG,
+                            "boot failure: isolated recently installed plugin " +
+                                "${isolated.packageName} (reason=${isolated.reason})",
+                        )
+                        runCatching {
+                            EngineLog.append(
+                                logFile(),
+                                "[plugin] isolated ${isolated.packageName} after " +
+                                    "${backoffIndex + 1} failed boot(s) — engine could not start",
+                            )
+                        }
+                        // 不重置 backoffIndex（审查 P2）：重置会让下一轮失败立即再次
+                        // 满足隔离条件；保留它配合 fastIsolations 上限形成真正的节流。
+                        BootTrace.fail(ctx, "isolated plugin ${isolated.packageName}")
+                        // 不 return：继续走下面统一的退避，但额度已重置
+                    }
+                }
                 when (
                     runCatching { guardian.onFailure(sig) }
                         .getOrElse { ProfileGuardian.Action.NONE }
