@@ -169,7 +169,7 @@ dsh-android-v1.4.18-x86_64-release.apk
 - **安装包表**：每个 APK 的架构（arm64-v8a / x86_64）、类型（release / debug）、大小、
   SHA-256，方便下载后校验。
 - **签名与安装**：正式 / debug 签名区别、旧证书升级失败时的处理、`apksigner` 校验命令；
-  末尾附贡献者与 GitHub compare 链接。
+  末尾附「本次更新贡献者」与「项目累计 Top 10」两张清单，以及 GitHub compare 链接。
 
 > 该脚本只读 git 历史与 `apk/` 产物，不接触任何签名材料；tag 发布仍会先校验
 > tag 与 `versionName` 一致。

@@ -15,7 +15,7 @@
 #   · edge 模式：变更范围 = edge tag..HEAD（即上次 edge 之后的提交）；没有 edge 时取最近 30 个
 #   · 按 feat/fix/perf/refactor/build/ci/docs/test/style 分类
 #   · 安装包表：文件名 / 架构 / 类型 / 大小 / SHA-256
-#   · 版本信息、贡献者、compare 链接；所有内容写入输出文件（供 body_path 使用）
+#   · 版本信息、贡献者（本次更新 + 项目累计 Top 10）、compare 链接；所有内容写入输出文件（供 body_path 使用）
 set -euo pipefail
 
 MODE="${1:-tag}"
@@ -68,15 +68,28 @@ fi
 if [ -n "$RANGE" ]; then
   LOG_ARGS=(--no-merges "$RANGE")
   COUNT=$(git rev-list --count --no-merges "$RANGE")
-  CONTRIBUTORS=$(git log --no-merges --pretty='%an' "$RANGE" | sort -u | tr '\n' ',' | sed 's/,/, /g; s/, $//')
 else
   LOG_ARGS=(--no-merges -n 30 HEAD)
   COUNT=$(git rev-list --count --no-merges -n 30 HEAD)
-  CONTRIBUTORS=$(git log --no-merges -n 30 --pretty='%an' HEAD | sort -u | tr '\n' ',' | sed 's/,/, /g; s/, $//')
 fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+
+# 贡献者：本次更新（按提交数降序）+ 全项目累计 Top 10
+: > "$TMP/contrib-update.md"
+git log "${LOG_ARGS[@]}" --pretty='%an' | sed '/^[[:space:]]*$/d' | sort | uniq -c \
+  | sort -k1,1nr -k2,2 | while read -r n author; do
+      printf -- '- %s（%s 次提交）\n' "$author" "$n" >> "$TMP/contrib-update.md"
+    done
+
+: > "$TMP/contrib-top.md"
+rank=0
+git log --no-merges --pretty='%an' HEAD | sed '/^[[:space:]]*$/d' | sort | uniq -c \
+  | sort -k1,1nr -k2,2 | head -10 | while read -r n author; do
+      rank=$((rank + 1))
+      printf '| %d | %s | %s |\n' "$rank" "$author" "$n" >> "$TMP/contrib-top.md"
+    done
 
 for key in feat fix perf refactor build ci docs test style other; do
   : > "$TMP/$key.md"
@@ -187,7 +200,23 @@ PLUGIN_REF="${HARDSSH_REF:-}"
   fi
   echo "## 贡献者"
   echo ""
-  echo "${CONTRIBUTORS:-—}"
+  echo "### 本次更新"
+  echo ""
+  if [ -s "$TMP/contrib-update.md" ]; then
+    cat "$TMP/contrib-update.md"
+  else
+    echo "—"
+  fi
+  echo ""
+  echo "### 项目累计 Top 10"
+  echo ""
+  if [ -s "$TMP/contrib-top.md" ]; then
+    echo "| # | 贡献者 | 提交数 |"
+    echo "| --- | --- | --- |"
+    cat "$TMP/contrib-top.md"
+  else
+    echo "—"
+  fi
   echo ""
   echo "## 完整对比"
   echo ""
