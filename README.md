@@ -1,4 +1,4 @@
-﻿# DSH Mobile （Deepseek-harness-Mobile)
+# DSH Mobile （Deepseek-harness-Mobile)
 
 <p align="center">
   <img src="docs/promo/dsh-mobile-github.png" alt="DSH Mobile — DeepSeek Harness for Android" width="100%">
@@ -65,6 +65,19 @@ DSH Mobile 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harnes
 - 搜索结果按兼容性过滤，减少装上才发现不能用的试错
 - 安装过程显示进度与失败原因，完成后立即出现在 WebUI 插件面板
 - **插件扩展 Agent 的能力，扩展中心提供命令行环境**：两套机制各司其职，按需组合
+
+### 🔐 内置 SSH 远程工作区：手机连服务器改代码
+
+默认内置 [@tiphareth/dsh-hardssh](https://github.com/tiphareth0/dsh-hardssh)（构建时由 CI 从 GitHub
+固定提交拉取源码并编译进 runtime，**插件源码不在本仓库**）：
+
+- **左侧栏「SSH 工作区」**：添加服务器（支持从 `~/.ssh/config` 导入），把远端目录绑定为工作区；绑定后会话里的 `read` / `write` / `edit` / `bash` **直接跑在服务器上**，改代码、跑测试、看日志都不用离开手机
+- **右侧栏「SSH」**：Web 终端（xterm）、文件上传下载、本地端口转发隧道、远端命令
+- **Agent 工具**：`ssh_list` / `ssh_exec` / `ssh_upload` / `ssh_download` / `ssh_tunnel` / `ssh_cluster`，以及 `remote_ls` / `remote_search` / `remote_status`
+- 主机与凭据留在应用私有目录；引擎仍只监听 `127.0.0.1`，远程能力来自出站连接
+- 升级插件只需改 `.github/workflows/android-build.yml` 里的 `HARDSSH_REF`
+
+详见 [docs/SSH.md](docs/SSH.md)。
 
 ### 🖥️ 完整 Agent 任务执行：不是只能聊天的壳
 
@@ -149,6 +162,7 @@ Agent 通过只监听 `127.0.0.1:3083` 的能力桥操作手机，所有调用�
 | 文档 | 内容 |
 |---|---|
 | [无障碍控制](docs/ACCESSIBILITY.md) | 读屏/点击/输入/滑动/长按/拖拽等 21 种原语；多层视觉兜底、每步验证；实测 ~1.45s/步 |
+| [SSH 远程工作区](docs/SSH.md) | 内置 @tiphareth/dsh-hardssh：远端工作区、Web 终端、隧道与 `ssh_*` 工具；CI 从 GitHub 构建 |
 | [闭环设计笔记](docs/LOCAL_CLOSED_LOOP.md) | 端侧决策引擎的设计与演进记录 |
 | [竖屏 UI 插件](docs/NARROW_UI.md) | 侧栏全宽 / 设置面板重构 / 右侧面板全屏（三个客户端插件） |
 | [局域网 WebUI](docs/LAN_WEBUI.md) | 反向代理、6 位验证码、常驻提醒与关闭链路 |

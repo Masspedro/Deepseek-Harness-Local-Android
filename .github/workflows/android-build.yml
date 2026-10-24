@@ -4,7 +4,8 @@ name: android-build
 # v1.2.120 · 2026-10-13 — 全量触发 + 结果监视
 #
 # 双架构矩阵（arm64-v8a 真机 / x86_64 模拟器）：
-#   collect-runtime —— 从 Termux 仓库收集对应架构 node 运行时 → runtime.zip
+#   build-hardssh-plugin —— 从 GitHub 固定 ref 拉取 @tiphareth/dsh-hardssh 源码并构建
+#   collect-runtime —— 从 Termux 仓库收集对应架构 node 运行时 + 注入内置 SSH 插件 → runtime.zip
 #   build-apk       —— 注入 runtime.zip 进 assets → gradle -Pabi=... 出 APK
 #   release         —— 构建成功后，双架构 APK 自动发到本仓库 Releases（v1.2.120）
 #   build-monitor   —— 汇总各 legs 结果到 Step Summary，任一失败即整红
@@ -25,6 +26,12 @@ on:
     - cron: "30 17 * * *"   #  nightly · 01:30 Asia/Shanghai
   workflow_dispatch:
 
+env:
+  # 内置 SSH 远程工作区插件：源码不在本仓库，构建时从 GitHub 按固定提交拉取。
+  # 升级插件 = 改 HARDSSH_REF（commit SHA 最稳；也接受 tag/分支），其余步骤不用动。
+  HARDSSH_REPO: tiphareth0/dsh-hardssh
+  HARDSSH_REF: de14f1ac1c43c403c9eefdb1decad5a37e4d2fae
+
 permissions:
   contents: read   # release 段仍注释；启用时在该 job 内单独提权
 
@@ -33,6 +40,55 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # 内置 SSH 远程工作区插件（@tiphareth/dsh-hardssh）
+  #
+  # 设计约束（用户要求）：插件源码不进入本仓库 —— CI 在构建时从 GitHub 拉取
+  # 固定 ref，构建产物只以 runtime.zip 内文件的形式进入 APK。
+  # 纯 JS 包（ssh2/ws 也是纯 JS），与 ABI 无关，因此只构建一次，两个架构复用。
+  # ---------------------------------------------------------------------------
+  build-hardssh-plugin:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 检出本仓库（打包脚本）
+        uses: actions/checkout@v4
+
+      - name: 拉取插件源码 ${{ env.HARDSSH_REPO }}@${{ env.HARDSSH_REF }}
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.HARDSSH_REPO }}
+          ref: ${{ env.HARDSSH_REF }}
+          path: hardssh-src
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 安装 pnpm（与插件仓库 packageManager 对齐）
+        run: |
+          npm install -g pnpm@11.24.0
+          pnpm --version
+
+      - name: 构建插件
+        working-directory: hardssh-src
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @tiphareth/dsh-hardssh build
+
+      - name: 组装 runtime 部署单元
+        env:
+          HARDSSH_PLUGIN_REF: ${{ env.HARDSSH_REF }}
+        run: |
+          chmod +x scripts/pack-hardssh-plugin.sh
+          ./scripts/pack-hardssh-plugin.sh hardssh-src/packages/dsh-hardssh hardssh-plugin
+          tar -czf hardssh-plugin.tar.gz -C hardssh-plugin .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hardssh-plugin
+          path: hardssh-plugin.tar.gz
+          retention-days: 1
+
   collect-runtime:
     strategy:
       fail-fast: false
@@ -43,10 +99,23 @@ jobs:
           - termux_arch: x86_64
             abi: x86_64
     runs-on: ubuntu-24.04
+    needs: [build-hardssh-plugin]
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: hardssh-plugin
+          path: .
+
+      - name: 解包内置 SSH 插件
+        run: |
+          mkdir -p hardssh-plugin
+          tar -xzf hardssh-plugin.tar.gz -C hardssh-plugin
+
       - name: 收集 Termux Node 运行时（${{ matrix.termux_arch }}）
+        env:
+          HARDSSH_PLUGIN_DIR: ${{ github.workspace }}/hardssh-plugin
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq apt dpkg-dev zip
@@ -78,7 +147,19 @@ jobs:
             echo "::error::runtime 混入宿主 Linux ripgrep"
             exit 1
           fi
-          echo "bash/rg/SONAME/wrapper runtime closure OK"
+          # 内置 SSH 远程工作区插件（@tiphareth/dsh-hardssh）：宿主代码 + 浏览器
+          # bundle + 自己的 patch 层 + 两个第三方依赖都必须在包里；App 侧依赖
+          # 这些固定路径启用插件，缺一个就静默失去 SSH 能力，因此在 CI 挡住。
+          SSH_PKG=runtime-check/lib/node_modules/@tiphareth/dsh-hardssh
+          for f in lib/index.js lib/fs.js lib/subprocess.js lib/client.js \
+                   cordis.patch.yml node_modules/ssh2/package.json node_modules/ws/package.json; do
+            test -f "$SSH_PKG/$f" || { echo "::error::内置 SSH 插件缺少 $f"; exit 1; }
+          done
+          if find "$SSH_PKG" -type l -print -quit | grep -q .; then
+            echo "::error::内置 SSH 插件含符号链接（Android 侧要求实体文件）"
+            exit 1
+          fi
+          echo "bash/rg/SONAME/wrapper + 内置 SSH 插件 runtime closure OK"
 
       - name: 计算校验值
         id: meta
@@ -258,7 +339,7 @@ jobs:
             架构：arm64-v8a（真机）+ x86_64（模拟器）
             签名：debug（此 Fork 的自动分发渠道）
 
-            - 已通过：运行时闭包校验、so 16KB 页对齐、APK ABI 校验、i18n 一致性
+            - 已通过：运行时闭包校验（含内置 SSH 插件）、so 16KB 页对齐、APK ABI 校验、i18n 一致性
             - 安装注意：与 release 签名包签名不同，不能互相覆盖安装
 
   # ---------------------------------------------------------------------------
@@ -267,7 +348,7 @@ jobs:
   # ---------------------------------------------------------------------------
   build-monitor:
     name: Build monitor (Zusammenfassung)
-    needs: [collect-runtime, build-apk]
+    needs: [build-hardssh-plugin, collect-runtime, build-apk]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -277,12 +358,13 @@ jobs:
             echo "## Build-Monitor — ${{ github.workflow }} @ ${{ github.ref_name }} (${{ github.event_name }})"
             echo "| Leg | Ergebnis |"
             echo "|---|---|"
+            echo "| build-hardssh-plugin (GitHub ${{ env.HARDSSH_REF }}) | ${{ needs.build-hardssh-plugin.result }} |"
             echo "| collect-runtime (aarch64 + x86_64) | ${{ needs.collect-runtime.result }} |"
             echo "| build-apk (arm64-v8a + x86_64) | ${{ needs.build-apk.result }} |"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fehlschlag durchstellen
-        if: needs.collect-runtime.result != 'success' || needs.build-apk.result != 'success'
+        if: needs.build-hardssh-plugin.result != 'success' || needs.collect-runtime.result != 'success' || needs.build-apk.result != 'success'
         run: |
-          echo "::error::Build leg failed (collect-runtime=${{ needs.collect-runtime.result }}, build-apk=${{ needs.build-apk.result }})"
+          echo "::error::Build leg failed (hardssh=${{ needs.build-hardssh-plugin.result }}, collect-runtime=${{ needs.collect-runtime.result }}, build-apk=${{ needs.build-apk.result }})"
           exit 1

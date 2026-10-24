@@ -93,6 +93,101 @@ object EngineConfig {
         File(engineRoot(ctx), "lib/node_modules/@deepseek-ai/dsh/lib/bin.js")
 
     /**
+     * 内置 SSH 远程工作区插件（@tiphareth/dsh-hardssh）的包名。
+     *
+     * 插件由 CI 从 GitHub 固定 ref 构建，作为 runtime.zip 的一部分躺在引擎目录
+     * （`lib/node_modules`）里，因此与引擎同版本、同生命周期：升级 runtime 即
+     * 升级插件，而 profiles / sessions 等用户数据不受影响。
+     */
+    const val SSH_PLUGIN_PACKAGE = "@tiphareth/dsh-hardssh"
+
+    fun sshPluginDir(ctx: android.content.Context): File =
+        File(engineRoot(ctx), "lib/node_modules/$SSH_PLUGIN_PACKAGE")
+
+    /**
+     * 让内置 SSH 插件能被 web profile 解析，并返回它的 patch 层文件；不可用时返回 null。
+     *
+     * ## 为什么需要一条符号链接
+     * dsh 的 Loader 以 profile 目录为 baseUrl 解析插件名（Node 的父目录
+     * node_modules 查找）。内置插件在 `engine/lib/node_modules`，不在 profile 的
+     * 查找链上；在 `$DSH_HOME/profiles/node_modules/@tiphareth/dsh-hardssh` 放一条
+     * 指向引擎目录的链接，既让 patch 里的 `@tiphareth/dsh-hardssh` / `/fs` /
+     * `/subprocess` 三个名字可解析，又不复制文件 —— runtime 升级后链接自动指向
+     * 新版本。
+     *
+     * ## 为什么不写 profile 的 dsh.profile.bundles
+     * bundle 是「用户安装」语义（插件管理器按它升级/卸载），而这是随 APK 发布的
+     * 内置能力。App 在启动参数里追加插件自己的 patch 层（repeatable `--patch`），
+     * 启用/停用只影响本次启动，不改写用户 profile。用户自己用社区插件中心装过
+     * 同名插件时则让位给 bundle —— 否则同一组 insert 行会被应用两次（重复 id、
+     * 服务冲突）。
+     *
+     * ## 失败即降级
+     * 链接创建失败（个别 ROM 的文件系统限制）时返回 null：SSH 能力不启用，但引擎
+     * 与其它功能照常启动。内置能力绝不能让整个引擎起不来。
+     */
+    fun ensureBundledSshPlugin(ctx: android.content.Context): File? {
+        val pkg = sshPluginDir(ctx)
+        val patch = File(pkg, "cordis.patch.yml")
+        if (!File(pkg, "lib/index.js").isFile || !patch.isFile) {
+            Log.w(TAG, "bundled ssh plugin missing at ${pkg.absolutePath}; ssh workspace disabled")
+            return null
+        }
+        if (profileManagesSshPlugin(ctx)) {
+            Log.i(TAG, "ssh plugin is managed by the web profile bundle; built-in patch layer skipped")
+            return null
+        }
+        val link = File(File(dshHome(ctx), "profiles/node_modules"), SSH_PLUGIN_PACKAGE)
+        val ok = runCatching {
+            link.parentFile?.mkdirs()
+            if (Files.isSymbolicLink(link.toPath())) {
+                val target = runCatching { Files.readSymbolicLink(link.toPath()) }.getOrNull()
+                val same = target != null && runCatching {
+                    File(target.toString()).canonicalFile == pkg.canonicalFile
+                }.getOrDefault(false)
+                if (same) return@runCatching true
+                Files.delete(link.toPath())   // 旧引擎路径 / 失效目标
+            } else if (link.exists()) {
+                // 不是本层创建的实体目录：可能来自手工安装，绝不覆盖用户文件。
+                Log.w(TAG, "ssh plugin link path is occupied by a real directory: ${link.absolutePath}")
+                return@runCatching false
+            }
+            Files.createSymbolicLink(link.toPath(), pkg.toPath())
+            File(link, "lib/index.js").isFile
+        }.getOrElse { e ->
+            Log.w(TAG, "ssh plugin link failed: ${e::class.simpleName}: ${e.message}")
+            false
+        }
+        if (!ok) {
+            Log.w(TAG, "bundled ssh plugin present but not resolvable from the web profile")
+            return null
+        }
+        Log.i(TAG, "bundled ssh plugin enabled: ${pkg.absolutePath}")
+        return patch
+    }
+
+    /**
+     * profile 是否已经自己管理了 SSH 插件（社区插件中心安装）。
+     *
+     * 只看真正会生效的 bundle 列表与 profile 本地 node_modules：dependencies 里
+     * 残留但没进 bundles 的情况不算（那种状态下 dsh 不会应用插件的 patch 层）。
+     */
+    private fun profileManagesSshPlugin(ctx: android.content.Context): Boolean = runCatching {
+        val profileDir = File(dshHome(ctx), "profiles/web")
+        val manifest = File(profileDir, "package.json")
+        if (manifest.isFile) {
+            val bundles = org.json.JSONObject(manifest.readText())
+                .optJSONObject("dsh")?.optJSONObject("profile")?.optJSONArray("bundles")
+            if (bundles != null &&
+                (0 until bundles.length()).any { bundles.optString(it) == SSH_PLUGIN_PACKAGE }
+            ) {
+                return@runCatching true
+            }
+        }
+        File(File(profileDir, "node_modules"), SSH_PLUGIN_PACKAGE).isDirectory
+    }.getOrDefault(false)
+
+    /**
      * 用户数据根（v1.2.99）：**放在公开目录**，卸载重装不丢。
      *
      * ## 为什么外置

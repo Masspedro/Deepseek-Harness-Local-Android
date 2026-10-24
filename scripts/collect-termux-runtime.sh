@@ -761,6 +761,17 @@ rm -rf "$ROOT/lib/node_modules/sherpa-onnx-linux-x64" \
        "$ROOT/lib/node_modules/@img/sharp-libvips-linux-x64" \
        "$ROOT/lib/node_modules/node-addon-require-builtin-linux-x64-gnu" 2>/dev/null || true
 
+# ---- 4.5 内置 SSH 远程工作区插件（@tiphareth/dsh-hardssh）----
+# 源码不在本仓库：CI 的 build-hardssh-plugin job 从 GitHub 固定 ref 构建后经
+# HARDSSH_PLUGIN_DIR 传入。注入逻辑单独放在 inject-hardssh-plugin.sh（可独立测试）；
+# 是否启用由 App 启动参数决定（不传 --patch 就只是躺在包里，不加载、不占内存）。
+# 未设置时跳过，保持手工构建的最小 runtime 可用。
+if [ -n "${HARDSSH_PLUGIN_DIR:-}" ]; then
+  bash "$(dirname "$0")/inject-hardssh-plugin.sh" "$ROOT" "$HARDSSH_PLUGIN_DIR"
+else
+  echo "note: HARDSSH_PLUGIN_DIR 未设置 —— runtime 不含内置 SSH 远程工作区插件"
+fi
+
 # ---- 5. 打 zip ----
 #
 # ⚠️ 出包前**硬断言 node 架构**（v1.3.3，issue #23）。
