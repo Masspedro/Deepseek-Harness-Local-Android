@@ -13,6 +13,34 @@
 - **新项目 README 可引用本仓库**（MIT），搬运时注明出处。
 
 
+## v1.4.18 待发（原生设置界面横屏 / 平板适配，2026-10-24）
+- **需求**：应用自身的设置界面固定竖屏，平板横屏下无法正常使用。
+- **根因**：5 个原生页面在 `onCreate` 里硬编码 `SCREEN_ORIENTATION_PORTRAIT`
+  （Settings / About / PluginStore / ExtensionStore / UserPrompt）；Manifest
+  本身没有 `screenOrientation`。ASR / 语音服务原先跟随系统、与设置页不一致，本次一并统一；
+  文件编辑页保持跟随系统（横屏编辑场景刻意保留）。
+- **方案（宝宝拍板：B 双栏 + 平板默认自动 + 全部原生页）**：
+  · 新增 `OrientationPrefs.applyTo(activity)`，7 个原生页统一跟随三态偏好；
+    设置页切换后**立即** apply（toast 改「已立即生效」，三语同步）。
+  · 平板（**从未存过偏好**且 sw>=600dp）默认 `AUTO`；显式选择永远优先，手机默认竖屏不变。
+    首次引导在平板上默认选中「自动」。
+  · 840dp 断点：设置页双栏（左「显示 + 权限中心」，右「扩展 + 其他」），宽窗内容
+    最大 1080dp、窄窗 680dp；关于 / ASR / 语音 / 引导 760dp；插件中心 / 扩展中心 900dp。
+  · 新增 `MaxWidthLinearLayout`（`onMeasure` clamp + `layout_gravity=center_horizontal`）。
+  · **不用 `layout-land`**：这些 Activity 声明了 `configChanges`，转屏不会重新
+    inflate；改在 `SettingsActivity.onConfigurationChanged` 里切列方向/权重，
+    保留滚动位置、已打开对话框和进行中的导出/安装任务。
+- **验证（本机能做的）**：新增 `scripts/probes/_test_responsive_native_ui.py`
+  58 项全过；`check-i18n.py` 全过；`aapt2 compile` + 全资源 `link` 通过（新 id 已生成）；
+  `MaxWidthLinearLayout` / `OrientationPrefs` 用 kotlinc 对 `android.jar` 编译通过；
+  修改过的 Kotlin 文件过解析检查（无语法错误）。
+- **未验证**：本机没有可用的 Gradle 发行版 / AGP/Kotlin 依赖缓存（缓存里是
+  AGP 8.10/9.2、Kotlin 2.3，与项目锁定的 8.5.2 / 1.9.24 不一致，且 shell 无外网），
+  无法跑 `assembleDebug`；模拟器截图矩阵待构建后补。
+- **文件**：`OrientationPrefs.kt`、7 个设置类 Activity + 引导页默认值、
+  `MaxWidthLinearLayout.kt`、7 个 layout、三语 `strings.xml`、`.gitignore` 白名单、
+  新探针脚本。
+
 ## v1.4.17 追加（用户反馈：破甲插件——改系统提示词 + skill 的——完全不可用）
 - **取证（registry 实测）**：生态里的「换芯」插件（@knyazevai/dsh-system-prompt、
   @monotykamary/dsh-system-prompt 等十余个）是**整套引擎的 fork 重发布**：
