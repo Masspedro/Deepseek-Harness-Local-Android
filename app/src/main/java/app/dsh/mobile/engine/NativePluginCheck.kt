@@ -131,8 +131,43 @@ object NativePluginCheck {
             }
         }
 
+        // 7) 整栈 fork 插件（v1.4.17，用户反馈「改系统提示词 + 提供 skill 的插件完全不可用」）
+        //
+        // 生态里有一类「换芯」插件（@knyazevai/dsh-system-prompt、
+        // @monotykamary/dsh-system-prompt 等）：导出官方同名 Service 的 fork 实现，
+        // 但 imports 与 peerDependencies 全部指向**作者自己 fork 的引擎核心**
+        // （cordis / dsh-llm / dsh-scope / dsh-invariants 的非官方作用域版本）。
+        // 它们是为作者的 fork 引擎写的，装在官方引擎上三层全断：
+        //   ① `dsh` 字段为空（无 bundle patch 声明）→ `dsh plugin add` 装上后
+        //      没有任何 entry 挂载，纯装等于没装；
+        //   ② 用户手工在 profile patch 里换芯会被 applyEntryPatches 的 name
+        //      匹配守卫**静默跳过**（name 与 base 行不一致，v1.4.7 踩过的同一机制）；
+        //   ③ fork 的 peerDependencies 在 autoInstallPeers=false 下不会自动安装，
+        //      即便装上，fork cordis 与官方 cordis 同进程共存也无法工作。
+        // 判据：peerDependencies 里出现「非 @deepseek-ai 作用域」的引擎核心组件。
+        val peers = manifest.optJSONObject("peerDependencies")
+        if (peers != null) {
+            val forks = peers.keys().asSequence().filter { dep ->
+                val scope = if (dep.startsWith("@")) dep.substringBefore('/') else ""
+                scope != "@deepseek-ai" && dep.substringAfter('/').substringBefore('@') in
+                    FORK_ENGINE_COMPONENTS
+            }.toList()
+            if (forks.isNotEmpty()) {
+                reasons += "engine fork dependency: ${forks.joinToString(", ")}"
+            }
+        }
+
         return if (reasons.isEmpty()) Result.PureJs else Result.Risk(reasons.distinct())
     }
+
+    /**
+     * 引擎核心组件的「裸名」（去掉作用域后的部分）。peerDependencies 里这些组件
+     * 的作用域不是 @deepseek-ai，即判定为 fork 引擎插件。
+     */
+    private val FORK_ENGINE_COMPONENTS = setOf(
+        "cordis", "dsh-llm", "dsh-scope", "dsh-invariants",
+        "dsh-system-prompt", "dsh-schemastery", "schemastery",
+    )
 
     /** 包名里的平台标记（用于识别平台专用 optionalDependencies） */
     private val PLATFORM_TOKENS = listOf(

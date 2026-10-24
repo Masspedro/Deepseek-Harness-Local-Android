@@ -173,7 +173,7 @@ Normal mode is the default; choose Shizuku or Root only when the task requires a
 
 ## 📦 Installation
 
-**Download a Release (recommended)**: grab the APK from [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (pick `arm64-v8a` for phones; latest is **v1.4.16**), then install with unknown sources allowed. Any v1.0.0+ build can be installed over the top.
+**Download a Release (recommended)**: grab the APK from [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (pick `arm64-v8a` for phones; latest is **v1.4.17**), then install with unknown sources allowed. Any v1.0.0+ build can be installed over the top.
 
 > 📦 **Which file to pick**: normal users want **`dsh-mobile-*-arm64-v8a.apk`** (release-signed).
 > Names ending in **`-debug`** are debug-signed builds - for log capture, or for users already on a

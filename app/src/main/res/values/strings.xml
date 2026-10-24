@@ -163,6 +163,10 @@ On Android these usually cannot be compiled (no toolchain headers at the expecte
 
 Install anyway?</string>
     <string name="plugin_install_anyway">Install anyway</string>
+
+    <string name="download_started">Download started: %1$s</string>
+    <string name="download_failed">Download failed: %1$s</string>
+    <string name="download_blob_unsupported">This download method (blob) was not intercepted. Try the single-file download instead.</string>
     <string name="plugin_empty">No compatible community plugins yet — they will appear here automatically</string>
     <string name="plugin_search_hint">Search community plugins…</string>
     <string name="plugin_searching">Searching npm…</string>

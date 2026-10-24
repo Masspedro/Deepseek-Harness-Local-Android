@@ -162,6 +162,10 @@
 
 仍要安装吗？</string>
     <string name="plugin_install_anyway">仍然安装</string>
+
+    <string name="download_started">开始下载：%1$s</string>
+    <string name="download_failed">下载失败：%1$s</string>
+    <string name="download_blob_unsupported">该下载方式（blob）未被拦截，请改用单文件下载。</string>
     <string name="plugin_empty">暂无兼容的社区插件——上线后会自动出现在这里</string>
     <string name="plugin_search_hint">搜索社区插件…</string>
     <string name="plugin_searching">正在搜索 npm…</string>

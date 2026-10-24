@@ -164,6 +164,10 @@ Unter Android lassen sich diese meist nicht kompilieren (fehlende Toolchain-Head
 
 Trotzdem installieren?</string>
     <string name="plugin_install_anyway">Trotzdem installieren</string>
+
+    <string name="download_started">Download gestartet: %1$s</string>
+    <string name="download_failed">Download fehlgeschlagen: %1$s</string>
+    <string name="download_blob_unsupported">Diese Download-Methode (blob) wurde nicht abgefangen. Nutze stattdessen den Einzeldatei-Download.</string>
     <string name="plugin_empty">Noch keine kompatiblen Community-Plugins — sie erscheinen hier automatisch</string>
     <string name="plugin_search_hint">Community-Plugins suchen …</string>
     <string name="plugin_searching">npm wird durchsucht …</string>

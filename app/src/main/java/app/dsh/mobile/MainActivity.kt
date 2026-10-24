@@ -20,6 +20,7 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import app.dsh.mobile.engine.BootTrace
+import app.dsh.mobile.engine.WebViewDownloader
 import app.dsh.mobile.engine.EngineSupervisor
 import app.dsh.mobile.engine.Privilege
 import app.dsh.mobile.service.EngineService
@@ -338,6 +339,63 @@ class MainActivity : Activity() {
                 }
             }
         }
+        // ── 下载支持（v1.4.17，issue #37）──────────────────────────────────
+        // 用户报告：文件分享插件的「下载」按钮点了没反应。根因是宿主从未实现
+        // DownloadListener——Android WebView 收到下载请求时若无监听器**直接静默丢弃**。
+        // 且 App 只声明了 MANAGE_EXTERNAL_STORAGE（API 30 权限），Android 10 的设置里
+        // 既没有「所有文件访问」也没有普通存储项，用户无从授权自救。
+        //
+        // 修复分两条路径（详见 WebViewDownloader）：
+        //   · http(s) 直链 → 系统 DownloadManager 代写，任何 API 级别都不需要存储权限；
+        //     必须把 WebView 会话的 Cookie 带上，否则下载到的是登录页 HTML。
+        //   · blob:（插件的「打包下载」）→ DownloadListener 根本收不到，由注入页面的
+        //     JS 桥（onPageFinished 里注入）把 blob 转 base64 交给 DshAndroidDownloader。
+        webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+            if (url.startsWith("blob:")) {
+                // 理论上桥会拦掉 blob 点击；走到这里说明页面绕过了桥（如 location 赋值）
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        getString(R.string.download_blob_unsupported),
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
+                logWebView("download: blob URL reached listener without bridge")
+                return@setDownloadListener
+            }
+            val err = WebViewDownloader.enqueueHttpDownload(
+                this, url, userAgent, contentDisposition, mimeType,
+            )
+            runOnUiThread {
+                Toast.makeText(
+                    this,
+                    getString(
+                        if (err == null) R.string.download_started else R.string.download_failed,
+                        err ?: "",
+                    ),
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
+        webView.addJavascriptInterface(
+            object : Any() {
+                /** JS 桥回调：blob 转 base64 后落盘到公共 Download/。 */
+                @android.webkit.JavascriptInterface
+                fun saveBase64(mimeType: String?, base64: String?, fileName: String?): String {
+                    val data = base64 ?: return "no data"
+                    // 落盘在后台线程做；JS 侧同步拿回执（少量阻塞可接受，blob 通常 < 数十 MB）
+                    return runCatching {
+                        WebViewDownloader.saveBase64(
+                            applicationContext,
+                            mimeType ?: "",
+                            data,
+                            fileName ?: "",
+                        )
+                    }.getOrElse { e -> e.message ?: "save failed" }
+                }
+            },
+            WebViewDownloader.BRIDGE_NAME,
+        )
         webView.webViewClient = object : WebViewClient() {
             override fun onReceivedError(
                 view: WebView?, request: WebResourceRequest?, error: android.webkit.WebResourceError?,
@@ -389,6 +447,12 @@ class MainActivity : Activity() {
                 if (view == null) return
                 // 环境自检：把 WebView 版本与关键 API 存在性写进日志，用户报障时一眼定位
                 view.evaluateJavascript(WEBVIEW_SELFCHECK_JS, null)
+                // v1.4.17（issue #37）：注入 blob 下载桥。每次页面加载后都要重新注入
+                //（导航/刷新会重置页面 JS 环境）。桥只拦 a[download] 且 href 为 blob:
+                // 的点击——插件「打包下载」走的就是这条路。
+                runCatching {
+                    view.evaluateJavascript(WebViewDownloader.bridgeJs(), null)
+                }.onFailure { logWebView("blob bridge inject failed: ${it.message}") }
                 // v1.4.6：视口缩放必须在**启动遮罩收起之前**定稿，并在遮罩之下整页
                 // 重栅格化一次。旧顺序是「先 dismissSplash()、再改 meta」——用户会先看到
                 // 按 initial-scale=1 画好的首屏（含登录/开始使用弹窗），紧接着整页缩放

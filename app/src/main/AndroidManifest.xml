@@ -19,6 +19,14 @@
     <!-- 所有文件访问：普通模式下授权 AI 在共享存储（/sdcard）建目录与读写 ——
          权限中心跳系统设置授予（isExternalStorageManager），引擎进程与 App 同 uid 继承 -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <!-- v1.4.17（issue #37）：blob 下载落盘到公共 Download/ 在 Android 8/9 上需要
+         运行时存储权限（Android 10+ 走 MediaStore 无需权限）。仅按 maxSdk 声明，
+         不影响 Android 10+ 的权限模型。配套 requestLegacyExternalStorage：
+         Android 10 上 targetSdk 28 直接按路径写 /sdcard/Download 需要 legacy 标记。 -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
 
     <!-- ⚠️ Android 11+ 的 package visibility（v1.2.83，调研发现的关键坑）：
          不声明 <queries> 时，App **看不到**用户后来安装的语音识别服务，
@@ -46,7 +54,7 @@
         android:icon="@drawable/ic_launcher"
         android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/Theme.Dsh"
-        android:allowBackup="false">
+        android:allowBackup="false" android:requestLegacyExternalStorage="true">
 
         <!-- v1.2.188：局域网 WebUI「已开启」常驻通知里的关闭按钮。
              exported=false：只接受本应用 PendingIntent 发出的广播，

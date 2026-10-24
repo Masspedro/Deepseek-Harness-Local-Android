@@ -1,5 +1,70 @@
 # AI_CONTEXT
 
+## 新项目交接（2026-10-24）：无障碍控制 / AI 控制独立项目
+- **决定**：宝宝开独立新项目，专注「AI 通过无障碍控制 Android 设备」。
+- **交接文档**：`docs/A11Y_AI_CONTROL_HANDBOOK.md` —— 完整沉淀：
+  场景分级（L1/L2/L3）、架构总览、感知/执行/AI 侧全部经验、10 条血泪规则、
+  工程坑清单（15+ 条）、可复用资产表（8 个组件含路径与行数）、已知未解决问题、
+  命名建议（首选 A11yPilot，备选 DroidHand / 妙手 MiaoShou；OpenHands 已被占用）。
+- **核心资产**（可整体搬走）：DshAccessibilityService(2.6k行)/FastPicker/LocalLoopExecutor(1.5k行)/
+  Framer/ScreenOcr/IconMatcher/PageStateDetector/AgentBridge(2.3k行)。
+- **三条铁律**（新项目第一天写进架构）：验证必须是目标状态而非动作描述；
+  失败先回退到认得的状态、同一步 ≤2 次就换打法；感知分层兜底（树→OCR→帧差）。
+- **新项目 README 可引用本仓库**（MIT），搬运时注明出处。
+
+
+## v1.4.17 追加（用户反馈：破甲插件——改系统提示词 + skill 的——完全不可用）
+- **取证（registry 实测）**：生态里的「换芯」插件（@knyazevai/dsh-system-prompt、
+  @monotykamary/dsh-system-prompt 等十余个）是**整套引擎的 fork 重发布**：
+  · `dsh` 字段为 `{}`（无 bundle patch 声明）→ `dsh plugin add` 装上后没有任何
+    entry 挂载，纯装等于没装；
+  · 导出官方同名 Service 的 fork 实现，但 imports/peerDeps 全指向作者 fork 作用域
+    （@knyazevai/cordis、@monotykamary/dsh-llm/scope/invariants……）；
+  · 用户手工在 profile patch 换芯 → 被 applyEntryPatches 的 **name 匹配守卫**
+    静默跳过（v1.4.7 directory-picker 踩过的同一机制）；
+  · fork 的 peerDeps 在 `autoInstallPeers: false` 下不自动装；装上 fork cordis 也
+    与官方 cordis 同进程无法共存。
+  → 官方引擎上**设计性不兼容**，「完全不可用」是必然结果。
+- **官方替代路径（回复用户指路）**：
+  · persona/人设：v1.4.15 已在 AGENTS.md seed 写明 persona 由用户决定；
+  · 系统提示词组装：官方 `@deepseek-ai/dsh-system-prompt` + `dsh-agent-preset-registry`
+    + 社区 Preset 面板（@linxin666/dsh-client-ui-preset-center）—— 这是引擎支持的定制层；
+  · skill：dsh-skills-manager 类插件可用（v1.4.15 实测装过 @michengai/dsh-skills-manager）。
+- **实现**：`NativePluginCheck` 加第 7 信号 `FORK_ENGINE_COMPONENTS`
+  （cordis/dsh-llm/dsh-scope/dsh-invariants/dsh-system-prompt/schemastery 裸名，
+  作用域非 @deepseek-ai 即判 fork）→ 装前弹「fork 引擎插件不兼容」确认框。
+  `@deepseek-ai` 作用域明确排除（官方组件不误伤）。
+- **测试**：`_test_native_plugin_check.py` 33 项（+5：两个真实 fork manifest 判风险、
+  官方作用域不误伤、源码表存在、作用域排除断言）。
+- **全量**：i18n 全过；**317 项全过**；compileDebugKotlin 成功。并入 v1.4.17 待发。
+
+## v1.4.17（2026-10-24，issue #37：WebView 下载支持）
+- **issue #37**（@yiming-0098，教科书级报告）：文件分享插件下载按钮静默失败。
+  四组证据：dex 无 DownloadListener、Manifest 无存储权限、Android 10 无
+  MANAGE_EXTERNAL_STORAGE op、引擎进程写 /sdcard EACCES。
+  结论：WebView 收到下载请求时无监听器**直接静默丢弃**；且无可授权的权限自救。
+- **修复**（采纳其最小集方案）：
+  · 新增 `engine/WebViewDownloader.kt`：http(s) → DownloadManager（Cookie 透传 +
+    RFC5987 文件名解析 + UA）；blob → 页面级 JS 桥（拦截 a[download]+blob:，
+    fetch→FileReader→base64→addJavascriptInterface）→ API29+ MediaStore /
+    API26-28 直接写（清单加 WRITE/READ_EXTERNAL_STORAGE maxSdk=28 +
+    application 加 requestLegacyExternalStorage="true"）；
+  · MainActivity：setDownloadListener + onPageFinished 注入桥 + JavascriptInterface；
+  · blob 直达 listener 时 toast「未被拦截」提示（页面绕桥的兜底）。
+- **实测（Android 16 模拟器 + CDP 在真实 WebView 页面执行）**：
+  · 桥注册 `object / function` ✅；
+  · blob 两次落盘 `Download/dsh-blob-test.txt` 内容逐字节正确 ✅；
+  · http 直链（本地 attachment 服务 9999）→ DownloadListener 触发 + enqueue
+    （logcat `download enqueued`）✅；文件未落地 = 模拟器 DownloadProvider 对
+    本地回环 + run-as 临时服务的环境限制，非 App 代码问题。
+  · 跨域 a[download]/iframe 不触发 listener（WebView 跨域 download 属性失效 +
+    SPA 拦截），与 issue 场景无关（file-share 的下载是同源 3080）。
+- **已知限制（写进发布说明与 issue 回复）**：大文件 blob 下载占 1.3× 内存，
+  低内存设备可能失败；后续可分块。插件侧 fetch→blob→a[download] 已可用（桥接住）。
+- **验证**：312 项测试全过；i18n 全过；compileDebugKotlin + assembleRelease 成功。
+- **例行清单执行**：发布前跑了 check-issue-replies.py（无未跟进）。
+
+
 ## 例行清单（宝宝确认，2026-10-24 起）
 每次**发布前**固定动作（顺序执行）：
 1. `python scripts/check-issue-replies.py`（需 GITHUB_TOKEN）——扫描用户在我们最后回复
