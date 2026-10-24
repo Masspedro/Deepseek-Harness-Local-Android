@@ -190,8 +190,23 @@ jobs:
             abi: x86_64
     runs-on: ubuntu-24.04
     needs: [collect-runtime]
+    # 正式签名材料（v1.4.18）：GitHub Secrets 注入为环境变量，供下方解码/构建步骤使用。
+    # 未配置时为空字符串 → 只构建 debug；tag 构建会被「tag 构建必须有 release 签名」拦下。
+    env:
+      RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+      RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+      RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+      RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: 解码 release keystore（配置了签名 secret 时）
+        if: env.RELEASE_KEYSTORE_BASE64 != ''
+        run: |
+          mkdir -p keystore
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 -d > keystore/dsh-release.keystore
+          chmod 600 keystore/dsh-release.keystore
+          echo "release keystore ready: $(stat -c%s keystore/dsh-release.keystore) bytes"
 
       - uses: actions/download-artifact@v4
         with:
@@ -223,17 +238,33 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      - name: tag 构建必须有 release 签名
+        if: startsWith(github.ref, 'refs/tags/v') && env.RELEASE_STORE_PASSWORD == ''
+        run: |
+          echo "::error::tag 构建缺少 RELEASE_* secrets，无法生成正式签名包。请在仓库 Settings → Secrets and variables → Actions 配置（见 docs/RELEASE.md）。"
+          exit 1
+
       - name: 构建 APK（${{ matrix.abi }}）
+        env:
+          DSH_RELEASE_STORE_FILE: ${{ github.workspace }}/keystore/dsh-release.keystore
+          DSH_RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          DSH_RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          DSH_RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
           set -o pipefail   # 否则管道 exit code 取 tee 的 0，Gradle 失败会被吞
           gradle -p . assembleDebug -Pabi=${{ matrix.abi }} --stacktrace 2>&1 | tee build-${{ matrix.abi }}.log
+          if [ -n "${DSH_RELEASE_STORE_PASSWORD:-}" ] && [ -f keystore/dsh-release.keystore ]; then
+            gradle -p . assembleRelease -Pabi=${{ matrix.abi }} --stacktrace 2>&1 | tee build-release-${{ matrix.abi }}.log
+          else
+            echo "::notice::no release signing material (RELEASE_* secrets); skipping assembleRelease"
+          fi
 
       - name: Gradle-Log hochladen（Fehlerfall）
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: gradle-log-${{ matrix.abi }}
-          path: build-${{ matrix.abi }}.log
+          path: build*.log
           retention-days: 7
 
       # 防呆自检：真机 16KB 页内核上 p_align=4096 的 so 会 dlopen 失败
@@ -273,12 +304,40 @@ jobs:
           # 同上：PR 上 GITHUB_REF_NAME="1/merge"，斜杠会让 cp 写进不存在的子目录
           cp app/build/outputs/apk/debug/app-debug.apk \
              "dist/dsh-android-${GITHUB_REF_NAME//\//-}-${{ matrix.abi }}-debug.apk"
+          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
+            cp app/build/outputs/apk/release/app-release.apk \
+               "dist/dsh-android-${GITHUB_REF_NAME//\//-}-${{ matrix.abi }}-release.apk"
+          fi
+
+      - name: 校验 release 签名（${{ matrix.abi }}）
+        if: env.RELEASE_STORE_PASSWORD != ''
+        run: |
+          set -euo pipefail
+          APK="dist/dsh-android-${GITHUB_REF_NAME//\//-}-${{ matrix.abi }}-release.apk"
+          test -f "$APK" || { echo "::error::missing signed release apk: $APK"; exit 1; }
+          APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --print-certs "$APK" | tee "release-certs-${{ matrix.abi }}.txt"
+          ACTUAL=$("$APKSIGNER" verify --print-certs "$APK" \
+            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr -d ':' | tr 'A-Z' 'a-z')
+          EXPECTED=$(printf '%s' "${{ vars.RELEASE_CERT_SHA256 }}" | tr -d ':' | tr 'A-Z' 'a-z')
+          if [ -n "$EXPECTED" ] && [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::release certificate mismatch: expected $EXPECTED, got $ACTUAL"
+            exit 1
+          fi
+          echo "release certificate SHA-256: $ACTUAL"
 
       - uses: actions/upload-artifact@v4
         with:
           name: dsh-android-debug-apk-${{ matrix.abi }}
-          path: dist/*.apk
+          path: dist/*-debug.apk
           retention-days: 1   # 仅 job 间传递用，避免 90 天默认堆积百 MB×N（曾堆 32GB）
+
+      - uses: actions/upload-artifact@v4
+        if: env.RELEASE_STORE_PASSWORD != ''
+        with:
+          name: dsh-android-release-apk-${{ matrix.abi }}
+          path: dist/*-release.apk
+          retention-days: 1
 
   # ⚠️ v1.2.106：**取消 CI 自动发 release**。
   #
@@ -349,12 +408,123 @@ jobs:
             - 安装注意：与 release 签名包签名不同，不能互相覆盖安装
 
   # ---------------------------------------------------------------------------
+  # 正式发布（v1.4.18）：tag v* 触发，发布 debug + release 两个变体。
+  # 前置：仓库 Secrets 已配置 RELEASE_*（见 docs/RELEASE.md）；build-apk 里 tag
+  # 构建会强制要求签名材料，缺失即失败，不会产出「看起来能发」的 unsigned 包。
+  # ---------------------------------------------------------------------------
+  publish-release:
+    if: >-
+      startsWith(github.ref, 'refs/tags/v')
+      && github.repository == 'XiaoPb/Deepseek-Harness-Local-Android'
+      && needs.build-apk.result == 'success'
+    needs: [build-apk]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 校验 tag 与 versionName 一致
+        run: |
+          set -euo pipefail
+          V=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
+          test "$GITHUB_REF_NAME" = "v$V" || {
+            echo "::error::tag $GITHUB_REF_NAME does not match v$V — bump versionName/versionCode first"
+            exit 1
+          }
+
+      - name: 下载双架构产物
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dsh-android-*-apk-*
+          merge-multiple: true
+          path: apk/
+
+      - name: 确认双架构 × 双变体齐全
+        run: |
+          set -euo pipefail
+          ls -lh apk/
+          for abi in arm64-v8a x86_64; do
+            test -f "apk/dsh-android-${GITHUB_REF_NAME//\//-}-$abi-release.apk"
+            test -f "apk/dsh-android-${GITHUB_REF_NAME//\//-}-$abi-debug.apk"
+          done
+
+      - name: 发布 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          files: apk/*.apk
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          body: |
+            ## 安装说明
+
+            - `*-release.apk`：**正式签名**，可以覆盖升级旧版本。
+            - `*-debug.apk`：debug 签名，仅用于测试；与正式包证书不同，**不能覆盖正式版**。
+              已装正式版的用户请下载 release 包。
+
+            签名证书 SHA-256：`${{ vars.RELEASE_CERT_SHA256 }}`
+            （CI 已用该变量校验签名；变量未设置时只打印实际值，不阻断发布）
+
+  # ---------------------------------------------------------------------------
+  # Edge（每次 push main）：把最新 debug + release 发到 pre-release "edge"，
+  # 用户不必等正式 tag 就能拿到包；tag v* 仍走上面的正式发布。
+  # 只发布 main（避免 feature 分支覆盖 edge）；缺签名 secrets 时 release 构建
+  # 会被跳过，本 job 直接失败并提示配置，避免发布「只有 debug」的半套。
+  # ---------------------------------------------------------------------------
+  publish-edge:
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && github.ref == 'refs/heads/main'
+      && github.repository == 'XiaoPb/Deepseek-Harness-Local-Android'
+      && needs.build-apk.result == 'success'
+    needs: [build-apk]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dsh-android-*-apk-*
+          merge-multiple: true
+          path: apk/
+
+      - name: 确认双架构 × 双变体齐全
+        run: |
+          set -euo pipefail
+          ls -lh apk/
+          for abi in arm64-v8a x86_64; do
+            test -f "apk/dsh-android-${GITHUB_REF_NAME//\//-}-$abi-debug.apk"
+            test -f "apk/dsh-android-${GITHUB_REF_NAME//\//-}-$abi-release.apk" || {
+              echo "::error::missing signed release apk for $abi — configure RELEASE_* secrets (docs/RELEASE.md)"; exit 1; }
+          done
+
+      - name: 发布 edge 预发布
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: edge
+          name: Edge · ${{ github.sha }}
+          prerelease: true
+          make_latest: false
+          files: apk/*.apk
+          fail_on_unmatched_files: true
+          overwrite_files: true
+          body: |
+            ⚠️ 自动构建（`main` @ `${{ github.sha }}`），未经过正式版本验证。
+
+            - `*-release.apk`：正式签名，**可覆盖升级**。
+            - `*-debug.apk`：debug 签名，仅用于测试，**不能覆盖正式版**。
+
+            正式版本请等 `v*` tag 发布的 Release。
+
+  # ---------------------------------------------------------------------------
   # v1.2.120：构建监视 —— 汇总两只 legs 的结果到 Step Summary，任一腿失败即整红。
   # 这样「构建挂了」不必逐 job 点开找：run 页面顶部就是一张表。
   # ---------------------------------------------------------------------------
   build-monitor:
     name: Build monitor (Zusammenfassung)
-    needs: [build-hardssh-plugin, collect-runtime, build-apk]
+    needs: [build-hardssh-plugin, collect-runtime, build-apk, publish-edge, publish-release]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -367,10 +537,12 @@ jobs:
             echo "| build-hardssh-plugin (GitHub ${{ env.HARDSSH_REF }}) | ${{ needs.build-hardssh-plugin.result }} |"
             echo "| collect-runtime (aarch64 + x86_64) | ${{ needs.collect-runtime.result }} |"
             echo "| build-apk (arm64-v8a + x86_64) | ${{ needs.build-apk.result }} |"
+            echo "| publish-release (tag v*) | ${{ needs.publish-release.result }} |"
+            echo "| publish-edge (push main) | ${{ needs.publish-edge.result }} |"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fehlschlag durchstellen
-        if: needs.build-hardssh-plugin.result != 'success' || needs.collect-runtime.result != 'success' || needs.build-apk.result != 'success'
+        if: needs.build-hardssh-plugin.result != 'success' || needs.collect-runtime.result != 'success' || needs.build-apk.result != 'success' || needs.publish-release.result == 'failure' || needs.publish-edge.result == 'failure'
         run: |
-          echo "::error::Build leg failed (hardssh=${{ needs.build-hardssh-plugin.result }}, collect-runtime=${{ needs.collect-runtime.result }}, build-apk=${{ needs.build-apk.result }})"
+          echo "::error::Build leg failed (hardssh=${{ needs.build-hardssh-plugin.result }}, collect-runtime=${{ needs.collect-runtime.result }}, build-apk=${{ needs.build-apk.result }}, publish-release=${{ needs.publish-release.result }}, publish-edge=${{ needs.publish-edge.result }})"
           exit 1

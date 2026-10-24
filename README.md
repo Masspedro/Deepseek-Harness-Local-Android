@@ -172,6 +172,7 @@ Agent 通过只监听 `127.0.0.1:3083` 的能力桥操作手机，所有调用�
 | [通知与后台行为](docs/NOTIFICATIONS.md) | AI 操作进度、任务完成、局域网提醒、退出彻底化 |
 | [复杂场景实测](docs/COMPLEX_SCENARIOS.md) | 噪声页面、跨应用任务、失败恢复的实测记录 |
 | [快速路径选择](docs/FAST_PATH_PICKER.md) | 端侧 UI 元素选择与判别 |
+| [发布与签名](docs/RELEASE.md) | 正式 key 保管与备份、GitHub Secrets、debug+release 构建、edge/ tag 发布 |
 
 ## 🌟 这些是 Termux 路线给不了的
 

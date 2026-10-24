@@ -36,6 +36,26 @@
   plugin bundle（重装 App 会回退到旧插件，直到 CI 出新包）。
 - **清理**：测试目录/工作区/会话、`/data/local/tmp` 临时文件均已删除，App 回到无工作区初始态。
 
+## v1.4.18 追加（release 签名 + CI debug/release 双构建与发布，2026-10-25）
+- **生成正式 key**：`keystore/dsh-release.keystore`（PKCS12 / RSA 4096 / SHA256withRSA /
+  10000 天 / alias `dsh-release`），证书 SHA-256 `ea844b60…42a91`；口令、base64、本地
+  `release.properties` 全在 gitignore 的 `keystore/`，**未写入任何仓库文档**。
+  ⚠️ 这是**新应用身份**：与已发布旧包（`d28ca4f5…92c8`）不能互相覆盖；旧 key 若找回应优先替换。
+- **Gradle**：`app/build.gradle.kts` 增加 env/`keystore/release.properties` 驱动的
+  `signingConfigs.release`；材料缺失时保持 unsigned，debug/PR 构建不受影响。
+- **CI**（`.github/workflows/android-build.yml`）：
+  · `build-apk` 从 `RELEASE_KEYSTORE_BASE64` 解码 keystore，`assembleDebug` +（有 secrets 时）
+    `assembleRelease`，`apksigner verify --print-certs` 与 `RELEASE_CERT_SHA256` 变量比对；
+    tag 构建缺签名材料直接失败。
+  · `publish-release`：tag `v*` → 正式 Release（双架构 × debug/release）。
+  · `publish-edge`：每次 push `main` → 滚动 pre-release `edge`（同样双架构 × debug/release），
+    方便用户随时拿包；分支/PR 仍只编 debug。
+  · 旧 `release` job（debug 自动发布）保持只对 `jahdaganj02ki-sketch/...` 生效，互不影响。
+- **文档**：新增 `docs/RELEASE.md`（key 保管/备份、GitHub Secrets/Variables、tag 发版步骤、
+  edge 策略、证书校验）；README 文档表已加链接。**Secrets 的实际值只给用户本人，不在仓库。**
+- **待办**：用户需在 GitHub 添加 4 个 Secrets + `RELEASE_CERT_SHA256` 变量；随后推送本仓库提交，
+  main 的 edge 与 tag 正式发布才会出包。本地 `apksigner` 已用真实 APK 验证 key 可用、证书指纹一致。
+
 ## v1.4.18 待发（原生设置界面横屏 / 平板适配，2026-10-24）
 - **需求**：应用自身的设置界面固定竖屏，平板横屏下无法正常使用。
 - **根因**：5 个原生页面在 `onCreate` 里硬编码 `SCREEN_ORIENTATION_PORTRAIT`
