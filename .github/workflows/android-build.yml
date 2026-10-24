@@ -466,6 +466,7 @@ jobs:
       - name: 生成发布说明
         env:
           APK_DIR: apk
+          GH_TOKEN: ${{ github.token }}
           RELEASE_CERT_SHA256: ${{ vars.RELEASE_CERT_SHA256 }}
           HARDSSH_REF: ${{ env.HARDSSH_REF }}
         run: bash scripts/generate-release-notes.sh tag release-notes.md
@@ -540,6 +541,7 @@ jobs:
       - name: 生成发布说明
         env:
           APK_DIR: apk
+          GH_TOKEN: ${{ github.token }}
           RELEASE_CERT_SHA256: ${{ vars.RELEASE_CERT_SHA256 }}
           HARDSSH_REF: ${{ env.HARDSSH_REF }}
         run: bash scripts/generate-release-notes.sh edge edge-notes.md

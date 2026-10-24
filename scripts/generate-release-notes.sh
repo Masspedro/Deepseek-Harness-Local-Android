@@ -15,7 +15,7 @@
 #   · edge 模式：变更范围 = edge tag..HEAD（即上次 edge 之后的提交）；没有 edge 时取最近 30 个
 #   · 按 feat/fix/perf/refactor/build/ci/docs/test/style 分类
 #   · 安装包表：文件名 / 架构 / 类型 / 大小 / SHA-256
-#   · 版本信息、贡献者（本次更新 + 项目累计 Top 10）、compare 链接；所有内容写入输出文件（供 body_path 使用）
+#   · 版本信息、贡献者（本次更新 + 项目累计 Top 10，含 GitHub 账号链接）、compare 链接；所有内容写入输出文件（供 body_path 使用）
 set -euo pipefail
 
 MODE="${1:-tag}"
@@ -73,23 +73,67 @@ else
   COUNT=$(git rev-list --count --no-merges -n 30 HEAD)
 fi
 
+# GitHub API 用的范围：有 baseline 时走 compare，否则取最近的提交列表
+API_BASE=""
+API_HEAD=""
+if [ "$MODE" = "tag" ]; then API_HEAD="$TAG"; else API_HEAD="$SHA"; fi
+if [ -n "$PREV" ]; then API_BASE="$PREV"; fi
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-# 贡献者：本次更新（按提交数降序）+ 全项目累计 Top 10
+# 贡献者：本次更新（按提交数降序）+ 全项目累计 Top 10。
+# 有 GH_TOKEN + gh 时从 GitHub API 取账号/链接；否则回退纯 git 统计（无链接）。
+declare -A LOGIN_BY_NAME=()
 : > "$TMP/contrib-update.md"
+: > "$TMP/contrib-top.md"
+
+if command -v gh >/dev/null 2>&1 && [ -n "${GH_TOKEN:-}" ]; then
+  # 本次范围：commit name -> GitHub login
+  if [ -n "$API_BASE" ]; then
+    PAIRS=$(gh api "repos/${REPO}/compare/${API_BASE}...${API_HEAD}" \
+      --jq '.commits[] | select(.author != null) | [.commit.author.name, .author.login] | @tsv' 2>/dev/null || true)
+  else
+    PAIRS=$(gh api "repos/${REPO}/commits?sha=${API_HEAD}&per_page=30" \
+      --jq '.[] | select(.author != null) | [.commit.author.name, .author.login] | @tsv' 2>/dev/null || true)
+  fi
+  while IFS=$'\t' read -r name login; do
+    [ -n "$name" ] && [ -n "$login" ] && LOGIN_BY_NAME["$name"]="$login"
+  done <<< "$PAIRS"
+
+  # 全项目 Top 10：GitHub contributors API（已按提交数降序，带 profile URL）
+  TOP=$(gh api "repos/${REPO}/contributors?per_page=100" \
+    --jq '.[] | [.login, .contributions, .html_url] | @tsv' 2>/dev/null || true)
+  if [ -n "$TOP" ]; then
+    rank=0
+    printf '%s\n' "$TOP" | head -10 | while IFS=$'\t' read -r login contributions url; do
+      rank=$((rank + 1))
+      printf '| %d | [@%s](%s) | %s |\n' "$rank" "$login" "$url" "$contributions" >> "$TMP/contrib-top.md"
+    done
+  fi
+fi
+
+# 本次更新（能映射到 GitHub 账号时附链接）
 git log "${LOG_ARGS[@]}" --pretty='%an' | sed '/^[[:space:]]*$/d' | sort | uniq -c \
   | sort -k1,1nr -k2,2 | while read -r n author; do
-      printf -- '- %s（%s 次提交）\n' "$author" "$n" >> "$TMP/contrib-update.md"
+      login="${LOGIN_BY_NAME[$author]:-}"
+      if [ -n "$login" ]; then
+        printf -- '- [%s](https://github.com/%s)（%s 次提交）\n' "$author" "$login" "$n" >> "$TMP/contrib-update.md"
+      else
+        printf -- '- %s（%s 次提交）\n' "$author" "$n" >> "$TMP/contrib-update.md"
+      fi
     done
 
-: > "$TMP/contrib-top.md"
-rank=0
-git log --no-merges --pretty='%an' HEAD | sed '/^[[:space:]]*$/d' | sort | uniq -c \
-  | sort -k1,1nr -k2,2 | head -10 | while read -r n author; do
-      rank=$((rank + 1))
-      printf '| %d | %s | %s |\n' "$rank" "$author" "$n" >> "$TMP/contrib-top.md"
-    done
+# API 不可用（本地测试 / 无 token）时回退 git 统计
+if [ ! -s "$TMP/contrib-top.md" ]; then
+  rank=0
+  git log --no-merges --pretty='%an' HEAD | sed '/^[[:space:]]*$/d' | sort | uniq -c \
+    | sort -k1,1nr -k2,2 | head -10 | while read -r n author; do
+        rank=$((rank + 1))
+        printf '| %d | %s | %s |\n' "$rank" "$author" "$n" >> "$TMP/contrib-top.md"
+      done
+fi
+
 
 for key in feat fix perf refactor build ci docs test style other; do
   : > "$TMP/$key.md"

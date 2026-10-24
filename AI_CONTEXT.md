@@ -56,7 +56,7 @@
   · tag 取「上一个语义化版本 tag → 当前 tag」，edge 取 `edge → HEAD`；无旧 tag 回退最近 30 个提交；
   · conventional commit 分类（新功能/修复/优化/重构/构建/CI/文档/测试/风格/其他）；
   · 版本信息（tag、versionName、versionCode、提交、构建时间、架构、签名、HARDSSH_REF）、
-    安装包表（架构/类型/大小/SHA-256）、安装与签名说明、贡献者、compare 链接。
+    安装包表（架构/类型/大小/SHA-256）、安装与签名说明、贡献者（本次更新 + 项目累计 Top 10，CI 用 GitHub API 映射账号链接）、compare 链接。
   · 脚本只读 git 与 `apk/` 产物，不接触签名材料；已用 tag/edge 两种模式本地跑通。
 - **文档**：新增 `docs/RELEASE.md`（key 保管/备份、GitHub Secrets/Variables、tag 发版步骤、
   edge 策略、证书校验、发布说明自动生成）；README 文档表已加链接。**Secrets 的实际值只给用户本人，不在仓库。**
