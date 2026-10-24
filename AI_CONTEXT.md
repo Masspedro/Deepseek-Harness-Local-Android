@@ -51,8 +51,15 @@
   · `publish-edge`：每次 push `main` → 滚动 pre-release `edge`（同样双架构 × debug/release），
     方便用户随时拿包；分支/PR 仍只编 debug。
   · 旧 `release` job（debug 自动发布）保持只对 `jahdaganj02ki-sketch/...` 生效，互不影响。
+- **发布说明自动生成（v1.4.18）**：新增 `scripts/generate-release-notes.sh`，`publish-release`
+  与 `publish-edge` 用 `body_path` 写入：
+  · tag 取「上一个语义化版本 tag → 当前 tag」，edge 取 `edge → HEAD`；无旧 tag 回退最近 30 个提交；
+  · conventional commit 分类（新功能/修复/优化/重构/构建/CI/文档/测试/风格/其他）；
+  · 版本信息（tag、versionName、versionCode、提交、构建时间、架构、签名、HARDSSH_REF）、
+    安装包表（架构/类型/大小/SHA-256）、安装与签名说明、贡献者、compare 链接。
+  · 脚本只读 git 与 `apk/` 产物，不接触签名材料；已用 tag/edge 两种模式本地跑通。
 - **文档**：新增 `docs/RELEASE.md`（key 保管/备份、GitHub Secrets/Variables、tag 发版步骤、
-  edge 策略、证书校验）；README 文档表已加链接。**Secrets 的实际值只给用户本人，不在仓库。**
+  edge 策略、证书校验、发布说明自动生成）；README 文档表已加链接。**Secrets 的实际值只给用户本人，不在仓库。**
 - **待办**：用户需在 GitHub 添加 4 个 Secrets + `RELEASE_CERT_SHA256` 变量；随后推送本仓库提交，
   main 的 edge 与 tag 正式发布才会出包。本地 `apksigner` 已用真实 APK 验证 key 可用、证书指纹一致。
 

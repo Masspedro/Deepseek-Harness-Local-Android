@@ -423,6 +423,9 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: 校验 tag 与 versionName 一致
         run: |
@@ -449,23 +452,23 @@ jobs:
             test -f "apk/dsh-android-${GITHUB_REF_NAME//\//-}-$abi-debug.apk"
           done
 
+      - name: 生成发布说明
+        env:
+          APK_DIR: apk
+          RELEASE_CERT_SHA256: ${{ vars.RELEASE_CERT_SHA256 }}
+          HARDSSH_REF: ${{ env.HARDSSH_REF }}
+        run: bash scripts/generate-release-notes.sh tag release-notes.md
+
       - name: 发布 Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
+          name: DSH Mobile ${{ github.ref_name }}
           files: apk/*.apk
           fail_on_unmatched_files: true
-          generate_release_notes: true
-          body: |
-            ## 安装说明
-
-            - `*-release.apk`：**正式签名**，可以覆盖升级旧版本。
-            - `*-debug.apk`：debug 签名，仅用于测试；与正式包证书不同，**不能覆盖正式版**。
-              已装正式版的用户请下载 release 包。
-
-            签名证书 SHA-256：`${{ vars.RELEASE_CERT_SHA256 }}`
-            （CI 已用该变量校验签名；变量未设置时只打印实际值，不阻断发布）
+          draft: false
+          prerelease: false
+          body_path: release-notes.md
 
   # ---------------------------------------------------------------------------
   # Edge（每次 push main）：把最新 debug + release 发到 pre-release "edge"，
@@ -484,6 +487,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
       - uses: actions/download-artifact@v4
         with:
           pattern: dsh-android-*-apk-*
@@ -500,6 +508,13 @@ jobs:
               echo "::error::missing signed release apk for $abi — configure RELEASE_* secrets (docs/RELEASE.md)"; exit 1; }
           done
 
+      - name: 生成发布说明
+        env:
+          APK_DIR: apk
+          RELEASE_CERT_SHA256: ${{ vars.RELEASE_CERT_SHA256 }}
+          HARDSSH_REF: ${{ env.HARDSSH_REF }}
+        run: bash scripts/generate-release-notes.sh edge edge-notes.md
+
       - name: 发布 edge 预发布
         uses: softprops/action-gh-release@v2
         with:
@@ -510,13 +525,7 @@ jobs:
           files: apk/*.apk
           fail_on_unmatched_files: true
           overwrite_files: true
-          body: |
-            ⚠️ 自动构建（`main` @ `${{ github.sha }}`），未经过正式版本验证。
-
-            - `*-release.apk`：正式签名，**可覆盖升级**。
-            - `*-debug.apk`：debug 签名，仅用于测试，**不能覆盖正式版**。
-
-            正式版本请等 `v*` tag 发布的 Release。
+          body_path: edge-notes.md
 
   # ---------------------------------------------------------------------------
   # v1.2.120：构建监视 —— 汇总两只 legs 的结果到 Step Summary，任一腿失败即整红。

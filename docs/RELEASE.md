@@ -145,6 +145,26 @@ dsh-android-<ref>-x86_64-release.apk
 
 5. CI 完成后在 Releases 查看：`*-release.apk` 为正式包，`*-debug.apk` 仅测试。
 
+### 发布说明（自动生成）
+
+`publish-release` / `publish-edge` 都会调用
+[scripts/generate-release-notes.sh](../scripts/generate-release-notes.sh)，通过 `body_path`
+写入 Release 说明，不需要手写 `RELEASE_NOTES_*.md`：
+
+- **变更范围**：tag 发布取「上一个语义化版本 tag → 当前 tag」；edge 取 `edge → HEAD`；
+  没有旧 tag 时取最近 30 个提交。
+- **变更分类**：按 conventional commit 前缀分为 新功能 / 问题修复 / 性能优化 / 重构 /
+  构建与依赖 / CI/CD / 文档 / 测试 / 代码风格 / 其他。
+- **版本信息**：tag、`versionName`、`versionCode`、提交短 SHA、提交数量、构建时间（UTC）、
+  架构、签名方式、内置 `dsh-hardssh` 的 `HARDSSH_REF`。
+- **安装包表**：每个 APK 的架构（arm64-v8a / x86_64）、类型（release / debug）、大小、
+  SHA-256，方便下载后校验。
+- **签名与安装**：正式 / debug 签名区别、旧证书升级失败时的处理、`apksigner` 校验命令；
+  末尾附贡献者与 GitHub compare 链接。
+
+> 该脚本只读 git 历史与 `apk/` 产物，不接触任何签名材料；tag 发布仍会先校验
+> tag 与 `versionName` 一致。
+
 ---
 
 ## 5. 签名校验（任何拿到 APK 的人都能做）
