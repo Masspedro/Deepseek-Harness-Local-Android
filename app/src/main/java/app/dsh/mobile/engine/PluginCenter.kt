@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
@@ -170,6 +171,8 @@ object PluginCenter {
     /**
      * 一键安装：引擎子进程执行 `dsh plugin --profile web add <pkg>`。
      * 与引擎启动同环境（buildEnv），保证 pnpm/npm registry 配置一致。
+     * v1.4.18：失败命中 pnpm store 锁损坏签名时自动清缓存重试一次
+     * （见 [healPnpmStore]）。
      * @param onDone (成功, 详情或错误信息) —— 在后台线程回调
      */
     fun install(ctx: Context, pkg: String, onDone: (Boolean, String) -> Unit) {
@@ -177,32 +180,16 @@ object PluginCenter {
             var ok = false
             var msg = "?"
             try {
-                val node = EngineConfig.nodeBin(ctx)
-                val entry = EngineConfig.dshEntry(ctx)
-                val env = EngineConfig.buildEnv(ctx, EngineConfig.DEFAULT_PORT)
-                val pb = ProcessBuilder(
-                    node.absolutePath, "--expose-internals", entry.absolutePath,
-                    "plugin", "--profile", "web", "add", pkg,
-                )
-                pb.environment().clear()
-                env.forEach { kv ->
-                    val i = kv.indexOf('=')
-                    if (i > 0) pb.environment()[kv.substring(0, i)] = kv.substring(i + 1)
-                }
-                val p = pb.start()
-                val out = p.inputStream.readBytes()
-                val err = p.errorStream.readBytes()
-                if (p.waitFor(120, TimeUnit.SECONDS)) {
-                    if (p.exitValue() == 0) {
-                        ok = true
-                        msg = String(out, Charsets.UTF_8).trim().take(300)
-                    } else {
-                        msg = String(err, Charsets.UTF_8).trim().take(300)
-                            .ifEmpty { "exit=${p.exitValue()}" }
-                    }
-                } else {
-                    p.destroy()
-                    msg = "plugin install timed out (120s)"
+                val r = runDshPluginCli(ctx, "add", pkg)
+                ok = r.first
+                msg = r.second
+                if (!ok && isPnpmStoreLockError(msg)) {
+                    val healed = healPnpmStore(ctx)
+                    Log.w(TAG, "install $pkg: pnpm store lock broken; heal=$healed; retrying once")
+                    val r2 = runDshPluginCli(ctx, "add", pkg)
+                    ok = r2.first
+                    msg = if (ok) r2.second
+                    else "${r2.second} [pnpm store cache reset, still failing]"
                 }
             } catch (e: Exception) {
                 msg = e.message ?: "install failed"
@@ -217,39 +204,23 @@ object PluginCenter {
      *
      * dsh plugin 转发给 pnpm（实测 --help 显示 pnpm 命令表），故卸载即
      * `pnpm remove`。此前插件中心只能装不能卸（主人反馈），装错/不想要的
-     * 插件只能靠 CLI 手工处理。
+     * 插件只能靠 CLI 手工处理。v1.4.18：与 install 共享 store 锁自愈。
      */
     fun uninstall(ctx: Context, pkg: String, onDone: (Boolean, String) -> Unit) {
         installExecutor.execute({
             var ok = false
             var msg = "?"
             try {
-                val node = EngineConfig.nodeBin(ctx)
-                val entry = EngineConfig.dshEntry(ctx)
-                val env = EngineConfig.buildEnv(ctx, EngineConfig.DEFAULT_PORT)
-                val pb = ProcessBuilder(
-                    node.absolutePath, "--expose-internals", entry.absolutePath,
-                    "plugin", "--profile", "web", "remove", pkg,
-                )
-                pb.environment().clear()
-                env.forEach { kv ->
-                    val i = kv.indexOf('=')
-                    if (i > 0) pb.environment()[kv.substring(0, i)] = kv.substring(i + 1)
-                }
-                val p = pb.start()
-                val out = p.inputStream.readBytes()
-                val err = p.errorStream.readBytes()
-                if (p.waitFor(120, TimeUnit.SECONDS)) {
-                    if (p.exitValue() == 0) {
-                        ok = true
-                        msg = String(out, Charsets.UTF_8).trim().take(300)
-                    } else {
-                        msg = String(err, Charsets.UTF_8).trim().take(300)
-                            .ifEmpty { "exit=${p.exitValue()}" }
-                    }
-                } else {
-                    p.destroy()
-                    msg = "plugin uninstall timed out (120s)"
+                val r = runDshPluginCli(ctx, "remove", pkg)
+                ok = r.first
+                msg = r.second
+                if (!ok && isPnpmStoreLockError(msg)) {
+                    val healed = healPnpmStore(ctx)
+                    Log.w(TAG, "uninstall $pkg: pnpm store lock broken; heal=$healed; retrying once")
+                    val r2 = runDshPluginCli(ctx, "remove", pkg)
+                    ok = r2.first
+                    msg = if (ok) r2.second
+                    else "${r2.second} [pnpm store cache reset, still failing]"
                 }
             } catch (e: Exception) {
                 msg = e.message ?: "uninstall failed"
@@ -257,5 +228,93 @@ object PluginCenter {
             Log.i(TAG, "uninstall $pkg -> ok=$ok: $msg")
             onDone(ok, msg)
         })
+    }
+
+    /**
+     * 跑一次 `dsh plugin --profile web <verb> <pkg>` 子进程（install/uninstall 共用）。
+     * @param verb add / remove
+     * @return (成功与否, 截断到 300 字符的 stdout 或 stderr)
+     */
+    private fun runDshPluginCli(ctx: Context, verb: String, pkg: String): Pair<Boolean, String> {
+        val node = EngineConfig.nodeBin(ctx)
+        val entry = EngineConfig.dshEntry(ctx)
+        val env = EngineConfig.buildEnv(ctx, EngineConfig.DEFAULT_PORT)
+        val pb = ProcessBuilder(
+            node.absolutePath, "--expose-internals", entry.absolutePath,
+            "plugin", "--profile", "web", verb, pkg,
+        )
+        pb.environment().clear()
+        env.forEach { kv ->
+            val i = kv.indexOf('=')
+            if (i > 0) pb.environment()[kv.substring(0, i)] = kv.substring(i + 1)
+        }
+        val p = pb.start()
+        val out = p.inputStream.readBytes()
+        val err = p.errorStream.readBytes()
+        return if (p.waitFor(120, TimeUnit.SECONDS)) {
+            if (p.exitValue() == 0) {
+                true to String(out, Charsets.UTF_8).trim().take(300)
+            } else {
+                false to String(err, Charsets.UTF_8).trim().take(300)
+                    .ifEmpty { "exit=${p.exitValue()}" }
+            }
+        } else {
+            p.destroy()
+            false to "plugin $verb timed out (120s)"
+        }
+    }
+
+    /**
+     * pnpm store 锁损坏签名（v1.4.18）。用户截图报：
+     * `ERR_PNPM_STORE_DIR_OPEN_OPERATION_LOCK`，消息原文含
+     * "lock directory must be a real directory owned by the current user"，
+     * 路径指向 `$HOME/.cache/pnpm-store…/locks-0`。错误码与消息双签名
+     * 大小写不敏感匹配，防 pnpm 版本措辞变化。
+     */
+    private fun isPnpmStoreLockError(msg: String): Boolean =
+        msg.contains("ERR_PNPM_STORE_DIR_OPEN_OPERATION_LOCK", ignoreCase = true) ||
+            msg.contains("store operation lock", ignoreCase = true)
+
+    /**
+     * 自愈 pnpm store 锁损坏（v1.4.18）。成因两类：
+     * ① Root 模式残留属主 —— 引擎以 uid 0 写过 `.cache/pnpm-*`，
+     *    切回普通模式后 app uid 无法持锁（报"owned by the current user"）；
+     * ② 安装中途进程被杀，留下悬空锁目录。
+     *
+     * `.cache` 下以 pnpm 开头的条目（store 本体 / operation-locks /
+     * dir-locks / modules-swaps）全是可重建缓存，删掉不影响已装插件本体；
+     * 唯一例外 `.cache/pnpm`（PNPM_HOME，全局 bin）必须排除。
+     *
+     * 清理两级递进：
+     * 1. 直接删（普通死锁文件场景，最干净）；
+     * 2. 删不动（Root 残留属主 + 000，里面的 .lock 无法 unlink）→
+     *    **rename 绕开**：rename 只改父目录条目、不进入目录内部，只要
+     *    `.cache` 本身可写（必然）就成功。pnpm 只按固定名
+     *    （如 `pnpm-store-operation-locks-<uid>`）找锁，改名后等于无锁
+     *    状态，下次安装自动重建。改名残留的 `.broken-*` 由 pnpm 侧无感，
+     *    占用极小（锁目录只有两个空 .lock 文件）。
+     */
+    private fun healPnpmStore(ctx: Context): Boolean {
+        val cacheDir = File(EngineConfig.dshHome(ctx), ".cache")
+        fun targets(): List<File> = runCatching {
+            cacheDir.listFiles()?.filter {
+                it.name.startsWith("pnpm") && it.name != "pnpm"
+            }.orEmpty()
+        }.getOrDefault(emptyList())
+
+        if (targets().isEmpty()) return true
+        targets().forEach { EngineConfig.deleteNoFollow(it) }
+
+        if (targets().isNotEmpty()) {
+            // 删不动 = 属主/权限坏（Root 残留 000）。rename 不进入目录内部，
+            // 只改 .cache 的目录条目，属主正常即必成功。
+            val ts = System.currentTimeMillis()
+            targets().forEach { f ->
+                val moved = runCatching { f.renameTo(File(cacheDir, ".broken-${f.name}-$ts")) }
+                    .getOrDefault(false)
+                if (moved) Log.w(TAG, "healPnpmStore: renamed undeletable ${f.name} out of the way")
+            }
+        }
+        return targets().isEmpty()
     }
 }

@@ -662,7 +662,7 @@ object EngineConfig {
      * `deleteRecursively()` 会跟随目录软链往下走 —— 在 `workspaces/` 含软链时
      * 等于把链指向的外部数据一起删了。这里只递归真实目录，软链仅删链接本身。
      */
-    private fun deleteNoFollow(root: File) {
+    internal fun deleteNoFollow(root: File) {
         if (!root.exists() && !isSymbolicLink(root)) return
         walkNoFollow(root) { f, link ->
             if (link) runCatching { f.delete() }
