@@ -17,7 +17,7 @@
 |---|---|
 | `dsh-release.keystore` | PKCS12，RSA 4096 / SHA256withRSA，有效期 10000 天，alias `dsh-release` |
 | `dsh-release.credentials.txt` | 口令、alias、证书指纹（已限制为当前用户可读） |
-| `dsh-release.keystore.base64` | 给 GitHub Secret 用的单行 base64（添加后可删除） |
+| `dsh-release.keystore.base64` | 给 GitHub Secret 用的单行 base64（添加后可从工作目录删除，但要确保另有加密备份） |
 | `release.properties` | 本地 Gradle 签名配置（`assembleRelease` 自动签名） |
 
 当前证书 SHA-256 **不写入仓库**：值在本地 `keystore/dsh-release.credentials.txt` 的
