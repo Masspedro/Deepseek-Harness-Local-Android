@@ -105,6 +105,33 @@ object PluginCenter {
     }
 
     /**
+     * 已安装插件的**实际版本**（v1.4.18）—— 读
+     * `$DSH_HOME/profiles/web/node_modules/<pkg>/package.json` 的 version。
+     *
+     * 为什么不读 profile package.json 的 dependencies spec：那是声明范围
+     * （如 `^0.74.0`），pnpm 装完后即使 registry 有新版也不会动它——这正是
+     * 「升级不行」的根源。真实安装版本以 node_modules 里落盘的为准
+     * （pnpm symlink 布局，File 读文本自然跟随软链到 .pnpm 实体）。
+     *
+     * @return pkg -> version；读不到的包不出现在 map 里
+     */
+    fun installedVersions(ctx: Context): Map<String, String> {
+        val out = mutableMapOf<String, String>()
+        for (pkg in installedPackages(ctx)) {
+            runCatching {
+                val pj = java.io.File(
+                    EngineConfig.dshHome(ctx), "profiles/web/node_modules/$pkg/package.json",
+                )
+                if (pj.isFile) {
+                    val v = JSONObject(pj.readText()).optString("version", "")
+                    if (v.isNotBlank()) out[pkg] = v
+                }
+            }
+        }
+        return out
+    }
+
+    /**
      * 实时搜索 npm 上的插件（registry search API，v1.2.118）。
      * 查询自动限定 `keywords:deepseek-harness` 生态；@deepseek-ai/ 官方内部组件
      * （引擎部件，非插件）被排除。主人在插件中心看到的列表即此实时结果。

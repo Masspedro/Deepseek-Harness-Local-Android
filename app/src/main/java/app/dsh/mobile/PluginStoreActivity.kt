@@ -42,6 +42,9 @@ class PluginStoreActivity : Activity() {
     /** 已安装包名（读 profile/package.json，v1.2.118）—— 每次刷新重读，保证真实 */
     private var installed: Set<String> = emptySet()
 
+    /** 已安装插件的实际版本 pkg -> version（v1.4.18，升级判断用） */
+    private var installedVer: Map<String, String> = emptyMap()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
@@ -95,6 +98,7 @@ class PluginStoreActivity : Activity() {
         tvSubtitle.text = getString(R.string.plugin_searching)
         // 每次搜索都重读已装清单：安装后立刻反映，退出重进也准确（v1.2.118）
         installed = runCatching { PluginCenter.installedPackages(this) }.getOrDefault(emptySet())
+        installedVer = runCatching { PluginCenter.installedVersions(this) }.getOrDefault(emptyMap())
         PluginCenter.search(query) { results ->
             runOnUiThread { render(query, results) }
         }
@@ -208,13 +212,32 @@ class PluginStoreActivity : Activity() {
             ).apply { marginStart = dp(12) }
         }
         if (isInstalled) {
-            // 已装：绿色可点击 → 卸载（v1.2.120，主人反馈「能装不能卸」）
-            btn.setTextColor(0xFF4ADE80.toInt())
-            btn.isClickable = true
-            btn.isEnabled = true
-            btn.setOnClickListener { runUninstall(p.pkg, btn) }
+            // v1.4.18：npm 上有新版（搜索结果 version 与实际安装版本不同）→ 显示「升级」。
+            // 升级必须 `add pkg@<精确版本>`：pnpm 12 实测（PC + 模拟器双验证）——
+            // `add pkg` 保留旧 spec 不解析；`add pkg@latest` 与 `update pkg` 被
+            // "Lockfile is up to date / Already up to date" 跳过（supply-chain
+            // verified 缓存）；只有精确版本会真正重新解析（-0.74.0 +0.75.1 实证）。
+            val canUpgrade = p.version.isNotBlank() && installedVer[p.pkg] != p.version
+            if (canUpgrade) {
+                btn.text = getString(R.string.plugin_upgrade)
+                btn.setTextColor(0xFFFBBF24.toInt())
+                btn.isClickable = true
+                btn.isEnabled = true
+                btn.setOnClickListener { runInstall("${p.pkg}@${p.version}", btn, basePkg = p.pkg) }
+            } else {
+                // 已装且无新版：绿色只读 → 点击卸载（v1.2.120，主人反馈「能装不能卸」）
+                btn.setTextColor(0xFF4ADE80.toInt())
+                btn.isClickable = true
+                btn.isEnabled = true
+                btn.setOnClickListener { runUninstall(p.pkg, btn) }
+            }
         } else {
-            btn.setOnClickListener { runInstall(p.pkg, btn) }
+            // v1.4.18：安装也用精确版本 —— `add pkg`（无 spec）在 remove 残留
+            // lockfile/spec 时会复用旧版；精确版本与升级同路径、行为可预期。
+            btn.setOnClickListener {
+                val spec = if (p.version.isNotBlank()) "${p.pkg}@${p.version}" else p.pkg
+                runInstall(spec, btn, basePkg = p.pkg)
+            }
         }
         card.addView(btn)
         return card
@@ -228,7 +251,7 @@ class PluginStoreActivity : Activity() {
      * 在 Android 上这类插件多数根本编译不出来（缺 clang 头文件搜索路径、node_prefix
      * 写死成 Termux 路径），所以与其让用户拿到一个用不了的插件，不如装前说清楚。
      */
-    private fun runInstall(pkg: String, btn: TextView) {
+    private fun runInstall(pkg: String, btn: TextView, basePkg: String = pkg.substringBefore('@')) {
         btn.text = getString(R.string.plugin_checking)
         btn.isEnabled = false
         Thread({
@@ -237,12 +260,12 @@ class PluginStoreActivity : Activity() {
             runOnUiThread {
                 btn.isEnabled = true
                 when (r) {
-                    is NativePluginCheck.Result.PureJs -> doInstall(pkg, btn)
+                    is NativePluginCheck.Result.PureJs -> doInstall(pkg, btn, basePkg)
                     is NativePluginCheck.Result.Unknown -> {
                         // 查不到（离线 / git 源）：不拦，但要告诉用户「没验证过」
                         btn.text = getString(R.string.plugin_install)
                         confirmInstall(
-                            pkg, btn,
+                            pkg, btn, basePkg,
                             title = getString(R.string.plugin_check_unknown_title),
                             message = getString(R.string.plugin_check_unknown_body, r.reason),
                         )
@@ -250,7 +273,7 @@ class PluginStoreActivity : Activity() {
                     is NativePluginCheck.Result.Risk -> {
                         btn.text = getString(R.string.plugin_install)
                         confirmInstall(
-                            pkg, btn,
+                            pkg, btn, basePkg,
                             title = getString(R.string.plugin_native_title),
                             message = getString(
                                 R.string.plugin_native_body,
@@ -264,18 +287,20 @@ class PluginStoreActivity : Activity() {
     }
 
     /** 预检有风险时的二次确认；点「仍然安装」才真的装。 */
-    private fun confirmInstall(pkg: String, btn: TextView, title: String, message: String) {
+    private fun confirmInstall(
+        pkg: String, btn: TextView, basePkg: String, title: String, message: String,
+    ) {
         if (isFinishing || isDestroyed) return
         android.app.AlertDialog.Builder(this)
             .setTitle(title)
             .setMessage(message)
-            .setPositiveButton(R.string.plugin_install_anyway) { _, _ -> doInstall(pkg, btn) }
+            .setPositiveButton(R.string.plugin_install_anyway) { _, _ -> doInstall(pkg, btn, basePkg) }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
 
     /** 真正执行安装并刷新按钮状态 */
-    private fun doInstall(pkg: String, btn: TextView) {
+    private fun doInstall(pkg: String, btn: TextView, basePkg: String = pkg.substringBefore('@')) {
         // v1.4.16 审查 P2：PureJs 分支不弹确认框，预检期间（最长 20s）用户可能
         // 已离开页面或搜索重渲染让 btn 脱离视图树 —— 此时不再启动安装。
         if (isFinishing || isDestroyed) {
@@ -292,13 +317,17 @@ class PluginStoreActivity : Activity() {
         PluginCenter.install(this, pkg) { ok, msg ->
             runOnUiThread {
                 if (ok) {
-                    // 装成功：标记已装并保持绿色只读（不再 2.5s 后复原 —— 那会让用户
+                    // 装成功（含升级）：标记已装并保持绿色只读（不再 2.5s 后复原 —— 那会让用户
                     // 以为没装上、反复点；且与「退出重进」的显示一致）
                     btn.text = getString(R.string.plugin_installed)
                     btn.setTextColor(0xFF4ADE80.toInt())
                     btn.isClickable = false
                     btn.isEnabled = false
-                    installed = installed + pkg
+                    installed = installed + basePkg
+                    // 升级成功：重读实际版本（spec 里的 @latest 不是真版本号）
+                    installedVer = runCatching {
+                        PluginCenter.installedVersions(this@PluginStoreActivity)
+                    }.getOrDefault(installedVer)
                 } else {
                     // 失败：按钮就地显示原因（限长），完整原因已在通知与日志里
                     btn.text = getString(R.string.plugin_failed, msg.take(28))

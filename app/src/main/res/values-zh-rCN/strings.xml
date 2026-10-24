@@ -149,6 +149,8 @@
     <string name="plugin_uninstalling">卸载中…</string>
     <string name="plugin_installing">安装中…</string>
     <string name="plugin_installed">已安装</string>
+    <string name="plugin_upgrade">升级</string>
+    <string name="plugin_upgrading">升级中…</string>
     <string name="plugin_failed">失败：%1$s</string>
     <string name="plugin_checking">检查中…</string>
     <string name="plugin_native_title">这个插件需要原生代码</string>

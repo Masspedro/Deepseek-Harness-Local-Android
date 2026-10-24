@@ -151,6 +151,8 @@
     <string name="plugin_install">Installieren</string>
     <string name="plugin_installing">Wird installiert …</string>
     <string name="plugin_installed">Installiert</string>
+    <string name="plugin_upgrade">Aktualisieren</string>
+    <string name="plugin_upgrading">Aktualisiere…</string>
     <string name="plugin_failed">Fehlgeschlagen: %1$s</string>
     <string name="plugin_checking">Wird geprüft…</string>
     <string name="plugin_native_title">Dieses Plugin benötigt nativen Code</string>
