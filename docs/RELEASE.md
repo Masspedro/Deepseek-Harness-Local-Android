@@ -112,15 +112,24 @@ CI 每次 tag 构建都会用 `apksigner verify --print-certs` 比对实际签�
 | push tag `v*` | **必须有** `RELEASE_*` secrets：构建 debug + release、校验证书指纹，缺 secret 直接失败 |
 | tag 且通过 | `publish-release` 发布双架构 × 双变体到正式 GitHub Release |
 
-产物命名：
+产物命名（文件名带当前 `versionName`）：
 
 ```
-dsh-android-<ref>-arm64-v8a-debug.apk
-dsh-android-<ref>-arm64-v8a-release.apk
-dsh-android-<ref>-x86_64-debug.apk
-dsh-android-<ref>-x86_64-release.apk
+# main / edge（ref = main，版本段 -v<version>）
+dsh-android-main-arm64-v8a-v1.4.17-debug.apk
+dsh-android-main-arm64-v8a-v1.4.17-release.apk
+dsh-android-main-x86_64-v1.4.17-debug.apk
+dsh-android-main-x86_64-v1.4.17-release.apk
+
+# tag 发布（ref 本身是 v<version>，不再重复版本段）
+dsh-android-v1.4.18-arm64-v8a-debug.apk
+dsh-android-v1.4.18-arm64-v8a-release.apk
+dsh-android-v1.4.18-x86_64-debug.apk
+dsh-android-v1.4.18-x86_64-release.apk
 ```
 
+> - 每次发布完成后会**清理 Release 中不在本次产物列表里的旧文件名**（edge 的滚动资产因此
+>   不会残留旧命名）。
 > - `*-release.apk`：正式签名，可覆盖升级；`*-debug.apk`：debug 签名，仅测试，不能覆盖正式版。
 > - **edge** 是一个滚动 pre-release（tag `edge`），每次 `main` 推送覆盖同名资产，方便用户随时下载；
 >   `v*` tag 才是正式版本。
