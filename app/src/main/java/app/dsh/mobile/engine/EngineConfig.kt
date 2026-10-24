@@ -691,6 +691,17 @@ object EngineConfig {
             val b = externaliseSubdir(ctx, "workspaces")
             Log.i(TAG, "user data external: sessions=$a workspaces=$b")
         }.onFailure { Log.w(TAG, "externalise failed: ${it.message}") }
+        // SSH 私钥目录（本次修复）：
+        //   · 私有 $DSH_HOME/.ssh —— 表单“导入/生成”写入这里（0600）；
+        //   · 公开数据根/ssh —— 供用户用文件管理器手动放 id_ed25519；
+        //     hardssh 通过 DSH_ANDROID_USER_DATA/ssh 自动发现。
+        runCatching {
+            File(dshHome(ctx), ".ssh").mkdirs()
+            publicDataRoot(ctx)?.let { pub ->
+                File(pub, "ssh").mkdirs()
+                Log.i(TAG, "ssh key dir: ${File(pub, "ssh").absolutePath}")
+            }
+        }.onFailure { Log.w(TAG, "ssh key dir setup failed: ${it.message}") }
         // 外置/迁移之后，引擎存的「工作区注册表」里可能还指向旧路径。
         // 不修的话 workspace 服务起不来 → 连锁导致 directoryPickerController 缺失，
         // 用户看到的正是「迁移完成后选工作区提示 unavailable」（v1.4.3 修复）。
@@ -1443,6 +1454,9 @@ object EngineConfig {
         }
         File(root, "etc/tls/openssl.cnf").takeIf { it.isFile }?.let { env += "OPENSSL_CONF=$it" }
         File(root, "etc/tls/cert.pem").takeIf { it.isFile }?.let { env += "SSL_CERT_FILE=$it" }
+        // 公开数据根（Documents/dshdata 或 app external）：hardssh 用它发现
+        // 用户手动放进 <root>/ssh 的私钥，并在表单里显示实际路径。
+        userDataLocation(ctx)?.let { env += "DSH_ANDROID_USER_DATA=$it" }
         return env.toTypedArray()
     }
 

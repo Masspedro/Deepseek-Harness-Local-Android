@@ -51,6 +51,55 @@ DSH Mobile 默认内置 [@tiphareth/dsh-hardssh](https://github.com/tiphareth0/d
 只改一个地方：`.github/workflows/android-build.yml` 顶部的 `HARDSSH_REF`（commit SHA 最稳，
 也接受 tag / 分支），推上去由 CI 重新构建。运行期不需要联网安装。
 
+## 本地目录选择（Android）
+
+Android 没有桌面端的系统文件夹选择框，DSH 内核固定使用 **browse** 后端：
+「添加工作区 → 本地工作区」会打开应用内目录浏览器，可以输入绝对路径，或点
+「内部存储 / Documents / 应用数据」快捷入口。
+
+> dsh-hardssh 0.2.8 起，本地分支会自动探测内核能力：只有 `browse` 时走应用内
+> 浏览器，只有 `native` 时仍弹系统选择框。此前版本会直接调用 native picker，
+> 在 Android 上报 `directory picker failed: directoryPicker.pick needs the
+> native capability; the composed picker serves "browse"`。
+
+如果读取 `/storage/emulated/0/...` 报权限错误，到「设置 → 权限中心」授予
+**所有文件访问**；或改选「应用数据」目录（始终可读写）。
+
+## SSH 私钥（Android）
+
+### 推荐：在主机表单里导入或生成
+
+1. 左侧栏「SSH 工作区」→ 新增/编辑服务器 → 认证方式选「密钥」；
+2. 点 **导入私钥**：从系统文件选择器选 `id_ed25519` / `.pem`，插件会把私钥
+   写入应用私有目录并自动填好路径：
+
+   ```text
+   /data/user/0/app.dsh.mobile/files/dsh-home/.ssh/<文件名>
+   ```
+
+   目录 0700、文件 0600，文件管理器看不到，也不会进共享存储。
+
+3. 或点 **生成新密钥**：生成 Ed25519 密钥对，私钥写入同一目录，界面会显示
+   **公钥**。复制整行追加到服务器的 `~/.ssh/authorized_keys`：
+
+   ```bash
+   echo 'ssh-ed25519 AAAA... dsh-hardssh' >> ~/.ssh/authorized_keys
+   chmod 600 ~/.ssh/authorized_keys
+   ```
+
+### 手动放置（可选）
+
+| 位置 | 路径示例 | 说明 |
+|---|---|---|
+| 私有目录 | `/data/user/0/app.dsh.mobile/files/dsh-home/.ssh/id_ed25519` | 推荐；普通文件管理器不可见，建议用“导入” |
+| 公开数据目录 | `/storage/emulated/0/Documents/dshdata/ssh/id_ed25519` | App 会自动创建 `ssh/`；需要「所有文件访问」；卸载重装仍保留 |
+| 应用外部目录 | `/storage/emulated/0/Android/data/app.dsh.mobile/files/dshdata/ssh/id_ed25519` | 未授予「所有文件访问」时的回退位置；Android 11+ 文件管理器可能也受限 |
+| 不建议 | `/storage/emulated/0/Download/...` | 可能读不到，且共享存储安全性差 |
+
+- 表单里的「私钥路径」填**绝对路径**；
+- 放在上述任一默认搜索目录时，新建主机可自动预填/留空使用默认密钥；
+- Android **没有 ssh-agent**，留空只对“默认密钥文件”有效，不会走 agent 代理。
+
 ## 安全边界
 
 - SSH 主机与凭据存于应用私有目录（`$DSH_HOME/dsh-ssh.json`，0600）；默认不落盘密码，

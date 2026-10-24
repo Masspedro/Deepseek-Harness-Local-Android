@@ -72,6 +72,8 @@ DSH Mobile 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harnes
 固定提交拉取源码并编译进 runtime，**插件源码不在本仓库**）：
 
 - **左侧栏「SSH 工作区」**：添加服务器（支持从 `~/.ssh/config` 导入），把远端目录绑定为工作区；绑定后会话里的 `read` / `write` / `edit` / `bash` **直接跑在服务器上**，改代码、跑测试、看日志都不用离开手机
+- **本地工作区**：Android 无系统文件夹框，自动使用应用内目录浏览器（内部存储 / Documents / 应用数据快捷入口）
+- **SSH 私钥**：表单内直接“导入私钥”或“生成新密钥”并展示公钥；私钥存应用私有 `.ssh`（0600），也可手动放到 `Documents/dshdata/ssh`
 - **右侧栏「SSH」**：Web 终端（xterm）、文件上传下载、本地端口转发隧道、远端命令
 - **Agent 工具**：`ssh_list` / `ssh_exec` / `ssh_upload` / `ssh_download` / `ssh_tunnel` / `ssh_cluster`，以及 `remote_ls` / `remote_search` / `remote_status`
 - 主机与凭据留在应用私有目录；引擎仍只监听 `127.0.0.1`，远程能力来自出站连接

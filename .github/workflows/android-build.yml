@@ -29,8 +29,10 @@ on:
 env:
   # 内置 SSH 远程工作区插件：源码不在本仓库，构建时从 GitHub 按固定提交拉取。
   # 升级插件 = 改 HARDSSH_REF（commit SHA 最稳；也接受 tag/分支），其余步骤不用动。
-  HARDSSH_REPO: tiphareth0/dsh-hardssh
-  HARDSSH_REF: de14f1ac1c43c403c9eefdb1decad5a37e4d2fae
+  # 2026-10-24：切到 fork，包含 Android browse 本地选择 + 私钥导入/生成修复
+  # （50f930b）。上游合入后可改回 tiphareth0/dsh-hardssh。
+  HARDSSH_REPO: XiaoPb/dsh-hardssh
+  HARDSSH_REF: 50f930b315952af9b577eb5404ae51858fd9b163
 
 permissions:
   contents: read   # release 段仍注释；启用时在该 job 内单独提权
