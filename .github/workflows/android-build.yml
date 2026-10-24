@@ -373,7 +373,7 @@ jobs:
   # 的构建版本号唯一（tag = v<versionName>-<run_number>），互不覆盖。
   release:
     if: >-
-      github.repository == 'jahdaganj02ki-sketch/Deepseek-Harness-Local-Android'
+      github.repository == 'Soodok/Deepseek-Harness-Local-Android'
       && github.event_name != 'pull_request'
       && needs.build-apk.result == 'success'
     needs: [build-apk]
@@ -425,7 +425,7 @@ jobs:
   publish-release:
     if: >-
       startsWith(github.ref, 'refs/tags/v')
-      && github.repository == 'XiaoPb/Deepseek-Harness-Local-Android'
+      && github.repository == 'Soodok/Deepseek-Harness-Local-Android'
       && needs.build-apk.result == 'success'
     needs: [build-apk]
     runs-on: ubuntu-24.04
@@ -518,7 +518,7 @@ jobs:
     if: >-
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
       && github.ref == 'refs/heads/main'
-      && github.repository == 'XiaoPb/Deepseek-Harness-Local-Android'
+      && github.repository == 'Soodok/Deepseek-Harness-Local-Android'
       && needs.build-apk.result == 'success'
     needs: [build-apk]
     runs-on: ubuntu-24.04
