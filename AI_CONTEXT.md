@@ -38,7 +38,7 @@
 
 ## v1.4.18 追加（release 签名 + CI debug/release 双构建与发布，2026-10-25）
 - **生成正式 key**：`keystore/dsh-release.keystore`（PKCS12 / RSA 4096 / SHA256withRSA /
-  10000 天 / alias `dsh-release`），证书 SHA-256 `ea844b60…42a91`；口令、base64、本地
+  10000 天 / alias `dsh-release`），证书 SHA-256 见本地 credentials 文件（不写入仓库）；口令、base64、本地
   `release.properties` 全在 gitignore 的 `keystore/`，**未写入任何仓库文档**。
   ⚠️ 这是**新应用身份**：与已发布旧包（`d28ca4f5…92c8`）不能互相覆盖；旧 key 若找回应优先替换。
 - **Gradle**：`app/build.gradle.kts` 增加 env/`keystore/release.properties` 驱动的
