@@ -1,5 +1,25 @@
 # AI_CONTEXT
 
+## v1.4.18 发布（2026-10-25，PR #39 合并 + tag 发布）
+- **PR #39（@XiaoPb）已合并**（merge commit `42717f5`）：① 内置
+  @tiphareth/dsh-hardssh 0.2.10（CI 从 XiaoPb/dsh-hardssh 固定 SHA 构建，注入
+  runtime.zip；本地目录弹窗重绘 + 新建文件夹）；② 签名发布流水线：tag v* 触发
+  CI 构建 debug+release，Secrets 注入 keystore，证书 SHA256 与
+  `vars.RELEASE_CERT_SHA256` 比对；③ 响应式 UI（MaxWidthLinearLayout +
+  七个原生页横屏适配 + OrientationPrefs 平板默认 AUTO）。
+- **Secrets/变量已配置**（API + libsodium sealed box）：RELEASE_KEYSTORE_BASE64
+  （本地 keystore/dsh-release.keystore，alias **dsh**，密码见 AI_CONTEXT 885 行
+  签名命令记录）、RELEASE_STORE_PASSWORD / RELEASE_KEY_PASSWORD、
+  RELEASE_KEY_ALIAS=dsh；vars.RELEASE_CERT_SHA256=D2:8C:A4:...:92:C8。
+- **本地验证**：keystore/release.properties（gitignored）+ assembleRelease
+  -Pabi=arm64-v8a → app-release.apk 签名生效，apksigner verify 证书指纹匹配。
+- **发布方式变更**：此后发版 = push tag v<ver>（CI 全自动：hardssh 构建 →
+  双架构 runtime+APK → 签名 → GitHub Release + 自动 notes）。tag 构建**强制**
+  要求 RELEASE_* secrets（缺失即红）。升级内置 hardssh = 改 workflow 顶部
+  HARDSSH_REF。
+- **发布 run**：40144039300（tag v1.4.18）。注意 pull 前清掉残留的
+  CHERRY_PICK_HEAD（`git cherry-pick --quit`），否则 merge 被拒。
+
 ## v1.4.18 追加 2（2026-10-24，issue #38：终端启动报 Termux bash.bashrc Permission denied）
 - **机理**：runtime 的 bash 是 Termux 构建，SYS_BASHRC 编译期宏写死
   `/data/data/com.termux/files/usr/etc/bash.bashrc`，**无环境变量旁路**。真机装有
