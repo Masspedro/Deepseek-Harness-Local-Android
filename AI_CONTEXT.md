@@ -1,5 +1,60 @@
 # AI_CONTEXT
 
+## v1.4.18 追加 2（2026-10-24，issue #38：终端启动报 Termux bash.bashrc Permission denied）
+- **机理**：runtime 的 bash 是 Termux 构建，SYS_BASHRC 编译期宏写死
+  `/data/data/com.termux/files/usr/etc/bash.bashrc`，**无环境变量旁路**。真机装有
+  Termux → EACCES 报错；未装 → 静默。文件内容仅 PS1/补全，从未成功加载过。
+  `bin/pkg` 同理是 Termux apt wrapper，首行 source termux 路径必然失败。
+- **修复**（`scripts/patch-bash-sysbashrc.py`）：bin/bash 硬编码路径**等长 patch** 为
+  /dev/null（ELF 大小不变）；bin/pkg 换成 npm/pnpm 指引脚本（exit 127）。已挂
+  collect-termux-runtime.sh 补丁链（CI 新构建天然带）；本地 4 个 `_runtime_bak/rt-*.zip`
+  源已同步打上（patch 后 gradle 选源才会带补丁——**patch 只打 assets/runtime.zip 会被
+  prepareRuntime 重选源覆盖**，本日踩过一次）。
+- **验证（emulator-5554 x86_64）**：bash -i 启动无 bashrc 报错；`pkg install` 输出指引
+  rc=127；patch 单测（等长/幂等/ELF 头/路径消失）全过。
+- **已回复 issue #38**（comment-6386370178）。
+- **注意**：`-Pabi=x86_64` 才是模拟器构建（默认 arm64）；pm clear 后要过首次引导页
+  （点 GET STARTED）引擎才启动解包；MANIFEST.json 的 abi/sha 变化是本地构建副产品，不提交。
+
+## v1.4.18 追加（2026-10-24，用户反馈「装了插件升级不行」）
+- **pnpm 12 升级行为矩阵（PC /tmp/pnpm-upgrade-test + 模拟器双实测，已装 ^0.74.0、
+  npm latest 0.75.1）**：`add pkg`（无 spec）保留旧 spec 不解析；`add pkg@latest` 被
+  "Lockfile is up to date" 跳过（supply-chain verified 缓存，14ms no-op）；`update pkg`
+  报 "Already up to date"；**唯一有效升级路径 = `add pkg@<精确版本>`**（-0.74.0 +0.75.1 实证）。
+  npmmirror 的 dist-tags 同步无滞后（latest 同为 0.75.1），排除镜像因素。
+- **修复**（commit `6528371`）：
+  - `PluginCenter.installedVersions()`：读 `profiles/web/node_modules/<pkg>/package.json`
+    的实际落盘版本（dependencies spec 是声明范围，不反映真实安装）；
+  - 插件中心已装行：npm latest ≠ 实际版本 → 琥珀色「升级」按钮 → `add pkg@<精确版本>`；
+  - 普通安装同样改精确 spec（remove 残留 lockfile/spec 时不再复用旧版）；
+  - runInstall/doInstall/confirmInstall 分离 spec 与 basePkg；三语字符串
+    plugin_upgrade / plugin_upgrading。
+- **端到端验证（emulator-5554）**：装 0.74.0 → UI 显示「升级」→ 点击 →
+  `install dsh-context@0.75.1 -> ok=true`，node_modules 实际版本变 0.75.1，
+  spec 写精确版本，按钮回「Installed」。i18n 三语全过。
+
+## v1.4.18（2026-10-24，用户 QQ 群截图反馈：插件安装报 ERR_PNPM_STORE_DIR_OPEN_OPERATION_LOCK）
+- **报错机理（模拟器实测复现）**：pnpm 锁目录 `.cache/pnpm-store-operation-locks-<uid>` /
+  `pnpm-dir-locks-<uid>` / `pnpm-modules-swaps-<uid>` 属主坏掉（① Root 模式下引擎以 uid 0
+  写过后残留；② 安装中途被杀留悬空锁），pnpm 12 拒绝持锁
+  （"lock directory must be a real directory owned by the current user"）。
+- **修复**（`PluginCenter.kt`，commit `6e526b0`）：install/uninstall 失败命中锁损坏签名
+  （错误码 `ERR_PNPM_STORE_DIR_OPEN_OPERATION_LOCK` + "store operation lock" 消息双签名，
+  大小写不敏感）→ `healPnpmStore()` 清理后重试一次。清理两级递进：**直接删**（普通死锁）
+  → **rename 绕开**（Root 残留 000 时里面 .lock 无法 unlink 删不掉整个目录；rename 只改
+  父目录条目、不进入目录内部，`.cache` 可写就必成功——pnpm 只按固定名找锁，改名即无锁）。
+  `.cache/pnpm`（PNPM_HOME）排除；改名残留 `.broken-*` 仅含空 .lock 文件占用极小。
+- **附带重构**：install/uninstall 抽出共用 `runDshPluginCli()`；`EngineConfig.deleteNoFollow`
+  private→internal 复用。versionCode 268 / versionName 1.4.18。
+- **端到端验证（emulator-5554 / dsh36 / adb root 毒化 root:000）**：
+  - install dsh-context：`heal=true`（rename 生效）→ 重试 `ok=true`，pnpm resolved/downloaded
+    正常装上；
+  - uninstall dsh-context：`heal=true` → `ok=true`（Packages: -2, Done in 90ms）。两路径闭环。
+- **已验证**：compileDebugKotlin / assembleDebug 成功。
+- **阻塞**：commit 后 `git push` 两次被 reset（网络波动，本机无可用代理端口），待重推。
+- **注意**：`.cache` 下真实锁目录名带 uid 后缀（`pnpm-store-operation-locks-10216`），
+  且 store 本体可能不存在而只有锁目录——清理逻辑按 `pnpm*` 前缀匹配而非固定名。
+
 ## 新项目交接（2026-10-24）：无障碍控制 / AI 控制独立项目
 - **决定**：宝宝开独立新项目，专注「AI 通过无障碍控制 Android 设备」。
 - **交接文档**：`docs/A11Y_AI_CONTROL_HANDBOOK.md` —— 完整沉淀：
