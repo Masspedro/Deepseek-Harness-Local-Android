@@ -62,6 +62,12 @@ Android 没有桌面端的系统文件夹选择框，DSH 内核固定使用 **br
 > 在 Android 上报 `directory picker failed: directoryPicker.pick needs the
 > native capability; the composed picker serves "browse"`。
 
+> dsh-hardssh 0.2.10 起，浏览器界面按 DSH 设计语言重绘（路径输入组、带分类图标的
+> 快捷入口胶囊、面包屑、目录行线性图标、固定底栏），并在底栏提供**新建文件夹**：
+> 在当前列出的目录中命名创建，成功后自动刷新并高亮新行；重名/权限失败会在弹窗内
+> 显示宿主错误。实现走内核 directory picker 的 `createDirectory`，内核缺少该能力时
+> 按钮置灰。
+
 如果读取 `/storage/emulated/0/...` 报权限错误，到「设置 → 权限中心」授予
 **所有文件访问**；或改选「应用数据」目录（始终可读写）。
 

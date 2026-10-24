@@ -13,6 +13,29 @@
 - **新项目 README 可引用本仓库**（MIT），搬运时注明出处。
 
 
+## v1.4.18 追加（dsh-hardssh 本地目录弹窗美化 + 新建文件夹，2026-10-25）
+- **需求**：Android 本地工作区弹窗的快捷入口/目录图标与 DSH 风格不一致；并新增「新建文件夹」。
+- **根因（视觉）**：插件 `directory-flow.tsx` 引用了 `workspace.module.css` 中**不存在**的
+  `.ghostButton` / `.input` / `.hint`（CSS Modules 返回 undefined）→ 快捷入口与面包屑退回
+  浏览器原生灰按钮、路径输入框无样式；目录行用 `📁` emoji。
+- **实现（在插件仓库 `E:\Android\AndroidStudioProjects\dsh-hardssh`，版本 0.2.10）**：
+  · 本地浏览段按 DSH token 重写：路径输入组（上一级 / 路径 / 打开）、带分类图标的快捷入口
+    胶囊、chevron 面包屑、linear folder 目录行、固定底栏；面板固定高度 + 列表内部滚动，
+    监听 `resize`/`visualViewport` 重算高度（键盘弹出/转屏不把底栏顶出屏幕）。
+  · 底栏「新建文件夹」：走内核 directory picker 的 `createDirectory` seam（client 侧新增
+    `createLocalDir`）；校验空名/`/`/`\`/`.`/`..`；成功后重列目录并高亮新行；失败在弹窗内
+    显示宿主错误并保留输入。旧内核无 create 能力 → 按钮置灰 + `flow.newFolderNoService`。
+  · 中英文案、5 个新 vitest 用例、CHANGELOG/README、包版本与根 package.json 均到 0.2.10。
+- **提交/推送**：dsh-hardssh `c7e2bd1e8ae8814d9041d2081fc794fb54aee992` 已推 origin/master；
+  本仓库 `HARDSSH_REF` 已指向该 SHA（本地提交，待推送触发 CI）。
+- **验证（MuMu 12 / Android 12 / 1280×720 桌面视口）**：按用户给的「只替换引擎插件 + 重启」
+  路径（`lib`+`package.json` → run-as 覆盖）部署，plugin health `ok=true, failedEntries=[]`；
+  截图确认新 UI；新建 `dsh-mobile-test` 成功落盘 0700、列表即时出现并高亮；重名创建显示
+  `无法创建文件夹：… already exists` 且弹层保持打开。全量 **745 项测试**、typecheck、build 全过。
+- **未做**：按要求**未验证 SSH**（临时隧道与测试密钥已清理）；未重打 APK，设备上是热替换的
+  plugin bundle（重装 App 会回退到旧插件，直到 CI 出新包）。
+- **清理**：测试目录/工作区/会话、`/data/local/tmp` 临时文件均已删除，App 回到无工作区初始态。
+
 ## v1.4.18 待发（原生设置界面横屏 / 平板适配，2026-10-24）
 - **需求**：应用自身的设置界面固定竖屏，平板横屏下无法正常使用。
 - **根因**：5 个原生页面在 `onCreate` 里硬编码 `SCREEN_ORIENTATION_PORTRAIT`

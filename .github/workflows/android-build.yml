@@ -29,11 +29,14 @@ on:
 env:
   # 内置 SSH 远程工作区插件：源码不在本仓库，构建时从 GitHub 按固定提交拉取。
   # 升级插件 = 改 HARDSSH_REF（commit SHA 最稳；也接受 tag/分支），其余步骤不用动。
-  # 2026-10-25：包含 Android browse 本地选择 + 私钥导入/生成，并修复 0.2.8
-  # 的入口加载失败（ssh2 的 CJS utils 改为默认导入，26be03b）。构建末尾会用
-  # 原生 Node import lib/index.js 作为闸门。上游合入后可改回 tiphareth0/dsh-hardssh。
+  # 2026-10-25：v0.2.10 —— 本地目录弹窗按 DSH 设计语言重绘（路径输入组 / 快捷入口
+  # 胶囊 / 面包屑 / 线性图标 / 固定底栏），并新增「新建文件夹」（内核
+  # createDirectory 接缝，成功后重列目录并高亮）。仍在 0.2.9 的 Android browse
+  # 本地选择 + 私钥导入/生成之上（入口加载修复 26be03b：ssh2 的 CJS utils 改为
+  # 默认导入）。构建末尾会用原生 Node import lib/index.js 作为闸门。
+  # 上游合入后可改回 tiphareth0/dsh-hardssh。
   HARDSSH_REPO: XiaoPb/dsh-hardssh
-  HARDSSH_REF: 26be03b8a7319b2fb3fbe8d62a70f63f709e5fcb
+  HARDSSH_REF: c7e2bd1e8ae8814d9041d2081fc794fb54aee992
 
 permissions:
   contents: read   # release 段仍注释；启用时在该 job 内单独提权
