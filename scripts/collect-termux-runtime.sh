@@ -278,6 +278,16 @@ python3 "$SCRIPTS_DIR/patch-node-pty-android.py" "$ROOT" || {
   exit 1
 }
 
+# [bash SYS_BASHRC] Termux 构建的 bash 把系统 rc 硬编码为
+# /data/data/com.termux/files/usr/etc/bash.bashrc —— 编译期宏、无环境变量
+# 旁路。真机装有 Termux 时交互式 bash 启动必报
+# "Permission denied"（issue #38）。等长 patch 成 /dev/null；同时把
+# bin/pkg（Termux apt wrapper，本 runtime 必然失败）换成 pnpm/npm 提示。
+python3 "$SCRIPTS_DIR/patch-bash-sysbashrc.py" "$ROOT" || {
+  echo "错误：bash SYS_BASHRC 补丁失败（上游形态已变？），中止构建" >&2
+  exit 1
+}
+
 # [node-addon-require-builtin] 0.2.0 新增：dsh 用它访问 Node 内部模块
 # （internal/modules/esm/loader 等），以便安装自定义模块解析拦截
 # （dsh-app-boot 的 installRuntimeInterception，用于插件/profile 解析）。
