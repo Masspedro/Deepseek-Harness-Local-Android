@@ -1,5 +1,15 @@
 # AI_CONTEXT
 
+## v1.4.19 追加（2026-10-25，CI 刷包修复——宝宝发现「连续构建了四五个包」）
+- **根因**：PR #39 的 `release` job 是上游 fork 的 debug 自动分发渠道——
+  每次 push main 都新建 `v<ver>-<run_number>` 的 Release（发到我们仓库即
+  v1.4.18-380/381/382/384 四个重复包）。publish-edge 是单个滚动 prerelease
+  （tag=edge 反复覆盖，设计正常）。
+- **修复**：release job 条件改 `workflow_dispatch` only（commit 后推送）；
+  误发的 4 个 release + tag 已删（API）。Releases 页面现仅剩正式版 + edge。
+- **本仓库发布语义（固定）**：tag v* → publish-release（正式签名）；main
+  push → 全量构建 + edge 滚动更新；workflow_dispatch → 手动分发渠道。
+
 ## v1.4.19（2026-10-25，issue #40：WebView 96 下 throwIfAborted TypeError）
 - **报告**：sanhuai-dy（AI 代提交，实机 Redmi K40 游戏增强版 / Android 12 / WebView 96.0.4664.104）。
   v3 polyfill 覆盖 13 项但缺 `AbortSignal.prototype.throwIfAborted`（Chrome 100），
