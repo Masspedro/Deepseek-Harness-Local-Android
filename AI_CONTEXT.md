@@ -1,5 +1,26 @@
 # AI_CONTEXT
 
+## v1.4.19（2026-10-25，issue #40：WebView 96 下 throwIfAborted TypeError）
+- **报告**：sanhuai-dy（AI 代提交，实机 Redmi K40 游戏增强版 / Android 12 / WebView 96.0.4664.104）。
+  v3 polyfill 覆盖 13 项但缺 `AbortSignal.prototype.throwIfAborted`（Chrome 100），
+  dynamicCordisRunner/syncInspectManifest 等客户端 runner 整链 TypeError。
+- **修复（polyfill v4，commit e4e908a）**：
+  - throwIfAborted（抛 reason，缺 reason 回退 AbortError）；
+  - **配套补 AbortSignal#reason（Chrome 98）**：96/97 的 abort(reason) 只触发事件不存
+    reason——包装 AbortController.prototype.abort（仅原型缺 reason 时启用），先挂
+    reason 再调原生（同步监听器读得到）；
+  - structuredClone 兜底 window→globalThis（Worker 里 window 不存在，v3 会中断整个
+    IIFE——隐性缺陷）；
+  - patch 脚本 +--zip 模式；本地 5 个 runtime zip 已升 v4。
+- **构建门禁**：prepareRuntime 校验 index.html v4 标记 + 三个符号，缺失现场打、
+  再缺中止（防「补丁只存在于产物」第三次重演）。
+- **测试**：scripts/probes/_test_webview_polyfill_v4.mjs——Node vm + 纯 JS fake
+  AbortController（Node 原生 any/timeout 不可配置删不掉），9 项全过（含现代环境零改动）。
+- README 兼容口径：85 是语法层门槛（??= 解析特性），API 层 14 项 polyfill 覆盖，96 实测可用。
+- **已回复 issue #40**（comment-6392630116）。versionCode 268 已随 v1.4.18 发布用掉，
+  下次发布需 bump 269/1.4.19。gitignore 白名单 +2（测试文件入 probes 白名单，照 PR #39 先例）。
+- **待发布**：等宝宝指令；发布 = bump 版本号 → tag v1.4.19 → CI 全自动。
+
 ## v1.4.18 发布（2026-10-25，PR #39 合并 + tag 发布）
 - **PR #39（@XiaoPb）已合并**（merge commit `42717f5`）：① 内置
   @tiphareth/dsh-hardssh 0.2.10（CI 从 XiaoPb/dsh-hardssh 固定 SHA 构建，注入
