@@ -372,9 +372,14 @@ jobs:
   # 版本：app/build.gradle.kts 的 versionName + 本次 run_number，保证每个成功
   # 的构建版本号唯一（tag = v<versionName>-<run_number>），互不覆盖。
   release:
+    # v1.4.19 修复：此 job 是上游 fork 的「debug 签名自动分发渠道」——每次 push
+    # main 都新建一个 v<ver>-<run_number> 的 Release，在本仓库把 Releases 页面
+    # 刷成了连续的重复包（v1.4.18-380/381/382/384）。本仓库的发布语义是：
+    # tag v* → publish-release（正式签名）；main push → publish-edge（单个滚动
+    # prerelease）。此 job 降级为仅手动触发，需要测试分发时在 Actions 页面跑。
     if: >-
       github.repository == 'Soodok/Deepseek-Harness-Local-Android'
-      && github.event_name != 'pull_request'
+      && github.event_name == 'workflow_dispatch'
       && needs.build-apk.result == 'success'
     needs: [build-apk]
     runs-on: ubuntu-24.04
