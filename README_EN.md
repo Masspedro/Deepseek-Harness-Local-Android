@@ -51,7 +51,7 @@ All figures come from real-device / emulator testing, not theory:
 |---|---|---|
 | **Cold start to engine ready** | **< 10 s** | OnePlus 15T (Android 16), real device |
 | **Memory with parallel services** | **< 400 MB** | Engine + multiple toolchains running together |
-| **Android compatibility** | **8.0 → 16** | Requires WebView ≥ Chrome 85 (see below) |
+| **Android compatibility** | **8.0 → 16** | Requires WebView ≥ Chrome 85 (APIs polyfilled; Chrome 96 verified, see below) |
 | **APK size** | **~144 MB** | Full Node.js runtime + toolchain closure for 19 extensions |
 | **Installed size** | **~500 MB** | After runtime extraction |
 
