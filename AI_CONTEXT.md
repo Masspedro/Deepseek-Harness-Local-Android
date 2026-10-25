@@ -1,5 +1,23 @@
 # AI_CONTEXT
 
+## 2026-10-25 issues/PR 批量处理
+- **修复已推送**（commit 2a3db3d，将随 v1.4.20 发）：
+  #42 Android 10 存储权限（WRITE/READ maxSdkVersion 28→29——MANAGE 是 API 30 才有，
+  maxSdk=28 让 API 29 设备无权限无入口）；
+  #44 开 VPN 单文件下载失败（DownloadManager 进程被绑 VPN 网络访问不了 127.0.0.1；
+  回环目标改 App 内 HttpURLConnection 流式下载 + 后台线程 + Cookie 透传 + MediaStore）；
+  #43 WebUI 复制无反应（DshAndroidClipboard 原生桥 + onPageFinished 注入降级链
+  原生API→桥→execCommand + WebView 可聚焦；页面吞异常也兜住）；
+  #47 「List is empty」不可读报错（deb 路径入口校验 packages 空）。
+- **已回复**：#41 多 profile（认可分析，进 backlog，关联 PR #48）；#46 葡语（欢迎
+  values-pt-rBR PR）。**已关闭**（修复已发版）：#37/#38/#35/#23。
+- **PR #48（XiaoPb，182 文件 +8221）审查完毕未合并**：full/noruntime 双形态 +
+  运行时云分发 + hardssh 独立 + pet 桌宠 + 主题。checker 深审结论：核心分发安全
+  （验签不降级/sha256 先行/回滚状态机）实测成立；P0=MANIFEST.json modify/delete
+  冲突（合并时保留删除）；P1=PetBridgeServer 7779 无鉴权（应照 AgentBridge 先例
+  token 门控）。已评论合并条件（rebase + 补鉴权），作者更新后合并。跟进 issue #49
+  （swap 中断恢复窗口 + P2 清单）。
+
 ## v1.4.19 已发布（2026-10-25，tag run 40169259973）
 - 4 资产上线（arm64/x86_64 × debug/release，release 226.6MB 签名校验过）。
 - WebView <85 的版本门禁为**既有功能**（AppGate MIN_WEBVIEW_CHROME=85，v1.2.100 起，
