@@ -681,6 +681,9 @@ class SettingsActivity : Activity() {
             running && status.connected -> getString(R.string.pet_status_connected)
             running -> getString(R.string.pet_status_running)
             !plugin.profileExists -> getString(R.string.pet_status_engine_down)
+            // 装了但低于 0.3.1：不能报「未安装」，否则用户会重复装同一个旧版
+            plugin.bridgeInstalled && !plugin.bridgeVersionOk ->
+                getString(R.string.pet_status_plugin_outdated)
             !plugin.bridgeReady -> getString(R.string.pet_plugin_missing)
             else -> getString(R.string.pet_status_stopped)
         }
