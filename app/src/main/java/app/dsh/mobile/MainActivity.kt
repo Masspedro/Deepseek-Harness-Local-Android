@@ -284,6 +284,12 @@ class MainActivity : Activity() {
             loadWithOverviewMode = true
             applyZoomControls(desktopMode)
         }
+        // v1.4.20（issue #43）：document focus 是 navigator.clipboard.writeText 的
+        // 硬条件——WebView 失焦时页面复制被 NotAllowedError 拒绝。让 WebView 可聚焦
+        // 并在布局后拿到焦点，配合注入的剪贴板降级链把复制失败率压到最低。
+        webView.isFocusable = true
+        webView.isFocusableInTouchMode = true
+        webView.requestFocus()
         // ── WebView 诊断（v1.2.49）：用户报「用不了」时能拿到确凿信息 ────────────
         // 背景：华为 Mate40 报 `AbortSignal.any is not a function`、另有 Android 16 用户
         // 报失败，但 App 此前既不捕获 WebView 错误也不转发 console，排查只能靠猜。
@@ -396,6 +402,23 @@ class MainActivity : Activity() {
             },
             WebViewDownloader.BRIDGE_NAME,
         )
+        // v1.4.20（issue #43）：剪贴板兜底桥。navigator.clipboard.writeText 在
+        // WebView 里常因焦点/激活限制抛 NotAllowedError（页面又吞掉异常），
+        // 桥让页面侧降级链有第二条路。调用来自 JavaBridge 线程，前台限制不适用。
+        webView.addJavascriptInterface(
+            object : Any() {
+                @android.webkit.JavascriptInterface
+                fun copyText(text: String?): Boolean {
+                    val t = text ?: return false
+                    return runCatching {
+                        val cm = getSystemService(android.content.ClipboardManager::class.java)
+                        cm.setPrimaryClip(android.content.ClipData.newPlainText("text", t))
+                        true
+                    }.getOrDefault(false)
+                }
+            },
+            "DshAndroidClipboard",
+        )
         webView.webViewClient = object : WebViewClient() {
             override fun onReceivedError(
                 view: WebView?, request: WebResourceRequest?, error: android.webkit.WebResourceError?,
@@ -453,6 +476,12 @@ class MainActivity : Activity() {
                 runCatching {
                     view.evaluateJavascript(WebViewDownloader.bridgeJs(), null)
                 }.onFailure { logWebView("blob bridge inject failed: ${it.message}") }
+                // v1.4.20（issue #43）：剪贴板降级链注入——writeText 失败（焦点/激活
+                // 被拒）时回退原生桥 DshAndroidClipboard.copyText，再回退
+                // execCommand('copy')。无 clipboard API 的老内核直接补一个可用的。
+                runCatching {
+                    view.evaluateJavascript(CLIPBOARD_FALLBACK_JS, null)
+                }.onFailure { logWebView("clipboard bridge inject failed: ${it.message}") }
                 // v1.4.6：视口缩放必须在**启动遮罩收起之前**定稿，并在遮罩之下整页
                 // 重栅格化一次。旧顺序是「先 dismissSplash()、再改 meta」——用户会先看到
                 // 按 initial-scale=1 画好的首屏（含登录/开始使用弹窗），紧接着整页缩放
@@ -1716,6 +1745,58 @@ class MainActivity : Activity() {
         private const val MAX_POLL = 40
         /** 「输入框是否确定为空」的采样间隔（见 probeInputEmpty） */
         private const val PROBE_INTERVAL_MS = 60L
+
+        /**
+         * v1.4.20（issue #43）：剪贴板降级链。页面普遍用
+         * `navigator.clipboard.writeText()`（要求文档焦点 + 用户手势），WebView 里
+         * 常被焦点/激活限制拒绝，而页面实现多把异常吞掉——用户感知就是「复制按钮
+         * 坏了」。这里把 writeText 包装成降级链：
+         *   ① 原生 API（有焦点时行为不变）→ ② 原生桥 DshAndroidClipboard（绕开
+         *   焦点限制）→ ③ execCommand('copy')（textarea 必须 position:fixed+
+         *   opacity:0，display:none 会复制失败）→ ④ 全失败才把原异常抛回。
+         * 老内核没有 clipboard API 时直接装一个可用的 writeText。
+         */
+        private const val CLIPBOARD_FALLBACK_JS = """
+(function () {
+  if (window.__dshClipboardPatched) return;
+  window.__dshClipboardPatched = true;
+  function nativeCopy(t) {
+    try { return !!(window.DshAndroidClipboard && window.DshAndroidClipboard.copyText(t)); }
+    catch (e) { return false; }
+  }
+  function legacyCopy(t) {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = t;
+      ta.style.cssText = 'position:fixed;top:-999px;left:-999px;opacity:0;';
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      var ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch (e) { return false; }
+  }
+  function viaFallback(t) {
+    if (nativeCopy(t)) return;
+    if (legacyCopy(t)) return;
+    throw new Error('all clipboard paths failed');
+  }
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    var orig = navigator.clipboard.writeText.bind(navigator.clipboard);
+    navigator.clipboard.writeText = function (text) {
+      return Promise.resolve().then(function () { return orig(text); }).catch(function (err) {
+        viaFallback(text);
+      });
+    };
+  } else {
+    navigator.clipboard = navigator.clipboard || {};
+    navigator.clipboard.writeText = function (text) {
+      try { viaFallback(text); return Promise.resolve(); }
+      catch (e) { return Promise.reject(e); }
+    };
+  }
+})();
+"""
 
         /**
          * 环境自检脚本：报告 WebView 版本与引擎所需关键 API 是否存在。

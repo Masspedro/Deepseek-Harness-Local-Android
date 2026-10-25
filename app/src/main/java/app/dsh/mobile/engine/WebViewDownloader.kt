@@ -85,10 +85,15 @@ object WebViewDownloader {
         name.replace(Regex("[/\\\\:*?\"<>|]"), "_").trim().ifBlank { "download" }
 
     /**
-     * 处理 [android.webkit.DownloadListener] 收到的 http(s) 下载：
-     * 交给系统 DownloadManager（无需存储权限，系统托盘有进度与完成通知）。
+     * 处理 [android.webkit.DownloadListener] 收到的 http(s) 下载。
      *
-     * @return null = 已交给 DownloadManager；非 null = 失败说明（调用方提示用户）
+     * v1.4.20（issue #44）：**回环地址不走 DownloadManager** —— 开 VPN 时系统
+     * 下载管理器（独立进程）的连接被绑到 VPN 默认网络，访问 127.0.0.1 拿不到
+     * 结果，任务 100% 失败；而页面自身 fetch（打包下载）不受影响。回环目标
+     * 改为 App 内 HttpURLConnection 流式下载 → MediaStore/公共目录落盘，
+     * 与 VPN 状态无关，也不进内存。
+     *
+     * @return null = 已交给 DownloadManager / 已由 App 内下载完成；非 null = 失败说明
      */
     fun enqueueHttpDownload(
         context: Context,
@@ -99,6 +104,22 @@ object WebViewDownloader {
     ): String? = runCatching {
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
             return "unsupported download URL scheme"
+        }
+        if (isLoopback(url)) {
+            // DownloadListener 回调在主线程，同步网络 IO 会 ANR —— 起后台线程，
+            // 失败时自补一个失败 toast（成功 toast 由调用方在返回 null 后立即给）。
+            val appCtx = context.applicationContext
+            Thread({
+                val err = downloadInApp(appCtx, url, userAgent, contentDisposition, mimeType)
+                if (err != null) {
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        android.widget.Toast.makeText(
+                            appCtx, "Download failed: $err", android.widget.Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                }
+            }, "dsh-loopback-dl").apply { isDaemon = true }.start()
+            return null
         }
         val fileName = resolveFileName(contentDisposition, mimeType, url)
         val req = DownloadManager.Request(Uri.parse(url)).apply {
@@ -117,6 +138,95 @@ object WebViewDownloader {
     }.getOrElse {
         Log.w(TAG, "enqueue failed: ${it.message}")
         it.message ?: "download failed"
+    }
+
+    /** 下载目标是否为本机回环（WebUI 文件分享的直链就是 127.0.0.1）。 */
+    fun isLoopback(url: String): Boolean = runCatching {
+        val host = Uri.parse(url).host?.lowercase() ?: return false
+        host == "127.0.0.1" || host == "localhost" || host == "::1"
+    }.getOrDefault(false)
+
+    /**
+     * App 内流式下载回环资源（issue #44）：不经过 DownloadManager（VPN 绑定），
+     * 不整文件进内存。带 WebView 会话 Cookie（引擎有 token 认证）。
+     *
+     * @return null = 成功（已落盘 Download/）；非 null = 失败说明
+     */
+    private fun downloadInApp(
+        context: Context,
+        url: String,
+        userAgent: String?,
+        contentDisposition: String?,
+        mimeType: String?,
+    ): String? = runCatching {
+        val fileName = resolveFileName(contentDisposition, mimeType, url)
+        val conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+            instanceFollowRedirects = true
+            connectTimeout = 10_000
+            readTimeout = 30_000
+            userAgent?.let { setRequestProperty("User-Agent", it) }
+            CookieManager.getInstance().getCookie(url)?.let { setRequestProperty("Cookie", it) }
+            setRequestProperty("Referer", url)
+        }
+        val code = conn.responseCode
+        if (code !in 200..299) {
+            return "HTTP $code"
+        }
+        val stream = conn.inputStream
+        val saved = writeToPublicDownloadsStream(
+            context, fileName, conn.contentType?.substringBefore(';') ?: mimeType ?: "",
+            stream,
+        )
+        stream.close()
+        conn.disconnect()
+        Log.i(TAG, "in-app loopback download saved: $fileName -> $saved")
+        null
+    }.getOrElse {
+        Log.w(TAG, "in-app download failed: ${it.message}")
+        it.message ?: "download failed"
+    }
+
+    /**
+     * 流式写公共 Download/（v1.4.20，配 [downloadInApp]）：29+ MediaStore
+     * openOutputStream；26–28 直写路径。重名去重与 [writeToPublicDownloads] 一致。
+     */
+    fun writeToPublicDownloadsStream(
+        context: Context,
+        fileName: String,
+        mimeType: String,
+        input: java.io.InputStream,
+    ): Uri {
+        val safeMime = mimeType.ifBlank { "application/octet-stream" }
+        if (Build.VERSION.SDK_INT >= 29) {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, safeMime)
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val resolver = context.contentResolver
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: throw IllegalStateException("MediaStore insert returned null")
+            resolver.openOutputStream(uri)?.use { out -> input.copyTo(out) }
+                ?: throw IllegalStateException("cannot open output stream")
+            values.clear()
+            values.put(MediaStore.Downloads.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+            return uri
+        }
+        // API 26–28：legacy 路径（清单已声明 WRITE_EXTERNAL_STORAGE，v1.4.20 起 maxSdk=29）
+        @Suppress("DEPRECATION")
+        val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        if (!dir.isDirectory && !dir.mkdirs()) throw IllegalStateException("cannot create Download dir")
+        var f = File(dir, fileName)
+        if (f.exists()) {
+            val dot = fileName.lastIndexOf('.')
+            val base = if (dot > 0) fileName.substring(0, dot) else fileName
+            val ext = if (dot > 0) fileName.substring(dot) else ""
+            var i = 1
+            while (f.exists()) { f = File(dir, "$base ($i)$ext"); i++ }
+        }
+        f.outputStream().use { out -> input.copyTo(out) }
+        return Uri.fromFile(f)
     }
 
     /**

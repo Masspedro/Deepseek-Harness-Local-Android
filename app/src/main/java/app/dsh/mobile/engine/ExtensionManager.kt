@@ -494,6 +494,15 @@ class ExtensionManager(private val ctx: Context) {
             listOf("https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main")
         }
         report(0f, "Resolving dependency closure…")   // 0 = indeterminate：解析/索引阶段无确定字节量，UI 转旋转动画
+        // v1.4.20（issue #47）：packages 为空时 first() 抛「List is empty」——
+        // 报错完全不可读（用户以为 App 坏了）。catalog 条目既无 apkUrl 又无
+        // packages 属于条目损坏，这里给出可操作的错误。
+        if (ext.packages.isEmpty()) {
+            throw IllegalStateException(
+                "Catalog entry '${ext.id}' has no packages and no APK URL — " +
+                    "the entry is broken; please report this with a screenshot"
+            )
+        }
         val preferred = if (rotatePreferred) allMirrors.getOrElse(1) { allMirrors.first() } else allMirrors.first()
         val index = fetchPackagesIndex(preferred) { s -> report(null, s) }
         val closure = resolveClosure(ext.packages, index)

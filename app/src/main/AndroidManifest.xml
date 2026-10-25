@@ -22,11 +22,16 @@
     <!-- v1.4.17（issue #37）：blob 下载落盘到公共 Download/ 在 Android 8/9 上需要
          运行时存储权限（Android 10+ 走 MediaStore 无需权限）。仅按 maxSdk 声明，
          不影响 Android 10+ 的权限模型。配套 requestLegacyExternalStorage：
-         Android 10 上 targetSdk 28 直接按路径写 /sdcard/Download 需要 legacy 标记。 -->
+         Android 10 上 targetSdk 28 直接按路径写 /sdcard/Download 需要 legacy 标记。
+         v1.4.20（issue #42）：maxSdk 提到 29 —— Android 10（API 29）引入 scoped
+         storage 但 targetSdk≤28 的应用在 requestLegacyExternalStorage 下仍是
+         路径模型，WRITE 权限真实生效；28 封顶会让 API 29 设备「既无权限也无
+         授权入口」（MANAGE_EXTERNAL_STORAGE 是 API 30 才有的）。API 30+ 用
+         MANAGE_EXTERNAL_STORAGE，不受影响。 -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="28" />
+        android:maxSdkVersion="29" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="28" />
+        android:maxSdkVersion="29" />
 
     <!-- ⚠️ Android 11+ 的 package visibility（v1.2.83，调研发现的关键坑）：
          不声明 <queries> 时，App **看不到**用户后来安装的语音识别服务，
