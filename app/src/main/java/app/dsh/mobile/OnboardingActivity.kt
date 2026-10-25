@@ -50,7 +50,12 @@ class OnboardingActivity : Activity() {
         rikka.shizuku.Shizuku.addRequestPermissionResultListener(shizukuPermListener)
 
         // v1.4.18：平板默认选中「自动」，手机仍默认竖屏（与 OrientationPrefs 同一默认值）
-        selectedOrientation = OrientationPrefs.defaultFor(this)
+        selectedOrientation = savedInstanceState?.getString(KEY_ORIENTATION)
+            ?.let { runCatching { OrientationMode.valueOf(it) }.getOrNull() }
+            ?: OrientationPrefs.defaultFor(this)
+        selectedPriv = savedInstanceState?.getString(KEY_PRIV)
+            ?.let { runCatching { PrivMode.valueOf(it) }.getOrNull() }
+            ?: PrivMode.NORMAL
         // 默认选中：普通 + 语言卡片高亮（默认英语）
         selectedLang = LocaleHelper.get(this)
         updateSelectionUi()
@@ -93,7 +98,13 @@ class OnboardingActivity : Activity() {
             }
             if (selectedPriv == PrivMode.SHIZUKU) maybeRequestShizuku()
         }
-        privGroup.check(R.id.privNormal)
+        privGroup.check(
+            when (selectedPriv) {
+                PrivMode.ROOT -> R.id.privRoot
+                PrivMode.SHIZUKU -> R.id.privShizuku
+                else -> R.id.privNormal
+            },
+        )
 
         // 能力检测（Root 用 su 实测；Shizuku 用官方 binder ping + 授权态）
         //
@@ -137,6 +148,12 @@ class OnboardingActivity : Activity() {
             selectedPriv = PrivMode.NORMAL
             findViewById<RadioGroup>(R.id.privGroup).check(R.id.privNormal)
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString(KEY_ORIENTATION, selectedOrientation.name)
+        outState.putString(KEY_PRIV, selectedPriv.name)
+        super.onSaveInstanceState(outState)
     }
 
     override fun onDestroy() {
@@ -188,6 +205,8 @@ class OnboardingActivity : Activity() {
 
     private companion object {
         const val SHIZUKU_REQ = 4201
+        const val KEY_ORIENTATION = "ob_orientation"
+        const val KEY_PRIV = "ob_priv"
     }
 
     /**
