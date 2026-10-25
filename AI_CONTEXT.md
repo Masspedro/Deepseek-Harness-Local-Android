@@ -1,5 +1,12 @@
 # AI_CONTEXT
 
+## v1.4.19 已发布（2026-10-25，tag run 40169259973）
+- 4 资产上线（arm64/x86_64 × debug/release，release 226.6MB 签名校验过）。
+- WebView <85 的版本门禁为**既有功能**（AppGate MIN_WEBVIEW_CHROME=85，v1.2.100 起，
+  MainActivity.checkWebViewGate 三级取法 + market:// 升级入口 + 「仍然继续」）——
+  本版未改（曾误判缺失重复造轮子，宝宝纠正后已回滚 WebViewVersionCheck.kt）。
+- 教训：动「已有功能」前先 grep 全仓（v1.2.100 的门禁不在 issue 提及的文件里）。
+
 ## v1.4.19 追加（2026-10-25，CI 刷包修复——宝宝发现「连续构建了四五个包」）
 - **根因**：PR #39 的 `release` job 是上游 fork 的 debug 自动分发渠道——
   每次 push main 都新建 `v<ver>-<run_number>` 的 Release（发到我们仓库即
