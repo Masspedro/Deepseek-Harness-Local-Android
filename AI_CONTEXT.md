@@ -17,8 +17,13 @@
   双架构 runtime+APK → 签名 → GitHub Release + 自动 notes）。tag 构建**强制**
   要求 RELEASE_* secrets（缺失即红）。升级内置 hardssh = 改 workflow 顶部
   HARDSSH_REF。
-- **发布 run**：40144039300（tag v1.4.18）。注意 pull 前清掉残留的
-  CHERRY_PICK_HEAD（`git cherry-pick --quit`），否则 merge 被拒。
+- **发布 run**：40144039300（首跑，build 5 job 全绿但 release 全 skipped——**PR #39
+  把 release/publish-* 的 `github.repository` 条件硬编码成作者 fork 名**，已改回
+  `Soodok/…`，commit 5594d71）；重打 tag 后 run 40144773431 全绿。
+- **已发布**：Release「DSH Mobile v1.4.18」正式版（draft=false），4 资产：
+  dsh-android-v1.4.18-{arm64-v8a,x86_64}-{debug,release}.apk（release 226.6MB，
+  CI 内证书指纹校验通过）。发布说明已自动生成 + 仓库内
+  RELEASE_NOTES_v1.4.18.md（commit 在 tag 之后，属正常）。
 
 ## v1.4.18 追加 2（2026-10-24，issue #38：终端启动报 Termux bash.bashrc Permission denied）
 - **机理**：runtime 的 bash 是 Termux 构建，SYS_BASHRC 编译期宏写死
