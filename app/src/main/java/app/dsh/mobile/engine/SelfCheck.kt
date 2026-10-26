@@ -27,7 +27,8 @@ import java.io.File
  * 5. **未登记会话** —— 磁盘上有但列表里没有的对话（复用 ChatRecovery.scan）
  * 6. **插件配置** —— profile package.json 可解析、bundles 列表合法
  * 7. **残留进程** —— 孤儿引擎进程（复用 OrphanReaper 的判定）
- * 8. **磁盘空间** —— 数据目录可用余量
+ * 8. **换装残留** —— 中断的运行时换装留下的 staging / zip 缓存 / 意图日志
+ * 9. **磁盘空间** —— 数据目录可用余量
  *
  * ## 安全边界
  * · 只做**幂等、可回滚**的修复：重建软链、修注册表路径、回收孤儿进程；
@@ -90,6 +91,7 @@ object SelfCheck {
         items += checkWorkspaceRegistry(ctx)
         items += checkOrphanSessions(ctx)
         items += checkProfile(ctx)
+        items += checkInstallResidue(ctx)
         items += checkFreeSpace(ctx)
 
         val r = Report(items, t0, System.currentTimeMillis())
@@ -373,7 +375,71 @@ object SelfCheck {
         }
     }
 
-    // ── 7. 磁盘空间 ────────────────────────────────────────────────────────
+    // ── 7. 换装残留 ────────────────────────────────────────────────────────
+
+    /**
+     * 上一次运行时安装/换装留下的残留（v1.4.26）。
+     *
+     * 这一项是为「用户报『空间莫名少了 600M』」准备的：解压阶段（30-60s 窗口）
+     * 被低内存杀掉，`engine.staging`（约 580MB）与 `cacheDir/runtime.zip`
+     * （约 124MB）会留在盘上，而 `engine/` 往往仍然完整 —— 引擎照常启动，
+     * 谁也不会去动那两个目录，于是永久占着。
+     *
+     * ⚠️ 这里**只报告、不删除**，与体检「绝不删除」的边界保持一致：
+     * 真正的清理在下次启动的 `RuntimeInstaller.cleanupInstallResidue()`，
+     * 那里持有 INSTALL_LOCK，不会和正在进行的安装抢目录。
+     */
+    private fun checkInstallResidue(ctx: Context): List<Item> {
+        if (RuntimeInstaller.installing) {
+            return listOf(
+                Item("install.residue", "Runtime install", Item.Status.OK, "install in progress")
+            )
+        }
+        val pendingSwap = File(ctx.filesDir, ".runtime-swap").isFile
+        val staging = File(ctx.filesDir, "engine.staging")
+        val zip = File(ctx.cacheDir, "runtime.zip")
+        val backup = File(ctx.filesDir, "engine.old")
+        val pendingHealth = File(ctx.filesDir, ".pending-health").isFile
+
+        val problems = mutableListOf<String>()
+        if (pendingSwap) {
+            problems += "interrupted swap journal present (rolled back on next start)"
+        }
+        if (staging.exists()) {
+            problems += "engine.staging ${sizeMb(staging)}MB from an interrupted extract"
+        }
+        if (zip.isFile) {
+            problems += "runtime.zip cache ${zip.length() / (1L shl 20)}MB"
+        }
+        if (problems.isNotEmpty()) {
+            return listOf(
+                Item(
+                    "install.residue", "Runtime install", Item.Status.WARN,
+                    problems.joinToString("; ") + " — cleaned on next engine start",
+                )
+            )
+        }
+        // engine.old + .pending-health 同时存在是**正常**的两次启动确认窗口
+        //（新装完还没被确认过），不能报成异常。
+        return listOf(
+            when {
+                backup.exists() && pendingHealth ->
+                    Item("install.residue", "Runtime install", Item.Status.OK, "awaiting first healthy boot")
+                backup.exists() ->
+                    Item(
+                        "install.residue", "Runtime install", Item.Status.WARN,
+                        "engine.old ${sizeMb(backup)}MB left without a pending marker — will be released on next start",
+                    )
+                else -> Item("install.residue", "Runtime install", Item.Status.OK, "no leftovers")
+            }
+        )
+    }
+
+    private fun sizeMb(dir: File): Long =
+        runCatching { dir.walkTopDown().filter { it.isFile }.sumOf { it.length() } / (1L shl 20) }
+            .getOrDefault(0L)
+
+    // ── 8. 磁盘空间 ────────────────────────────────────────────────────────
 
     private fun checkFreeSpace(ctx: Context): List<Item> {
         val home = EngineConfig.dshHome(ctx)

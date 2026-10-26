@@ -3,12 +3,18 @@ package app.dsh.mobile.engine
 import app.dsh.mobile.R
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.os.Build
 import android.util.Log
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.zip.ZipInputStream
+
+/** 换装日志相位（v1.4.26）：意图已落盘 → 条目已全部换完。 */
+private const val PHASE_SWAP = "swap"
+private const val PHASE_COMMITTED = "committed"
 
 /**
  * Node 运行时安装器。
@@ -112,7 +118,15 @@ class RuntimeInstaller(private val ctx: Context) {
         onProgress: (Float) -> Unit,
         onDetail: (BootTrace.Install) -> Unit,
     ): Boolean {
+        // ① 先收拾「上次换装被杀在半路」的现场（v1.4.26）。
+        //    必须早于完整性判断：混合态可能通过 `isRootCompleteAt()`，
+        //    看着完整但 node 与 .so 错配，那种运行时不能拿去启动。
+        recoverInterruptedSwap()
+        // ② 再处理「换装成功但引擎始终没进 Healthy」——它依赖 engine.old，
+        //    与 ① 是两个独立窗口，判断依据也不同（那里是启动成功与否）。
         recoverPendingHealth()
+        // ③ 最后清掉上一次中断留下的临时目录（staging / zip 缓存）。
+        cleanupInstallResidue()
         val manifest = readManifest()
         val complete = EngineConfig.nodeBin(ctx).exists() && isRootComplete()
         if (complete) {
@@ -161,11 +175,26 @@ class RuntimeInstaller(private val ctx: Context) {
     /**
      * 引擎进入 Healthy/SafeMode 后调用：确认新运行时可用，删除 engine.old 与 pending 标记。
      * 幂等；没有待确认安装时是 no-op。
+     *
+     * ⚠️ v1.4.26：**SafeMode 也算确认**（引擎 HTTP 通、只是插件降级）。这个语义是
+     * 有意的 —— 运行时本身没问题就不该回滚，插件故障归 ProfileGuardian 管。
+     * 改动之前先读 docs/RUNTIME_SWAP.md。
      */
     fun markHealthy() {
         val marker = pendingMarker()
         val backup = backupDir()
-        if (!marker.isFile && !backup.exists()) return
+        val log = readSwapLog()
+        // 换装日志还停在 swap 相位，说明启动恢复没能把它处理掉（回滚失败）。
+        // 这种情况下**什么都不删** —— 备份是下次启动重试回滚的唯一依据，
+        // 此刻把它删掉，下次启动就会对着一个没有备份的「换到一半」现场去还原。
+        if (log != null && log.phase != PHASE_COMMITTED) {
+            Log.w(
+                TAG,
+                "markHealthy: swap log still in phase=${log.phase}; keeping evidence for next start",
+            )
+            return
+        }
+        if (!marker.isFile && !backup.exists() && log == null) return
         runCatching {
             if (backup.exists() && !backup.deleteRecursively()) {
                 Log.w(TAG, "could not remove runtime backup ${backup.absolutePath}")
@@ -173,6 +202,9 @@ class RuntimeInstaller(private val ctx: Context) {
             marker.delete()
             metaBackupFile().delete()
             stampBackupFile().delete()
+            // committed 日志正常在提交时已删；这里兜的是「提交后、删日志前被杀，
+            // 而启动恢复又没走到」的极端情况。
+            if (log?.phase == PHASE_COMMITTED) deleteSwapLog()
         }.onFailure { Log.w(TAG, "markHealthy cleanup failed: ${it.message}") }
         Log.i(TAG, "runtime confirmed healthy; previous runtime backup released")
     }
@@ -214,10 +246,270 @@ class RuntimeInstaller(private val ctx: Context) {
         }
     }
 
+    /**
+     * 处理「上次换装被打断」的现场（v1.4.26）。
+     *
+     * 判定**只看意图日志**，不看 `isRootComplete()` —— 后者对「新 bin + 旧 lib」
+     * 这种混合态是失效的（锚点文件全在，node 架构也对得上，只是彼此不配套）。
+     *
+     * 两个相位：
+     *  - `swap`：换装没走完。一律回滚到 `engine.old`，让磁盘回到「旧运行时 + 一致的
+     *    元数据」。回滚后交给 `ensureInstalled`：full 包会因版本戳不符**本地重装**
+     *    （不多下一次网络），noruntime 包按「已装好就复用」保持旧版本可用 —— 用户
+     *    下次点更新再装，而不是在启动遮罩里被动重下 100MB+。
+     *  - `committed`：条目已全部换完，只是没来得及收尾（写版本戳 / 清 staging /
+     *    写 pending-health）。直接前滚，别把已经换好的运行时白扔掉。
+     *
+     * @return true = 处理了现场（调用方可以不关心，诊断用）
+     */
+    private fun recoverInterruptedSwap(): Boolean {
+        val log = readSwapLog() ?: return false
+        val backup = backupDir()
+        val hasBackup = backup.isDirectory && !backup.listFiles().isNullOrEmpty()
+        val complete = isRootComplete()
+        Log.w(
+            TAG,
+            "interrupted runtime swap: phase=${log.phase} backup=$hasBackup " +
+                "complete=$complete planned=${log.planned.size} old=${log.old.size}",
+        )
+        if (log.phase == PHASE_COMMITTED && complete) {
+            // 前滚：元数据可能还没写（版本戳 / 清理），按日志补齐。
+            writeStamp(
+                RuntimeInfo(
+                    version = log.version,
+                    builtAt = log.builtAt,
+                    bundled = log.bundled,
+                    url = null,
+                    urls = emptyList(),
+                    sha256 = null,
+                    size = 0L,
+                    unpackedBytes = 0L,
+                ),
+                bundled = log.bundled,
+            )
+            File(ctx.filesDir, "engine.staging").deleteRecursively()
+            deleteSwapLog()
+            if (hasBackup) {
+                // 与正常提交路径一致：留着 engine.old 走两次启动的健康确认。
+                pendingMarker().writeText("0")
+                Log.w(TAG, "runtime swap was already committed; kept engine.old for the first healthy boot")
+            } else {
+                backup.deleteRecursively()
+                metaBackupFile().delete()
+                stampBackupFile().delete()
+            }
+            return true
+        }
+        rollbackFromLog(log)
+        return true
+    }
+
+    /**
+     * 按意图日志回滚。**必须可重入** —— 回滚本身也可能在同一处被杀。
+     *
+     * 规则只有两条，且都靠 `log.old` / `log.planned` 判定，不做任何「文件不在就删」
+     * 之类的猜测：
+     *  ① `planned - old`：新运行时独有的顶层条目 → 删掉（删两次无害）；
+     *  ② `old`：`engine.old` 里有就还原，没有就保持 root 不动 ——
+     *     「没搬走过」和「已经还原过」在磁盘上是同一个样子，而两种情形都该保留 root。
+     *
+     * 第二节这条正是幂等性的来源：若按备份目录的当前内容反推「缺失即新条目」，
+     * 重入时会把上一轮刚还原好的旧运行时删掉。
+     */
+    private fun rollbackFromLog(log: SwapLog) {
+        val backup = backupDir()
+        val planned = log.planned.toSet()
+        val old = log.old.toSet()
+        runCatching {
+            for (name in planned - old) {
+                File(root, name).deleteRecursively()
+            }
+            for (name in old) {
+                val oldEntry = File(backup, name)
+                if (!oldEntry.exists()) continue
+                val current = File(root, name)
+                current.deleteRecursively()
+                if (!oldEntry.renameTo(current)) oldEntry.copyRecursively(current, overwrite = true)
+            }
+            restoreMetaBackups()
+            Log.w(
+                TAG,
+                "runtime rolled back from swap log (planned=${planned.size}, restored=${old.size})",
+            )
+        }.onFailure {
+            // 回滚失败：**保留日志与 engine.old**，下次启动继续尝试。
+            // 这里绝不清证据 —— 清掉之后磁盘就永久停在混合态了。
+            Log.e(TAG, "runtime rollback failed: ${it.javaClass.simpleName}: ${it.message}")
+            return
+        }
+        File(ctx.filesDir, "engine.staging").deleteRecursively()
+        deleteSwapLog()
+        backup.deleteRecursively()
+    }
+
+    /**
+     * 清理上次安装被打断后残留的临时目录（v1.4.26）。
+     *
+     * 解压阶段是最长的窗口（240MB zip 在低端机上 30-60s），也最容易撞上低内存
+     * 杀进程。被杀之后 `engine/` 往往仍然完整 → 下次启动走「复用」直接返回，
+     * 而 `staging.deleteRecursively()` 只存在于 `install()` 内部 —— 于是
+     * `engine.staging`（约 580MB）与 `cacheDir/runtime.zip`（约 124MB）会**永久
+     * 留在盘上**，用户只看到「空间莫名少了一大截」。这里给它们一个归宿。
+     */
+    private fun cleanupInstallResidue() {
+        // 有换装日志说明本次是「换到一半」，此时 staging 是证据，不能动。
+        if (swapLogFile().isFile) return
+        val staging = File(ctx.filesDir, "engine.staging")
+        if (staging.exists()) {
+            val mb = runCatching { sizeOf(staging) / (1L shl 20) }.getOrDefault(0L)
+            if (staging.deleteRecursively()) {
+                Log.w(TAG, "removed orphaned engine.staging (${mb}MB) left by an interrupted install")
+            }
+        }
+        val zip = File(ctx.cacheDir, "runtime.zip")
+        if (zip.isFile) {
+            val mb = zip.length() / (1L shl 20)
+            if (zip.delete()) Log.w(TAG, "removed orphaned runtime.zip cache (${mb}MB)")
+        }
+    }
+
+    private fun sizeOf(dir: File): Long =
+        dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+
+    /**
+     * 换装中途自杀开关（**仅 debuggable 包生效**）。
+     *
+     * 这个缺陷没法靠单测覆盖 —— 它只在「进程在两条指令之间被 SIGKILL」时出现。
+     * 所以留一个能精确命中窗口的开关，让人能用一条 adb 命令复现：
+     *
+     * ```
+     * adb shell run-as app.dsh.debug sh -c 'echo after_entry:1 > files/.debug-swap-abort'
+     * ```
+     *
+     * 取值：`before_swap` / `after_entry:N` / `after_commit`。
+     * 用 [android.os.Process.killProcess] 而不是抛异常 —— 异常会走 finally、
+     * 会触发回滚，那就测不到「被杀之后」的恢复了。
+     */
+    private fun debugAbortAt(point: String) {
+        if ((ctx.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) == 0) return
+        val f = File(ctx.filesDir, ".debug-swap-abort")
+        if (!f.isFile) return
+        val spec = runCatching { f.readText().trim() }.getOrNull().orEmpty()
+        if (spec != point) return
+        Log.e(TAG, "debug: aborting process at swap point '$point' to simulate a mid-swap kill")
+        android.os.Process.killProcess(android.os.Process.myPid())
+        Runtime.getRuntime().halt(9)
+    }
+
     private fun pendingMarker() = File(ctx.filesDir, ".pending-health")
     private fun backupDir() = File(ctx.filesDir, "engine.old")
     private fun metaBackupFile() = File(ctx.filesDir, ".runtime.json.old")
     private fun stampBackupFile() = File(ctx.filesDir, ".runtime-version.old")
+
+    // ── 换装意图日志（v1.4.26）───────────────────────────────────────────────
+    //
+    // 为什么需要它：v1.4.20 的 staging + 逐条换名已经让「解压」和「生效」分离，
+    // 但**换装本身**仍是多步破坏性操作，而盘上唯一的进度证据 `.pending-health`
+    // 要到换装**全部完成之后**才写（原 :634）、在换装**开始之前**就被删（原 :565）。
+    // 进程在两者之间被强杀（低内存 / 用户强杀 / OEM 清后台）→ 没有任何标记，
+    // 下次启动 `recoverPendingHealth()` 直接 return，`engine/` 停在新旧混合态。
+    //
+    // 更糟的是混合态**不一定**被 `isRootCompleteAt()` 判为不完整 —— 它只查锚点
+    // 文件是否在、node 架构是否匹配，新 `bin/` 配旧 `lib/` 完全通得过。于是
+    // 「靠 complete=false 重装自愈」这条兜底会失效，用户拿到一个错配的运行时。
+    //
+    // 所以这里把「换装」变成显式的两阶段提交：
+    //   swap（已写入意图、尚未动 root）→ committed（全部条目已换完）
+    // 恢复判定只看这份日志，不再依赖完整性探针。
+
+    /**
+     * 换装意图日志。
+     *
+     * @param planned 本次要替换的**顶层条目**名（= staging 的顶层条目）
+     * @param old     `planned` 中在换装前**确实存在于 root** 的子集 —— 只有这些
+     *                才可能被搬进 `engine.old`，回滚也只处理这些
+     * @param version 目标运行时版本（committed 相位下用于补写版本戳）
+     */
+    private data class SwapLog(
+        val phase: String,
+        val planned: List<String>,
+        val old: List<String>,
+        val version: String,
+        val builtAt: Long,
+        val bundled: Boolean,
+    ) {
+        fun toJson(): String = JSONObject()
+            .put("phase", phase)
+            .put("planned", org.json.JSONArray(planned))
+            .put("old", org.json.JSONArray(old))
+            .put("version", version)
+            .put("builtAt", builtAt)
+            .put("bundled", bundled)
+            .put("at", System.currentTimeMillis())
+            .toString()
+    }
+
+    private fun swapLogFile() = File(ctx.filesDir, ".runtime-swap")
+
+    /** 写换装日志。必须原子：进程可能在写入过程中被杀。 */
+    private fun writeSwapLog(log: SwapLog) {
+        atomicWriteText(swapLogFile(), log.toJson())
+    }
+
+    /**
+     * 读换装日志。损坏/截断时返回 null —— 调用方按「无日志」处理，
+     * 那是 v1.4.25 之前的旧行为，不会比现在更差。
+     */
+    private fun readSwapLog(): SwapLog? = runCatching {
+        val f = swapLogFile()
+        if (!f.isFile) return null
+        val o = JSONObject(f.readText())
+        fun arr(key: String): List<String> {
+            val a = o.optJSONArray(key) ?: return emptyList()
+            return (0 until a.length()).mapNotNull { a.optString(it).takeIf(String::isNotBlank) }
+        }
+        SwapLog(
+            phase = o.optString("phase", PHASE_SWAP),
+            planned = arr("planned"),
+            old = arr("old"),
+            version = o.optString("version"),
+            builtAt = o.optLong("builtAt", 0L),
+            bundled = o.optBoolean("bundled", false),
+        )
+    }.onFailure {
+        Log.w(TAG, "swap log unreadable, treating as absent: ${it.javaClass.simpleName}: ${it.message}")
+    }.getOrNull()
+
+    private fun deleteSwapLog() {
+        swapLogFile().delete()
+    }
+
+    /**
+     * 原子写文本：`tmp` → `fsync` → `rename`。
+     *
+     * 直接 `writeText` 不保证落盘顺序，断电/被杀时可能留下半截文件；而这份日志
+     * 的全部价值就在于「被杀之后还能读到」。rename(2) 在同一文件系统内是原子的，
+     * 所以读到的一定是完整的旧内容或完整的新内容。
+     */
+    private fun atomicWriteText(target: File, text: String) {
+        val tmp = File(target.parentFile, target.name + ".tmp")
+        try {
+            FileOutputStream(tmp).use { out ->
+                out.write(text.toByteArray(Charsets.UTF_8))
+                out.flush()
+                out.fd.sync()
+            }
+            if (!tmp.renameTo(target)) {
+                // 个别 ROM/文件系统的 renameTo 不能覆盖已存在文件：先删再试一次。
+                target.delete()
+                if (!tmp.renameTo(target)) {
+                    throw java.io.IOException("cannot commit ${target.name}")
+                }
+            }
+        } finally {
+            if (tmp.exists()) tmp.delete()
+        }
+    }
 
     private fun backupMeta() {
         runCatching {
@@ -251,6 +543,10 @@ class RuntimeInstaller(private val ctx: Context) {
         onProgress: (Float) -> Unit = {},
         onDetail: (BootTrace.Install) -> Unit = {},
     ): String = synchronized(INSTALL_LOCK) {
+        // v1.4.26：先把「上次换装被杀在半路」的现场收拾掉再装。
+        // 否则 `install()` 开头的 `backup.deleteRecursively()` 会把回滚数据删掉，
+        // 而 root 还是混合态 —— 这次换装会以「混合态」为基线，越修越乱。
+        recoverInterruptedSwap()
         val info = RuntimeInfo(
             version = entry.version,
             builtAt = entry.builtAt,
@@ -558,9 +854,12 @@ class RuntimeInstaller(private val ctx: Context) {
             // v1.2.21 事故修复：绝不 root.deleteRecursively()（会把 extensions/ 一起删）。
             // v1.4.20：先解压到 engine.staging，校验通过后再逐个顶层条目换名；
             // 任何一步失败都从 engine.old 回滚，旧运行时保持可用。
+            // v1.4.26：换装改为「意图日志 + 两阶段提交」，恢复不再依赖完整性探针。
             val staging = File(ctx.filesDir, "engine.staging")
             val backup = File(ctx.filesDir, "engine.old")
             staging.deleteRecursively()
+            // 旧的 engine.old 连同它对应的 pending 标记一起作废：从这一刻起
+            // 「回滚目标」是 root 里当前这套运行时，由下面的 swap 日志重新建立。
             backup.deleteRecursively()
             pendingMarker().delete()
             backupMeta()
@@ -586,50 +885,64 @@ class RuntimeInstaller(private val ctx: Context) {
             root.mkdirs()
             val entries = staging.listFiles()?.toList().orEmpty()
             check(entries.isNotEmpty()) { "staging is empty" }
-            val swapped = mutableListOf<String>()
+
+            // ── 意图落盘（v1.4.26）────────────────────────────────────────────
+            // 这是整个换装唯一的持久化交接点：
+            //  · 写它**之前**被杀 → root 一个字节都没动，走「完整即复用」不会错；
+            //  · 写它**之后**被杀 → 下次启动能读到 planned/old，精确回滚。
+            // `old` 只记「换装前确实存在」的顶层条目 —— 只会这些才可能被搬进
+            // engine.old，回滚时也只能还原这些。新运行时独有的条目（planned - old）
+            // 回滚时直接删，避免遗留。
+            val planned = entries.map { it.name }
+            val oldNames = planned.filter { File(root, it).exists() }
+            val pendingLog = SwapLog(
+                phase = PHASE_SWAP,
+                planned = planned,
+                old = oldNames,
+                version = info.version,
+                builtAt = info.builtAt,
+                bundled = bundled,
+            )
+            writeSwapLog(pendingLog)
+            debugAbortAt("before_swap")
+
             try {
-                for (entry in entries) {
+                entries.forEachIndexed { index, entry ->
                     val name = entry.name
                     val current = File(root, name)
                     if (current.exists()) {
                         val old = File(backup, name)
                         old.parentFile?.mkdirs()
+                        // ⚠️ v1.4.26（issue #49）：换名失败即中止，**不再退化成
+                        // copyRecursively**。staging / root / engine.old 全在
+                        // filesDir（同一文件系统），rename(2) 是原子的；退回拷贝
+                        // 只会把「原子切换」降级成「拷到一半」，正是恢复窗口被
+                        // 拉长的根源。真失败说明文件系统状态异常，回滚比硬撑着
+                        // 搬完更安全 —— 半拷贝的文件既不是旧的也不是新的。
                         if (!current.renameTo(old)) {
-                            current.copyRecursively(old, overwrite = true)
-                            if (!current.deleteRecursively()) {
-                                throw java.io.IOException("cannot move ${current.absolutePath}")
-                            }
+                            throw java.io.IOException("cannot move ${current.absolutePath}")
                         }
                     }
-                    swapped.add(name)
                     if (!entry.renameTo(current)) {
-                        entry.copyRecursively(current, overwrite = true)
-                        if (!entry.deleteRecursively()) {
-                            throw java.io.IOException("cannot place ${current.absolutePath}")
-                        }
+                        throw java.io.IOException("cannot place ${current.absolutePath}")
                     }
+                    debugAbortAt("after_entry:${index + 1}")
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "runtime swap failed; rolling back from ${backup.absolutePath}", e)
-                for (name in swapped.asReversed()) {
-                    val current = File(root, name)
-                    current.deleteRecursively()
-                    val old = File(backup, name)
-                    if (old.exists() && !old.renameTo(current)) {
-                        old.copyRecursively(current, overwrite = true)
-                    }
-                }
-                staging.deleteRecursively()
-                backup.deleteRecursively()
-                pendingMarker().delete()
-                metaBackupFile().delete()
-                stampBackupFile().delete()
+                Log.e(TAG, "runtime swap failed; rolling back per swap log", e)
+                rollbackFromLog(pendingLog)
                 throw e
             }
-            staging.deleteRecursively()
+
+            // ── 提交点（v1.4.26）──────────────────────────────────────────────
+            // 先写 committed、再写版本戳：万一在两者之间被杀，恢复走「前滚」，
+            // 按日志补写戳 —— 不会把一个已经换好的运行时白白回滚掉。
+            writeSwapLog(pendingLog.copy(phase = PHASE_COMMITTED))
+            debugAbortAt("after_commit")
             writeStamp(info, bundled)
-            val hadBackup = backup.isDirectory && !backup.listFiles().isNullOrEmpty()
-            if (hadBackup) {
+            staging.deleteRecursively()
+            deleteSwapLog()
+            if (oldNames.isNotEmpty()) {
                 // 保留 engine.old 直到引擎首次 Healthy；两次未确认则自动回滚。
                 pendingMarker().writeText("0")
                 Log.i(TAG, "runtime installed; engine.old kept pending first healthy boot")
