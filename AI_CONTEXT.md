@@ -1,5 +1,26 @@
 # AI_CONTEXT
 
+## v1.4.23 已发布（2026-10-26，配色/布局/快捷栏三项用户反馈，tag run 40254177003）
+- **宝宝三条反馈**：① DSHA 蓝太丑、要原来的颜色；② 手机插件的侧边快捷栏没了；
+  ③ 设置页太乱，想要卡片/网格布局。
+- **① 配色**：默认恢复原天蓝 #7DD3FC（43 处 XML + 全部 Kotlin 回退，删死文件
+  dsha_colors.xml）；新增 `Accent.kt` 枚举（sky/indigo/teal/violet/amber），
+  所有强调色改运行时读偏好；设置页新增「配色方案」，切换 recreate 生效。
+- **② 快捷栏**：上游用 `translateX(-110%)` + position:absolute 把侧栏推出屏幕。
+  新增 `assets/js/shell-overrides.js`（onPageFinished 注入，与下载桥/剪贴板桥同路径）
+  把侧栏打回文档流：56px 常驻窄栏、只显示图标、隐藏抽屉按钮；上游其余优化保留。
+  顺带把 Accent 注入成 CSS 变量 `--dsh-accent` 供 WebUI 侧使用。
+- **③ 布局**：`SettingsLayoutMode`（list/card/grid）。网格模式踩了三个坑：
+  a) vertical 容器子项设 width=0+weight=1 → 宽度真的变 0（要包一层 horizontal）；
+  b) 不能按索引隐藏"文本列第2个子节点"——部分行的当前值（valStorage 等）就在
+     文本列内，会被一起藏掉 → 改判「小字号(≤12sp) 且非首个子节点」；
+  c) 分区跨 columnPrimary/columnSecondary 两列，只重排第一列会漏 Extensions/Other。
+- **验证**：清空偏好后默认 Sky (default) + 天蓝 ✓；切 Indigo 立即生效 ✓；
+  网格四分区双列、标题省略、说明隐藏、当前值保留 ✓；
+  侧栏 computed width=56px/transform=none/position=relative ✓；i18n 全过。
+- versionCode 273。4 资产上线（release 226.9MB）。
+- **still open**：PR #48 等作者处理 pet-bridge 0.2.0 发布协调缺口。
+
 ## v1.4.22 已发布（2026-10-26，DSHA 风格 UI 移植包，tag run 40250425058，7 分钟全绿）
 - **来源**：宝宝转发的 `ya2rUQDS,dshx.zip`（community contribution，MIT，上游 dsh-web-mobile）。
   含 ① 860KB 移动端 WebUI 客户端插件 ② 原生壳配色 7DD3FC→4F6EF7（22 文件）。
