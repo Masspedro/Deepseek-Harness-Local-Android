@@ -691,4 +691,5 @@ You can still continue without updating, but the interface will not display.</st
     <string name="about_runtime_installed">Runtime installed — restarting the engine</string>
     <string name="about_runtime_no_pin">Signed runtime index unavailable</string>
     <string name="about_runtime_busy">Runtime is being installed — please wait</string>
+    <string name="about_runtime_engine_busy">Engine did not stop in time — runtime was not replaced. Try again in a moment.</string>
 </resources>

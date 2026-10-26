@@ -700,4 +700,5 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="about_runtime_installed">Runtime installiert – Engine wird neu gestartet</string>
     <string name="about_runtime_no_pin">Signierter Runtime-Index nicht verfügbar</string>
     <string name="about_runtime_busy">Runtime wird installiert – bitte warten</string>
+    <string name="about_runtime_engine_busy">Die Engine wurde nicht rechtzeitig beendet – die Runtime wurde nicht ersetzt. Bitte gleich erneut versuchen.</string>
 </resources>

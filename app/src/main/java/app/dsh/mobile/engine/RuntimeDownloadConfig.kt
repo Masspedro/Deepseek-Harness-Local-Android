@@ -2,6 +2,7 @@ package app.dsh.mobile.engine
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import app.dsh.mobile.DshApp
 
 /**
@@ -101,32 +102,66 @@ object RuntimeDownloadConfig {
     ): List<String> {
         val cleaned = urls.map { it.trim() }.filter { it.isNotBlank() }.distinct()
         val base = proxy.trim().trimEnd('/')
-        if (base.isEmpty()) {
+        val ordered = if (base.isEmpty()) {
             val blocked = blockedProxies
                 .map { it.trim().trimEnd('/') }
                 .filter { it.isNotEmpty() }
-            if (blocked.isEmpty()) return cleaned
-            val filtered = cleaned.filterNot { url ->
-                blocked.any { p -> url.startsWith("$p/", ignoreCase = true) }
-            }
-            return filtered.ifEmpty { cleaned }
-        }
-
-        val prefix = "$base/"
-        val proxied = ArrayList<String>(cleaned.size)
-        val rest = ArrayList<String>(cleaned.size)
-        for (url in cleaned) {
-            when {
-                url.startsWith(prefix, ignoreCase = true) -> proxied.add(url)
-                isAlreadyProxied(url) -> rest.add(url)
-                isProxyable(url) -> {
-                    proxied.add(prefix + url)
-                    rest.add(url)
+            if (blocked.isEmpty()) {
+                cleaned
+            } else {
+                val filtered = cleaned.filterNot { url ->
+                    blocked.any { p -> url.startsWith("$p/", ignoreCase = true) }
                 }
-                else -> rest.add(url)
+                filtered.ifEmpty { cleaned }
             }
+        } else {
+            val prefix = "$base/"
+            val proxied = ArrayList<String>(cleaned.size)
+            val rest = ArrayList<String>(cleaned.size)
+            for (url in cleaned) {
+                when {
+                    url.startsWith(prefix, ignoreCase = true) -> proxied.add(url)
+                    isAlreadyProxied(url) -> rest.add(url)
+                    isProxyable(url) -> {
+                        proxied.add(prefix + url)
+                        rest.add(url)
+                    }
+                    else -> rest.add(url)
+                }
+            }
+            (proxied + rest).distinct()
         }
-        return (proxied + rest).distinct()
+        return enforceHttps(ordered, base)
+    }
+
+    /**
+     * https 强制（v1.4.26）。
+     *
+     * 运行时包与索引都从 GitHub Releases 取，明文 http 只可能是两种来源：
+     * MANIFEST/索引里写错的地址，或用户自己配的 http 代理。
+     *
+     * 严格说这**不是**完整性问题 —— zip 有 SHA-256 钉死、索引有 EC 签名验过才用，
+     * 中间人换成别的内容只会被拒。要防的是「降级成可被投毒/篡改的通道」这件事本身：
+     * 明文下攻击者至少能让你永远装不上（DoS），也能拿到「你正在装哪个版本」。
+     *
+     * 例外只有一条：**用户显式配置的代理前缀本身是 http**。那是用户自己的选择，
+     * 且内容仍受 SHA-256/签名约束，强行剔除等于把功能关掉。
+     */
+    private fun enforceHttps(urls: List<String>, base: String): List<String> {
+        if (urls.isEmpty()) return urls
+        val userPrefix = if (base.isEmpty()) "" else "$base/"
+        val userPrefixIsHttp = userPrefix.startsWith("http://", ignoreCase = true)
+        val kept = urls.filter { u ->
+            u.startsWith("https://", ignoreCase = true) ||
+                (userPrefixIsHttp && u.startsWith(userPrefix, ignoreCase = true))
+        }
+        if (kept.size != urls.size) {
+            Log.w(
+                "RuntimeDownload",
+                "dropped ${urls.size - kept.size} non-https source(s): ${urls - kept.toSet()}",
+            )
+        }
+        return kept
     }
 
     /** gh-proxy 一类前缀代理只接受 GitHub 的原始地址。 */
