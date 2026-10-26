@@ -189,8 +189,29 @@ for loc in ("values", "values-zh-rCN", "values-de"):
         "setting_pet", "pet_title", "pet_enable", "pet_permission",
         "pet_plugin", "pet_pack", "pet_pack_import", "pet_bubble_thinking",
         "pet_notif_title", "pet_error_port_busy",
+        "pet_status_plugin_outdated", "pet_plugin_outdated_msg", "pet_plugin_upgrade",
     ):
         check("%s: %s" % (loc, key), 'name="%s"' % key in strings)
+
+# ------------------------------------------- bridge plugin version gate (v1.4.21)
+detector = read(os.path.join(PET, "PetPluginDetector.kt"))
+pet_settings = read(os.path.join(PET, "PetSettingsActivity.kt"))
+check("gate: official scoped package", '"@xiaopb/dsh-pet-bridge"' in detector)
+check("gate: legacy package still recognised", '"dsh-pet-bridge"' in detector and "bridgeLegacy" in detector)
+check("gate: min version is 0.3.1", 'MIN_BRIDGE_VERSION = "0.3.1"' in detector)
+check("gate: version compare is fail-closed",
+      "compareVersion(bridgeVersion, MIN_BRIDGE_VERSION) >= 0" in detector)
+check("gate: ready requires installed+enabled+version",
+      "bridgeInstalled && bridgeEnabled && bridgeVersionOk" in detector)
+check("gate: settings refuse outdated bridge",
+      "plugin.bridgeInstalled && !plugin.bridgeVersionOk" in pet_settings
+      and "pet_plugin_outdated_msg" in pet_settings)
+check("gate: outdated path has no enable-anyway bypass",
+      "pet_enable_without_plugin" in pet_settings and
+      pet_settings.index("pet_plugin_outdated_msg") < pet_settings.index("pet_enable_without_plugin"))
+check("gate: catalog entry is scoped official package", '"@xiaopb/dsh-pet-bridge"' in catalog)
+check("gate: catalog points to XiaoPb repo", "github.com/XiaoPb/dsh-pet-bridge" in catalog)
+check("gate: docs declare min version + 403/400", "0.3.1" in read(DOCS) and "403" in read(DOCS) and "400" in read(DOCS))
 
 # ---------------------------------------------------------------- result
 if FAILS:

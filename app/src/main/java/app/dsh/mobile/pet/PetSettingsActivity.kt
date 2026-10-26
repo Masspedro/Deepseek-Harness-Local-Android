@@ -114,6 +114,10 @@ class PetSettingsActivity : ThemedActivity() {
             c.addView(divider())
             val pluginValue = when {
                 !plugin.profileExists -> getString(R.string.pet_status_engine_down)
+                // 装了但版本不达标（含上游 0.1.0）：先于「已就绪 / 请重启」判断，
+                // 否则会误导用户去重启一个永远不通的旧版插件。
+                plugin.bridgeInstalled && !plugin.bridgeVersionOk ->
+                    getString(R.string.pet_status_plugin_outdated)
                 plugin.bridgeReady -> getString(R.string.pet_plugin_installed)
                 plugin.bridgeInstalled -> getString(R.string.pet_status_plugin_disabled)
                 plugin.webPetInstalled -> getString(R.string.pet_plugin_web_only)
@@ -127,10 +131,10 @@ class PetSettingsActivity : ThemedActivity() {
                     pluginValue,
                     pluginColor,
                 ) {
-                    if (plugin.bridgeInstalled && !plugin.bridgeEnabled) {
-                        restartEngine()
-                    } else {
-                        openPluginStore()
+                    when {
+                        plugin.bridgeInstalled && !plugin.bridgeVersionOk -> openPluginStore()
+                        plugin.bridgeInstalled && !plugin.bridgeEnabled -> restartEngine()
+                        else -> openPluginStore()
                     }
                 },
             )
@@ -242,6 +246,23 @@ class PetSettingsActivity : ThemedActivity() {
             }
             content.postDelayed({ render() }, 400L)
         }
+        val outdated = plugin.bridgeInstalled && !plugin.bridgeVersionOk
+        if (outdated) {
+            // 硬门禁：< 0.3.1 的桥插件不带 token，协议 v2 下必然 403，
+            // 开了也是「连接着但永远没气泡」，所以这里不给「仍然开启」的旁路。
+            AlertDialog.Builder(this)
+                .setTitle(R.string.pet_plugin)
+                .setMessage(R.string.pet_plugin_outdated_msg)
+                .setPositiveButton(R.string.pet_plugin_upgrade) { _, _ ->
+                    render()
+                    openPluginStore()
+                }
+                .setNegativeButton(android.R.string.cancel) { _, _ -> render() }
+                .setOnCancelListener { render() }
+                .show()
+            render()
+            return
+        }
         if (!plugin.bridgeReady) {
             AlertDialog.Builder(this)
                 .setTitle(R.string.pet_plugin)
@@ -274,7 +295,8 @@ class PetSettingsActivity : ThemedActivity() {
     private fun openPluginStore() {
         startActivity(
             Intent(this, PluginStoreActivity::class.java)
-                .putExtra(PluginStoreActivity.EXTRA_QUERY, PetPluginDetector.BRIDGE_PKG),
+                // 搜索用短词：npm 搜索不认 scoped 全名，靠短词 + 目录项合并命中官方包。
+                .putExtra(PluginStoreActivity.EXTRA_QUERY, PetPluginDetector.BRIDGE_SEARCH_QUERY),
         )
     }
 
