@@ -1192,6 +1192,14 @@ object EngineConfig {
             |- insert:
             |    - id: android-chat-perf
             |      name: ./android-plugins/chat-perf/index.js
+            |
+            |# DSHA-style mobile WebUI (adapted from the upstream dsh-web-mobile
+            |# plugin): a client plugin package that reskins the desktop WebUI into
+            |# a phone UI. Host side also registers a same-origin session-delete
+            |# route (/api/mobile-nav.session.delete) used by the mobile drawer.
+            |- insert:
+            |    - id: dsh-web-mobile
+            |      name: ./android-plugins/dsh-web-mobile/index.js
 
             |""".trimMargin()
         runCatching {
@@ -1220,8 +1228,16 @@ object EngineConfig {
             // 新增插件的步骤：① 在 assets 建目录（含这三个文件）
             //               ② 在此列表追加目录名
             //               ③ 在 overlay 的 insert 段追加一条 entry（指向 index.js）
-            listOf("narrow-sidebar", "narrow-settings", "narrow-rightbar", "chat-perf").forEach { pkg ->
-                listOf("package.json", "index.js", "client.js").forEach { fileName ->
+            listOf(
+                "narrow-sidebar" to listOf("package.json", "index.js", "client.js"),
+                "narrow-settings" to listOf("package.json", "index.js", "client.js"),
+                "narrow-rightbar" to listOf("package.json", "index.js", "client.js"),
+                "chat-perf" to listOf("package.json", "index.js", "client.js"),
+                "dsh-web-mobile" to listOf(
+                    "package.json", "index.js", "client.js", "compress.js", "delete-session.js",
+                ),
+            ).forEach { (pkg, files) ->
+                files.forEach { fileName ->
                     val src = ctx.assets.open("android-plugins/$pkg/$fileName")
                         .use { it.readBytes() }
                     val dst = File(f.parentFile, "android-plugins/$pkg/$fileName")

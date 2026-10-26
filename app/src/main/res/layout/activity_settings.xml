@@ -70,7 +70,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/settings_section_display"
-                android:textColor="#FF7DD3FC"
+                android:textColor="#FF4F6EF7"
                 android:textSize="13sp"
                 android:textStyle="bold"
                 android:paddingStart="8dp"
@@ -167,7 +167,7 @@
                         android:padding="8dp"
                         android:src="@drawable/ic_scale"
                         android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="#FF7DD3FC" />
+                        android:tint="#FF4F6EF7" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -213,7 +213,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/settings_section_priv"
-                android:textColor="#FF7DD3FC"
+                android:textColor="#FF4F6EF7"
                 android:textSize="13sp"
                 android:textStyle="bold"
                 android:paddingStart="8dp"
@@ -688,7 +688,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/settings_section_ext"
-                android:textColor="#FF7DD3FC"
+                android:textColor="#FF4F6EF7"
                 android:textSize="13sp"
                 android:textStyle="bold"
                 android:paddingStart="8dp"
@@ -781,7 +781,7 @@
                         android:padding="8dp"
                         android:src="@drawable/ic_puzzle"
                         android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="#FF7DD3FC" />
+                        android:tint="#FF4F6EF7" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -889,7 +889,7 @@
                         android:padding="8dp"
                         android:src="@drawable/ic_waveform"
                         android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="#FF7DD3FC" />
+                        android:tint="#FF4F6EF7" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -998,7 +998,7 @@
                         android:padding="8dp"
                         android:src="@drawable/ic_link"
                         android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="#FF7DD3FC" />
+                        android:tint="#FF4F6EF7" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -1038,7 +1038,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/settings_section_other"
-                android:textColor="#FF7DD3FC"
+                android:textColor="#FF4F6EF7"
                 android:textSize="13sp"
                 android:textStyle="bold"
                 android:paddingStart="8dp"
@@ -1284,7 +1284,7 @@
                         android:padding="8dp"
                         android:src="@drawable/ic_info"
                         android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="#FF7DD3FC" />
+                        android:tint="#FF4F6EF7" />
 
                     <LinearLayout
                         android:layout_width="0dp"

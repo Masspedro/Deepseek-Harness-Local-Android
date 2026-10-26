@@ -114,7 +114,7 @@ class ExtensionStoreActivity : Activity() {
 
     private fun sectionHeader(title: String): TextView = TextView(this).apply {
         text = title
-        setTextColor(0xFF7DD3FC.toInt())
+        setTextColor(0xFF4F6EF7.toInt())
         textSize = 13f
         setTypeface(typeface, Typeface.BOLD)
         setPadding(dp(8), dp(18), dp(8), dp(8))
@@ -156,7 +156,7 @@ class ExtensionStoreActivity : Activity() {
                 isFocusable = true
             },
             progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-                progressTintList = android.content.res.ColorStateList.valueOf(0xFF7DD3FC.toInt())
+                progressTintList = android.content.res.ColorStateList.valueOf(0xFF4F6EF7.toInt())
                 visibility = View.GONE
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, dp(8)
@@ -577,7 +577,7 @@ class ExtensionStoreActivity : Activity() {
         val COLOR_RED = 0xFFFF5A5F.toInt()
         val COLOR_YELLOW = 0xFFFFB74D.toInt()
         val COLOR_GREEN = 0xFF6EE7B7.toInt()
-        val COLOR_BLUE = 0xFF7DD3FC.toInt()
+        val COLOR_BLUE = 0xFF4F6EF7.toInt()
         val COLOR_ORANGE = 0xFFFFB74D.toInt()
 
         /** 平板/横屏下列表内容最大宽度（dp） */

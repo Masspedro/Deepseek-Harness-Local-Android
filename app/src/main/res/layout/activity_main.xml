@@ -21,7 +21,7 @@
         android:layout_gravity="top"
         android:layout_marginTop="40dp"
         android:indeterminate="true"
-        android:progressTint="#FF7DD3FC"
+        android:progressTint="#FF4F6EF7"
         android:progressBackgroundTint="#26FFFFFF"
         android:elevation="4dp"
         android:visibility="gone" />
@@ -87,7 +87,7 @@
             android:gravity="center"
             android:paddingHorizontal="14dp"
             android:text="@string/btn_restart"
-            android:textColor="#FF7DD3FC"
+            android:textColor="#FF4F6EF7"
             android:textSize="13sp"
             android:background="?android:attr/selectableItemBackground" />
 
@@ -164,7 +164,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
-            android:textColor="#FF7DD3FC"
+            android:textColor="#FF4F6EF7"
             android:textSize="12sp"
             android:fontFamily="monospace"
             tools:text="3.2s" />
@@ -176,7 +176,7 @@
             android:layout_height="3dp"
             android:layout_marginTop="18dp"
             android:indeterminate="true"
-            android:progressTint="#FF7DD3FC"
+            android:progressTint="#FF4F6EF7"
             android:progressBackgroundTint="#26FFFFFF" />
 
         <!-- v1.4.8：文件加载明细（解压阶段显示 M/N 个文件） -->

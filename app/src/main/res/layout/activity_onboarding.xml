@@ -32,7 +32,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/ob_lang_label"
-                android:textColor="#FF7DD3FC"
+                android:textColor="#FF4F6EF7"
                 android:textSize="15sp"
                 android:textStyle="bold"
                 android:layout_marginTop="28dp" />
@@ -122,7 +122,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/ob_orientation_label"
-            android:textColor="#FF7DD3FC"
+            android:textColor="#FF4F6EF7"
             android:textSize="15sp"
             android:textStyle="bold"
             android:layout_marginTop="28dp" />
@@ -239,7 +239,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/ob_priv_label"
-            android:textColor="#FF7DD3FC"
+            android:textColor="#FF4F6EF7"
             android:textSize="15sp"
             android:textStyle="bold"
             android:layout_marginTop="28dp" />
@@ -342,6 +342,6 @@
             android:text="@string/ob_start"
             android:textColor="#FF101418"
             android:textSize="16sp"
-            android:backgroundTint="#FF7DD3FC" />
+            android:backgroundTint="#FF4F6EF7" />
     </app.dsh.mobile.MaxWidthLinearLayout>
 </ScrollView>

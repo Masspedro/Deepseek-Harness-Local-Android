@@ -811,8 +811,8 @@ class SettingsActivity : Activity() {
         val bar = SeekBar(this).apply {
             max = (MAX_PAGE_SCALE - MIN_PAGE_SCALE) / SCALE_STEP   // 索引 0..20 → 50..150 步长5
             progress = (pageScale - MIN_PAGE_SCALE) / SCALE_STEP
-            progressTintList = android.content.res.ColorStateList.valueOf(0xFF7DD3FC.toInt())
-            thumbTintList = android.content.res.ColorStateList.valueOf(0xFF7DD3FC.toInt())
+            progressTintList = android.content.res.ColorStateList.valueOf(0xFF4F6EF7.toInt())
+            thumbTintList = android.content.res.ColorStateList.valueOf(0xFF4F6EF7.toInt())
             setPadding(dp(24), 0, dp(24), 0)
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {

@@ -97,7 +97,7 @@
             android:paddingTop="9dp"
             android:paddingBottom="9dp"
             android:textSize="13sp"
-            android:textColor="#FF7DD3FC"
+            android:textColor="#FF4F6EF7"
             android:text="@string/voice_retry"
             android:background="?android:attr/selectableItemBackgroundBorderless" />
 

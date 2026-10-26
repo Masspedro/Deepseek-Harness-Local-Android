@@ -41,7 +41,7 @@ object LanAccessDialog {
         // 验证码：大字 + 等宽 + 醒目色，点击即复制
         box.addView(TextView(ctx).apply {
             text = code
-            setTextColor(0xFF7DD3FC.toInt())
+            setTextColor(0xFF4F6EF7.toInt())
             textSize = 34f
             typeface = Typeface.MONOSPACE
             letterSpacing = 0.22f

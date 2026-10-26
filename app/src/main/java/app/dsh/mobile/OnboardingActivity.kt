@@ -197,7 +197,7 @@ class OnboardingActivity : Activity() {
      *    默认英语时用户看不出当前选的是哪个）。
      */
     private fun updateSelectionUi() {
-        val highlight = 0xFF7DD3FC.toInt()
+        val highlight = 0xFF4F6EF7.toInt()
         val normal = 0xFF9CA3AF.toInt()
 
         // —— 方向：竖屏/横屏/自动 ——
