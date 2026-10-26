@@ -47,13 +47,16 @@ v1.4.25 及之前，盘上唯一的进度证据是 `.pending-health`：
 
 ```json
 {"phase":"swap","planned":["bin","lib","usr"],"old":["bin","lib"],
- "version":"1.4.26","builtAt":1759...,"bundled":false,"at":1759...}
+ "version":"1.4.26","builtAt":1759...,"bundled":false,
+ "sha256":"…","at":1759...}
 ```
 
 - `planned`：本次要替换的顶层条目（= staging 的顶层条目）；
 - `old`：`planned` 中**换装前确实存在于 root** 的子集 —— 只有这些才可能被搬进
   `engine.old`，回滚也只处理这些；
-- `version` / `builtAt` / `bundled`：`committed` 相位下用于补写版本戳。
+- `version` / `builtAt` / `bundled` / `sha256`：`committed` 相位下用于补写
+  `.runtime.json`，与正常安装路径写出的内容保持一致（否则前滚后的元数据会缺
+  sha256，诊断时看起来像「来路不明」的运行时）。
 
 ### 关键顺序（不要改）
 

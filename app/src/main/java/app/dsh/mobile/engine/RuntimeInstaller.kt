@@ -281,7 +281,7 @@ class RuntimeInstaller(private val ctx: Context) {
                     bundled = log.bundled,
                     url = null,
                     urls = emptyList(),
-                    sha256 = null,
+                    sha256 = log.sha256.takeIf { it.isNotBlank() },
                     size = 0L,
                     unpackedBytes = 0L,
                 ),
@@ -429,6 +429,7 @@ class RuntimeInstaller(private val ctx: Context) {
      * @param old     `planned` 中在换装前**确实存在于 root** 的子集 —— 只有这些
      *                才可能被搬进 `engine.old`，回滚也只处理这些
      * @param version 目标运行时版本（committed 相位下用于补写版本戳）
+     * @param sha256  包校验和（同上，补写 `.runtime.json` 时保持与正常路径一致）
      */
     private data class SwapLog(
         val phase: String,
@@ -437,6 +438,7 @@ class RuntimeInstaller(private val ctx: Context) {
         val version: String,
         val builtAt: Long,
         val bundled: Boolean,
+        val sha256: String = "",
     ) {
         fun toJson(): String = JSONObject()
             .put("phase", phase)
@@ -445,6 +447,7 @@ class RuntimeInstaller(private val ctx: Context) {
             .put("version", version)
             .put("builtAt", builtAt)
             .put("bundled", bundled)
+            .put("sha256", sha256)
             .put("at", System.currentTimeMillis())
             .toString()
     }
@@ -475,6 +478,7 @@ class RuntimeInstaller(private val ctx: Context) {
             version = o.optString("version"),
             builtAt = o.optLong("builtAt", 0L),
             bundled = o.optBoolean("bundled", false),
+            sha256 = o.optString("sha256", ""),
         )
     }.onFailure {
         Log.w(TAG, "swap log unreadable, treating as absent: ${it.javaClass.simpleName}: ${it.message}")
@@ -902,6 +906,7 @@ class RuntimeInstaller(private val ctx: Context) {
                 version = info.version,
                 builtAt = info.builtAt,
                 bundled = bundled,
+                sha256 = info.sha256 ?: "",
             )
             writeSwapLog(pendingLog)
             debugAbortAt("before_swap")
