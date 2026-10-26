@@ -48,21 +48,35 @@ curl -s -X POST -H "X-DSH-Token: $TOKEN" -d '{"action":"disable"}' \
 # 恢复
 curl -s -X POST -H "X-DSH-Token: $TOKEN" -d '{"action":"enable"}' \
   http://127.0.0.1:3083/plugin/killswitch
+
+# 单独启用一个第三方插件（仅停用期间有效；白名单，重启后加载）
+curl -s -X POST -H "X-DSH-Token: $TOKEN" \
+  -d '{"action":"enable-one","package":"dsh-cost-meter"}' \
+  http://127.0.0.1:3083/plugin/killswitch
+
+# 再摘回去
+curl -s -X POST -H "X-DSH-Token: $TOKEN" \
+  -d '{"action":"disable-one","package":"dsh-cost-meter"}' \
+  http://127.0.0.1:3083/plugin/killswitch
 ```
 
 不带 token 一律 `403 {"ok":false,"error":"unauthorised"}`（fail-closed，实测）。
-返回体里 `thirdParty` / `disabled` / `total` 是当前加载列表的实况，排查时先看这个。
+返回体里 `thirdParty` / `disabled` / `allow` / `total` 是当前加载列表的实况，排查时先看这个。
 
-⚠️ **停用/恢复期间别用 `/plugin/install`**：会返回 `409`，分别是
+**停用期间的安装/更新是放开的（v1.4.28）**：装上/更新后**不会加载**（不在白名单），
+「已安装」页会出现「单独启用」按钮，试过了再启用。这正是排查工作流：
+
+> 全部禁用 → 重启 → 更新/重装嫌疑插件 → 单独启用它 → 好了就逐个恢复其余，
+> 不好就「再停用」摘回去。
+
+唯一仍会 `409` 的是**恢复中窗口**（`enabling`，引擎重启中）：
 
 ```jsonc
-{"ok":false,"error":"all third-party plugins are turned off; restore them first", ...}
 {"ok":false,"error":"plugins are being restored; try again in a moment", ...}
 ```
 
-以前这里无脑回 `202 {"started":true}`（安装是异步的，桥先应答），而拒绝发生在
-后台线程里 —— 调用方以为装上了，其实什么都没发生。恢复完成（phase 回到
-`enabled`）后再装即可。
+以前停用期间也无脑 409/拒绝，但「更新嫌疑插件」本来就是排查的一半，
+堵死它反而让总开关变成死胡同 —— v1.4.28 起放开。
 
 ### 路径 C · 冷启动标志（连原生界面都进不去）
 
@@ -186,3 +200,30 @@ manifest 只在引擎没跑的时候（spawn 前）改**。
 
 > 注：第 8 条同时验证了第 4 节的过滤规则 —— 被卸载的包不会以幽灵形式回到
 > `bundles`，否则引擎解析失败，等于又造一次启动故障。
+
+## 8. 实测记录（v1.4.28 · 白名单部分恢复）
+
+同一 MuMu 实例，覆盖安装新包（含旧版日志文件，无 `allow` 字段 → 读出空白名单，
+向后兼容）。起点：上一轮测试遗留的 `phase=disabled`（3 个第三方包）。
+
+| # | 用例 | 结果 |
+|---|---|---|
+| 1 | 旧日志（无 `allow` 字段）读取 | `allow=[]`，行为与 v1.4.27 完全一致 |
+| 2 | 恢复全部 | `phase=enabled`，`total 2 -> 5`，3 个包全回来 |
+| 3 | 全部禁用 | `total 5 -> 2`，`allow=[]` |
+| 4 | 停用期间 `POST /plugin/install` 更新 dsh-cost-meter | **`202 started`（v1.4.27 是 409）**；装完后 `thirdParty=[]`、`total=2` —— 装了不加载 |
+| 5 | `enable-one dsh-cost-meter` | `allow=["dsh-cost-meter"]`，重启后 `thirdParty=["dsh-cost-meter"]`、`total=3`（2 内置 + 1 白名单） |
+| 6 | `disable-one dsh-cost-meter` | `allow=[]`，重启后回 `total=2` |
+| 7 | UI「已安装」页 | 3 行各带「单独启用」chip；点 dsh-cost-meter 的 chip → 文案翻转为「再停用」，桥侧 `allow` 同步写入 |
+| 8 | UI banner | 新文案「…可在『已安装』逐个启用 · 点此全部恢复」 |
+| 9 | 收尾恢复全部 | `phase=enabled`，`total=5` |
+
+`compileDebugKotlin`、`scripts/check-i18n.py`（en/zh-rCN/de 三语键一致）均通过。
+
+### 白名单语义（v1.4.28）
+
+- `allow` 只在 `phase=disabled` 时有意义；恢复（enable）会忽略它，全量写回；
+- 每次「全部停用」都从空白名单开始 —— 全禁就是全禁，白名单不跨轮次残留；
+- 白名单包在停用期间被卸载 → 收敛时目标里不放（防幽灵包），日志里的 `allow`
+  不清洗（与 `bundles` 记录同理，保留历史）；
+- 崩溃收敛语义不变：改白名单也是先落日志、spawn 前收敛，幂等。

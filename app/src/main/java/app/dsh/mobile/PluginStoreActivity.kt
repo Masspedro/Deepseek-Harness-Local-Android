@@ -384,6 +384,8 @@ class PluginStoreActivity : ThemedActivity() {
 
         val btn = actionButton(e)
         headRow.addView(btn)
+        // v1.4.28：停用期间给第三方插件一个「单独启用/再停用」白名单入口
+        killSwitchChip(e)?.let { headRow.addView(it) }
         card.addView(headRow)
 
         // ── 第二行：版本 / 体积 / 作者 ──
@@ -428,6 +430,58 @@ class PluginStoreActivity : ThemedActivity() {
             setTextColor(color)
             textSize = 11f
             setPadding(0, dp(6), 0, 0)
+        }
+    }
+
+    /**
+     * 停用期间的「单独启用/再停用」白名单徽标（v1.4.28）。
+     * 只在「已安装」页、总开关生效、且该插件确实被停用时显示：
+     * 未启用的第三方包显示「启用」，已在白名单的显示「再停用」。
+     */
+    private fun killSwitchChip(e: Entry): TextView? {
+        val st = runCatching { PluginKillSwitch.status(this) }.getOrNull() ?: return null
+        if (!st.active || !st.disabled.contains(e.pkg)) return null
+        if (!app.dsh.mobile.engine.PluginRecovery.isUserBundle(e.pkg)) return null
+        val enabled = st.allow.contains(e.pkg)
+        return TextView(this).apply {
+            text = getString(
+                if (enabled) R.string.plugin_kill_disable_one else R.string.plugin_kill_enable_one,
+            )
+            textSize = 13f
+            gravity = Gravity.CENTER
+            minWidth = dp(52)
+            setPadding(dp(12), dp(6), dp(12), dp(6))
+            setBackgroundResource(R.drawable.bg_btn_outline)
+            setTextColor(if (enabled) getColor(R.color.success) else Accent.current(this@PluginStoreActivity).argb)
+            isClickable = true
+            isFocusable = true
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { marginStart = dp(8) }
+            setOnClickListener {
+                val outcome =
+                    if (enabled) PluginKillSwitch.requestDisableOne(this@PluginStoreActivity, e.pkg)
+                    else PluginKillSwitch.requestEnableOne(this@PluginStoreActivity, e.pkg)
+                if (!outcome.ok) {
+                    android.widget.Toast.makeText(
+                        this@PluginStoreActivity,
+                        getString(R.string.plugin_kill_failed, outcome.message),
+                        android.widget.Toast.LENGTH_LONG,
+                    ).show()
+                    return@setOnClickListener
+                }
+                android.widget.Toast.makeText(
+                    this@PluginStoreActivity,
+                    getString(
+                        if (enabled) R.string.plugin_kill_disable_one_toast
+                        else R.string.plugin_kill_enable_one_toast,
+                        e.name,
+                    ),
+                    android.widget.Toast.LENGTH_SHORT,
+                ).show()
+                (application as DshApp).supervisor.restart()
+                render()
+            }
         }
     }
 
@@ -640,16 +694,8 @@ class PluginStoreActivity : ThemedActivity() {
 
     private fun doInstall(pkg: String, btn: TextView, basePkg: String) {
         if (isFinishing || isDestroyed) return
-        // v1.4.27：全部停用期间不许装 —— 装了也不会加载，只会让用户以为「装完没反应」
-        if (PluginKillSwitch.isActive(this)) {
-            android.widget.Toast.makeText(
-                this, getString(R.string.plugin_kill_install_blocked),
-                android.widget.Toast.LENGTH_LONG,
-            ).show()
-            btn.text = getString(R.string.plugin_install)
-            btn.isEnabled = true
-            return
-        }
+        // v1.4.28：停用期间允许安装/更新（PluginCenter 只拦「正在恢复」窗口）——
+        // 排查工作流需要先更新嫌疑插件。装完不自动加载（不在白名单），下面提示。
         if (!btn.isAttachedToWindow) {
             android.util.Log.w("PluginStore", "install of $pkg dropped: row re-rendered")
             return
@@ -665,6 +711,14 @@ class PluginStoreActivity : ThemedActivity() {
                     btn.isClickable = true
                     btn.isEnabled = true
                     btn.setOnClickListener { confirmUninstall(basePkg, btn) }
+                    // v1.4.28：停用期间装上的插件不会被加载，提示去「已安装」单独启用
+                    if (runCatching { PluginKillSwitch.isActive(this@PluginStoreActivity) }.getOrDefault(false)) {
+                        android.widget.Toast.makeText(
+                            this@PluginStoreActivity,
+                            getString(R.string.plugin_kill_installed_hint),
+                            android.widget.Toast.LENGTH_LONG,
+                        ).show()
+                    }
                     // 重读真实版本后整页刷新（升级场景下版本号/按钮要跟着变）
                     reload(verbose = true)
                 } else {

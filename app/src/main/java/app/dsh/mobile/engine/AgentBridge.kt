@@ -1157,11 +1157,9 @@ document.getElementById('api').textContent = checks.map(function(c){
         val ctx = shotCtx ?: return 503 to """{"ok":false,"error":"app context not ready"}"""
         // v1.4.27：应急总开关期间安装会被 PluginCenter 拒绝，但那是异步的 ——
         // 之前这里照样回 202 started，调用方（curl / AI）以为装上了，实际什么都没发生。
-        // 停用与恢复中都直接 409，让调用方立刻知道该先恢复。
-        if (PluginKillSwitch.isBusy(ctx)) {
-            val reason = if (PluginKillSwitch.isActive(ctx)) "all third-party plugins are turned off; restore them first"
-            else "plugins are being restored; try again in a moment"
-            return 409 to """{"ok":false,"error":"$reason","package":"$pkg"}"""
+        // v1.4.28：停用期间放开安装（装了不加载，先更新再单独启用），只拦恢复窗口。
+        if (PluginKillSwitch.isRestoring(ctx)) {
+            return 409 to """{"ok":false,"error":"plugins are being restored; try again in a moment","package":"$pkg"}"""
         }
         PluginCenter.install(ctx, pkg) { ok, msg ->
             runCatching {
@@ -1186,6 +1184,8 @@ document.getElementById('api').textContent = checks.map(function(c){
      * curl -s 'http://127.0.0.1:3083/plugin/killswitch'                      # 查状态
      * curl -s -X POST -d '{"action":"disable"}' http://127.0.0.1:3083/plugin/killswitch
      * curl -s -X POST -d '{"action":"enable"}'  http://127.0.0.1:3083/plugin/killswitch
+     * curl -s -X POST -d '{"action":"enable-one","package":"@x/foo"}' http://127.0.0.1:3083/plugin/killswitch
+     * curl -s -X POST -d '{"action":"disable-one","package":"@x/foo"}' http://127.0.0.1:3083/plugin/killswitch
      * ```
      * 只写意图日志并重启引擎；真正的 bundle 列表改写发生在下次 spawn 前
      * （[PluginKillSwitch.enforceBeforeBoot]），所以这里不会和运行中的引擎抢文件。
@@ -1203,17 +1203,41 @@ document.getElementById('api').textContent = checks.map(function(c){
             put("phase", state?.phase?.wire ?: "none")
             put("thirdParty", org.json.JSONArray(status.thirdParty))
             put("disabled", org.json.JSONArray(status.disabled))
+            put("allow", org.json.JSONArray(status.allow))
             put("total", status.total)
             put("at", status.at)
         }
 
         if (action.isEmpty() || action == "status") return 200 to statusJson().toString()
 
+        // v1.4.28：单插件白名单动作（仅停用期间有效）
+        if (action == "enable-one" || action == "disable-one") {
+            val pkg = runCatching { JSONObject(body).optString("package") }.getOrDefault("")
+                .ifBlank { parseQuery(query)["package"].orEmpty() }.trim()
+            if (pkg.isBlank()) {
+                return 400 to """{"ok":false,"error":"field 'package' required"}"""
+            }
+            val outcome = if (action == "enable-one") PluginKillSwitch.requestEnableOne(ctx, pkg)
+            else PluginKillSwitch.requestDisableOne(ctx, pkg)
+            if (!outcome.ok) {
+                return 409 to JSONObject().put("ok", false).put("error", outcome.message).toString()
+            }
+            runCatching { (ctx.applicationContext as app.dsh.mobile.DshApp).supervisor.restart() }
+                .onFailure { Log.w(TAG, "kill-switch restart failed: ${it.message}") }
+            Log.w(TAG, "plugin kill-switch: $action $pkg accepted")
+            return 202 to JSONObject().apply {
+                put("ok", true)
+                put("action", action)
+                put("package", pkg)
+                put("restarting", true)
+            }.toString()
+        }
+
         val outcome = when (action) {
             "disable" -> PluginKillSwitch.requestDisable(ctx, "bridge")
             "enable" -> PluginKillSwitch.requestEnable(ctx)
             else -> return 400 to
-                """{"ok":false,"error":"action must be status|disable|enable"}"""
+                """{"ok":false,"error":"action must be status|disable|enable|enable-one|disable-one"}"""
         }
         if (!outcome.ok) {
             return 409 to JSONObject().put("ok", false).put("error", outcome.message).toString()
