@@ -53,6 +53,17 @@ curl -s -X POST -H "X-DSH-Token: $TOKEN" -d '{"action":"enable"}' \
 不带 token 一律 `403 {"ok":false,"error":"unauthorised"}`（fail-closed，实测）。
 返回体里 `thirdParty` / `disabled` / `total` 是当前加载列表的实况，排查时先看这个。
 
+⚠️ **停用/恢复期间别用 `/plugin/install`**：会返回 `409`，分别是
+
+```jsonc
+{"ok":false,"error":"all third-party plugins are turned off; restore them first", ...}
+{"ok":false,"error":"plugins are being restored; try again in a moment", ...}
+```
+
+以前这里无脑回 `202 {"started":true}`（安装是异步的，桥先应答），而拒绝发生在
+后台线程里 —— 调用方以为装上了，其实什么都没发生。恢复完成（phase 回到
+`enabled`）后再装即可。
+
 ### 路径 C · 冷启动标志（连原生界面都进不去）
 
 在 `$DSH_HOME` 放一个空文件，然后杀进程重开：
@@ -139,7 +150,9 @@ manifest 只在引擎没跑的时候（spawn 前）改**。
 - **`ProfileGuardian.topLevelConfigFiles()` 已排除本日志文件**：否则一次安全模式
   会把日志归档+删除，用户永久失去恢复依据，而这恰好是它最该起作用的时刻。
 - **禁用期间禁止安装新插件**（`PluginCenter.install` 直接拒绝 + 插件中心提示条）：
-  装进来也不会加载，只会让用户看到"装完没反应"这种更难查的现象。
+  装进来也不会加载，只会让用户看到"装完没反应"这种更难查的现象。恢复中
+  （`enabling`）同样拒绝 —— 那会儿监督器正要按日志写回 bundles，新装的包会被
+  写回动作丢掉，还会和 pnpm 抢 `node_modules`。HTTP 侧见第 2 节路径 B 的 409。
 
 ## 6. 排查清单
 
@@ -149,3 +162,27 @@ manifest 只在引擎没跑的时候（spawn 前）改**。
 | 恢复后少了几个插件 | 同一条日志的 `skipped=`，以及 `Settings → 插件中心 → 已安装` |
 | 状态显示不对 | 直接看 `.plugin-killswitch.json` 的 `phase` 字段；UI 完全以它为准 |
 | 想手工兜底 | 把 `phase` 改成 `enabling` 重启 = 强制再恢复一次；改成 `disabled` 重启 = 强制再禁用 |
+
+## 7. 实测记录（v1.4.27）
+
+环境：MuMu 第二实例（`adb connect 127.0.0.1:7555`），Android 12 / x86_64，
+**全新安装**（此前没有本应用），用 `-Ppackage=full -Pabi=x86_64` 内嵌运行时打包。
+先经 `POST /plugin/install` 装了 3 个真实第三方插件
+（cost-meter / dream-skin / whale-widget）才做开关测试。
+
+| # | 用例 | 结果 |
+|---|---|---|
+| 1 | 设置页停用 → 确认框列出 3 个包名 → 确认 | 日志 `phase=disabled`，`converged bundles 5 -> 2`，引擎 1939ms 后 healthy |
+| 2 | 停用后该行文案 | 翻转为「恢复第三方插件 / 已停用 3 个 · 点此恢复」 |
+| 3 | 停用期间装插件 | `409` + "…turned off; restore them first"，`dependencies` 未变 |
+| 4 | 恢复途中（enabling）装插件 | `409` + "plugins are being restored…" |
+| 5 | UI 恢复 | `2 -> 4`，bundle 顺序与停用前逐项一致，healthy 后 `restore confirmed` |
+| 6 | HTTP `GET/POST` 往返 + 无 token | 状态一致；无 token `403` |
+| 7 | **断点 A**：手写日志 `disabled`、manifest 仍是 5 条 → 冷启动 | 启动收敛 `5 -> 2`（等价于"写完日志就被杀"） |
+| 8 | **断点 B**：期间卸载其中一个插件 → 日志改 `enabling`、manifest 2 条 → 冷启动 | `2 -> 4`，`skipped=dsh-whale-widget`，幽灵包没有写回，phase 自动推到 `enabled`（等价于"恢复途中被杀"） |
+| 9 | 冷启动标志 `touch .plugin-killswitch.force` + force-stop | `force flag consumed`，`4 -> 2`，`reason=force-flag`，标志自动删除 |
+
+`compileDebugKotlin` 与 `scripts/check-i18n.py` 均通过。
+
+> 注：第 8 条同时验证了第 4 节的过滤规则 —— 被卸载的包不会以幽灵形式回到
+> `bundles`，否则引擎解析失败，等于又造一次启动故障。

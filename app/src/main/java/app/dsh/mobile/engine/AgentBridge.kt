@@ -1155,6 +1155,14 @@ document.getElementById('api').textContent = checks.map(function(c){
             .getOrDefault("").trim()
         if (pkg.isBlank()) return 400 to """{"ok":false,"error":"field 'package' required"}"""
         val ctx = shotCtx ?: return 503 to """{"ok":false,"error":"app context not ready"}"""
+        // v1.4.27：应急总开关期间安装会被 PluginCenter 拒绝，但那是异步的 ——
+        // 之前这里照样回 202 started，调用方（curl / AI）以为装上了，实际什么都没发生。
+        // 停用与恢复中都直接 409，让调用方立刻知道该先恢复。
+        if (PluginKillSwitch.isBusy(ctx)) {
+            val reason = if (PluginKillSwitch.isActive(ctx)) "all third-party plugins are turned off; restore them first"
+            else "plugins are being restored; try again in a moment"
+            return 409 to """{"ok":false,"error":"$reason","package":"$pkg"}"""
+        }
         PluginCenter.install(ctx, pkg) { ok, msg ->
             runCatching {
                 notify(

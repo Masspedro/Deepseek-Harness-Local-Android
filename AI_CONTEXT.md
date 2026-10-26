@@ -48,11 +48,27 @@
 - **窄屏回归（分列改动必须验，否则手机上会重挂/漏挂）**：用 `wm size 1080x2340` +
   `wm density 700` 造出 535dp 宽窗 → 设置页单列、8 个分区顺序与 XML 完全一致、
   无重复挂载、末项是「关于」；`wm size/density reset` 后双栏回到 15/15。
-- **未做**：断点（写完日志后 / 写完 manifest 后分别强杀）没有跑；"装个真坏插件复现
-  界面不可用"也没有跑（手头插件都正常）。收敛逻辑本身可重入，风险不高，但留着。
-- **风险留档**：若实测发现引擎会从 `dependencies` 反推 `bundles`（把摘掉的又加回来），
-  则 `disabled` 收敛要升级为 Plan B —— 把 `node_modules/<pkg>` 软链 rename 到
-  `profiles/web/.disabled-plugins/`，恢复时 rename 回来。**上真机第一件事就是验这个。**
+- **断点收敛已实测**（改用 MuMu 第二实例 `127.0.0.1:7555` 全新安装，Android 12/x86_64，
+  打包 `-Ppackage=full -Pabi=x86_64` 内嵌运行时；先经 `POST /plugin/install` 装 3 个
+  真实第三方插件）：① 手写日志 `phase=disabled`、manifest 仍是 5 条 → 冷启动收敛
+  `5 -> 2`（等价于"写完日志就被杀"）；② 期间卸载其中一个 → 日志改 `enabling`、
+  manifest 2 条 → 冷启动 `2 -> 4` 且 `skipped=dsh-whale-widget`，**幽灵包没写回**，
+  phase 自动推到 `enabled`（等价于"恢复途中被杀"）。9 条用例见
+  `docs/PLUGIN_KILLSWITCH.md` 第 7 节。
+- **R1 风险已排除**：`disabled` 状态经历多次重启（热重启、force-stop 冷启）后 bundles
+  始终停在 2 —— 引擎**不会**从 `dependencies` 反推 `bundles`，Plan B（rename
+  `node_modules` 软链）用不上。
+- **顺手修的一处**：`POST /plugin/install` 以前无脑回 `202 {"started":true}`，
+  而"停用/恢复中拒绝安装"的守卫在后台线程里跑 —— 调用方（curl / AI）以为装上了，
+  实际什么都没发生。现在桥里同步拦，返回 `409` + 区分"已停用"/"恢复中"。
+- **仍未做**："装个真坏插件复现界面不可用"没有跑（手头插件都正常），验证走的是
+  "确认停用它之后引擎照常可用"这一侧。
+- **测试环境坑（重要）**：`127.0.0.1:5555` 那个实例上装了本应用，且平台自带
+  `NewFileUpdater` 一类的商店更新器会把 `app.dsh.mobile` 顶回已上架版本 —— 调试时
+  表现为"改动好像没生效/版本自己变了"。**验证一律用没装过本应用的实例**
+  （MuMu 第二实例 = `adb connect 127.0.0.1:7555`）。另外 `SettingsActivity`
+  **没有 exported**，`am start -n …/.SettingsActivity` 会 `SecurityException`，
+  只能从主界面齿轮进（工具栏收起后点顶部小把手唤回）。
 
 ## v1.4.26 待发（2026-10-26，issue #49：运行时换装事务化）
 - **问题**（PR #48 审查 P1-2）：换装在逐条 `engine/<x> → engine.old` 期间被强杀

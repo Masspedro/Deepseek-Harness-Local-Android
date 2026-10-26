@@ -152,6 +152,20 @@ object PluginKillSwitch {
 
     fun isActive(ctx: Context): Boolean = read(ctx)?.phase == Phase.DISABLED
 
+    /**
+     * 是否处于「插件集合正在被改写」的窗口：已停用（disabled）或正在恢复
+     * （enabling，引擎重启中）。
+     *
+     * 与 [isActive] 分开是因为两者语义不同：`isActive` 回答"插件现在是不是被关着"，
+     * 用于 UI 显示「恢复」还是「停用」；`isBusy` 回答"现在能不能装/卸插件"。
+     * 恢复中的窗口虽然不算 disabled，但此时 pnpm 正在写 node_modules、监督器随后
+     * 还要按日志写回 bundles —— 这时候插进来一个安装，装完就会被写回动作丢掉。
+     */
+    fun isBusy(ctx: Context): Boolean = when (read(ctx)?.phase) {
+        Phase.DISABLED, Phase.ENABLING -> true
+        else -> false
+    }
+
     fun status(ctx: Context): Status {
         val names = manifestBundles(ctx)
         val state = read(ctx)
