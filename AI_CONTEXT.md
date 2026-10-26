@@ -1,5 +1,21 @@
 # AI_CONTEXT
 
+## PR #50 已合并（2026-10-26，修我在 #48 里丢掉的主题接线）
+- **我的失误**：合并 PR #48 时对 `OnboardingActivity.kt` / `SettingsActivity.kt` 用了
+  「整文件取上游」解冲突，把 `e7d85ec` 的主题接线一起丢了。后果：`ThemePref.set`
+  全仓 0 调用、引导页三张主题卡看得见点不动、设置页外观行整行消失、
+  `activity_settings.xml` 106 处硬编码深色。
+- **教训**：rebase/merge 冲突解决**绝不能整文件取一侧**——尤其当对方是
+  「重写整个文件」（如 PR #48 把 theme 接线混在大量重构里）。应逐 hunk 看，
+  或用 `git log -p <file>` 对照上一版语义。这条以后写进合并检查清单。
+- **PR #50 内容**（作者 XiaoPb）：3 个页面改继承 ThemedActivity、引导页/设置页
+  主题卡接线恢复、`ThemeMode.labelRes`、23 种硬编码色→语义 token、
+  5 个页面 69 处状态色改 getColor(R.color.*)、新增 `_test_theme_menu.py`（34 项）。
+- **合并后实测**（emulator-5554 / noruntime 构建）：
+  设置页「外观主题」行在（值=深色）→ 三选一可用 → 切浅色整页白底深字、卡片清晰 →
+  **插件市场浅色下插件名可见**（他 998b012 修的白字白底隐形）→ 3 探针 + i18n 全过。
+- 已回复作者承认失误并致谢；下一步随 v1.4.26 发布。
+
 ## v1.4.25 后续（2026-10-26，CI 偶发失败已处置）
 - **现象**：推 AI_CONTEXT 那次 main 的 android-build 红了，唯一失败 job 是
   `build-apk (x86_64, full)`；同一份代码的 v1.4.25 tag 构建四 lane 全绿。
