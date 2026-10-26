@@ -70,6 +70,61 @@
   **没有 exported**，`am start -n …/.SettingsActivity` 会 `SecurityException`，
   只能从主界面齿轮进（工具栏收起后点顶部小把手唤回）。
 
+## ⚠️ 2026-10-26 API push 覆盖事故（已修复，重要教训）
+- **事故**：github.com:443 间歇阻断时用 `scripts/push-via-api.py` 推 PR #51 的合并
+  结果，但**本地分支不含刚在远端合并的 PR #52 内容**（GitHub API merge 只发生在
+  远端，我没 pull）→ API 推送把 #52 的 TerminalActivity / libtermux.so 四架构 /
+  LogViewerActivity 等 32 个文件覆盖掉。
+- **发现**：`compare/ee3666c...330e6f6` 显示 32 个文件被删。
+- **修复**：`git merge ee3666c`（本地有该对象）→ 无冲突 → 编译/i18n 过 →
+  再走 API 通道推（26 文件更新、**0 删除**，compare 验证 PR#52 内容全部找回）。
+- **教训**（下次 API push 前必查）：
+  1. **push-via-api 之前必须 `git fetch origin && git log origin/main -1`**，确认
+     本地 HEAD 包含远端最新（GitHub API merge / 他人 push 都会产生本地没有的提交）；
+  2. push 前用 compare API 或本地 diff 验证「不丢文件」；
+  3. push 状态判断**不要用输出字符串匹配**（失败消息里可能含 "main"）——用 exit code；
+  4. GitHub 的 mergeable/merged 字段有缓存延迟，405 报「has merge conflicts」
+     时以 merge API 的错误体为准。
+- **PR 状态**：#51/#52 内容均已进入 main，因 API 重建提交 SHA 变化，GitHub 无法
+  自动标 merged，已手动关闭并留言（#51 6428995167 / #52 6428995869）。
+- **待办**：网络恢复后 `git fetch` 并把本地 main 对齐远端（API 重建的 SHA 与本地
+  6fb5917 内容一致但 SHA 不同，届时 reset --hard origin/main 即可，内容无差异）。
+
+## 2026-10-26 PR 批处理（#51 #52 #53 #54 #47）
+- **PR #51**（XiaoPb，修 #49）：换装改意图日志两阶段提交（.runtime-swap，
+  tmp→sync→rename 原子写），**纠正了 #49 里我的错误假设**——新旧混合态能通过
+  isRootCompleteAt 探针（探针只查单侧锚点），后果是带着错配 node+so 启动而非
+  「重下 100MB」；另发现解压阶段被杀会永久泄漏 engine.staging(~580MB) +
+  runtime.zip(~124MB)。新增 cleanupInstallResidue() 回收。回滚规则两条，
+  不做「备份缺失就删 root」推断。同 PR：EngineSupervisor.stop 返回 Boolean、
+  AboutActivity stop 失败中止换装、https 强制、builtAt 防降级。
+- **PR #52**（新贡献者 xiaoming132887，1739 行）：原生 PTY 终端（termux
+  terminal-view 0.118 + 重编 16KB 页对齐 libtermux.so，修 Android 15+ dlopen）、
+  多标签、LogViewerActivity（engine.log/boot.log 尾部 256KB + 系统分享）、
+  plugin-health 无限重启修复。三语文案齐全。
+- **#53/#54**（Masspedro）：Enter 换行、附件加相册直选。已回复方案：
+  #53 归 WebUI overlay（按 pointer:coarse 重绑定快捷键）；#54 用系统
+  Photo Picker（App 侧 onShowFileChooser 路由 image/* → ACTION_PICK_IMAGES，
+  无需存储权限，上游前端零改动）。均留 issue 开着直到发布。
+- **#47 更正**：我们之前回复里版本号笔误（写了 v1.4.20，实际 v1.4.24 出的
+  可读报错、v1.4.25 出的 #47 真因修复）。
+
+## PR #50 已合并（2026-10-26，修我在 #48 里丢掉的主题接线）
+- **我的失误**：合并 PR #48 时对 `OnboardingActivity.kt` / `SettingsActivity.kt` 用了
+  「整文件取上游」解冲突，把 `e7d85ec` 的主题接线一起丢了。后果：`ThemePref.set`
+  全仓 0 调用、引导页三张主题卡看得见点不动、设置页外观行整行消失、
+  `activity_settings.xml` 106 处硬编码深色。
+- **教训**：rebase/merge 冲突解决**绝不能整文件取一侧**——尤其当对方是
+  「重写整个文件」（如 PR #48 把 theme 接线混在大量重构里）。应逐 hunk 看，
+  或用 `git log -p <file>` 对照上一版语义。这条以后写进合并检查清单。
+- **PR #50 内容**（作者 XiaoPb）：3 个页面改继承 ThemedActivity、引导页/设置页
+  主题卡接线恢复、`ThemeMode.labelRes`、23 种硬编码色→语义 token、
+  5 个页面 69 处状态色改 getColor(R.color.*)、新增 `_test_theme_menu.py`（34 项）。
+- **合并后实测**（emulator-5554 / noruntime 构建）：
+  设置页「外观主题」行在（值=深色）→ 三选一可用 → 切浅色整页白底深字、卡片清晰 →
+  **插件市场浅色下插件名可见**（他 998b012 修的白字白底隐形）→ 3 探针 + i18n 全过。
+- 已回复作者承认失误并致谢；下一步随 v1.4.26 发布。
+
 ## v1.4.26 待发（2026-10-26，issue #49：运行时换装事务化）
 - **问题**（PR #48 审查 P1-2）：换装在逐条 `engine/<x> → engine.old` 期间被强杀
   （低内存 / OEM 清后台 / 用户强杀）没有任何持久化证据 —— `.pending-health` 在换装
