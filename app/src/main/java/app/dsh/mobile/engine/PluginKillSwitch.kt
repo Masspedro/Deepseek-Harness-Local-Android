@@ -78,6 +78,8 @@ object PluginKillSwitch {
     /**
      * @param bundles **完整的原始 bundle 列表**（内置 + 第三方，保持原顺序）——
      *   恢复要逐项写回，只存第三方的话顺序会全丢。
+     * @param allow 停用期间**白名单**：这些第三方包仍然加载（v1.4.28 逐个恢复）。
+     *   仅在 `phase=disabled` 时有意义；恢复（enabling/enabled）后忽略。
      * @param reason 触发原因，仅用于日志/诊断
      */
     data class State(
@@ -85,6 +87,7 @@ object PluginKillSwitch {
         val bundles: List<String>,
         val at: Long,
         val reason: String = "",
+        val allow: List<String> = emptyList(),
     ) {
         fun userBundles(): List<String> = bundles.filter(PluginRecovery::isUserBundle)
     }
@@ -99,6 +102,8 @@ object PluginKillSwitch {
         val thirdParty: List<String>,
         /** 日志里记录的、被禁用的那批 */
         val disabled: List<String>,
+        /** 停用期间白名单：单独恢复的第三方包（v1.4.28） */
+        val allow: List<String>,
         /** manifest 里 bundle 总数（含内置） */
         val total: Int,
         val at: Long,
@@ -139,11 +144,15 @@ object PluginKillSwitch {
         val arr = json.optJSONArray("bundles") ?: JSONArray()
         val bundles = (0 until arr.length())
             .mapNotNull { arr.optString(it).takeIf(String::isNotBlank) }
+        val allowArr = json.optJSONArray("allow") ?: JSONArray()
+        val allow = (0 until allowArr.length())
+            .mapNotNull { allowArr.optString(it).takeIf(String::isNotBlank) }
         State(
             phase = phase,
             bundles = bundles,
             at = json.optLong("at", 0L),
             reason = json.optString("reason", ""),
+            allow = allow,
         )
     }.onFailure {
         // 日志坏了不能静默：否则会退化成「看不出插件被禁过」
@@ -166,6 +175,14 @@ object PluginKillSwitch {
         else -> false
     }
 
+    /**
+     * 是否处于「正在恢复」窗口（enabling，引擎重启中）。v1.4.28 起停用期间允许
+     * 安装/更新插件（装了不加载，直到用户单独启用），所以安装守卫只拦这个窗口：
+     * 那会儿 pnpm 正在写 node_modules、监督器随后要按日志写回 bundles，插进来
+     * 一个安装会被写回动作丢掉。
+     */
+    fun isRestoring(ctx: Context): Boolean = read(ctx)?.phase == Phase.ENABLING
+
     fun status(ctx: Context): Status {
         val names = manifestBundles(ctx)
         val state = read(ctx)
@@ -174,6 +191,7 @@ object PluginKillSwitch {
             recorded = state != null,
             thirdParty = names.filter(PluginRecovery::isUserBundle),
             disabled = state?.userBundles().orEmpty(),
+            allow = state?.allow.orEmpty().filter(PluginRecovery::isUserBundle),
             total = names.size,
             at = state?.at ?: 0L,
         )
@@ -186,6 +204,7 @@ object PluginKillSwitch {
             put("at", state.at)
             put("reason", state.reason)
             put("bundles", JSONArray(state.bundles))
+            put("allow", JSONArray(state.allow))
             put("count", state.userBundles().size)
         }
         atomicWrite(logFile(ctx), json.toString(2) + "\n")
@@ -223,6 +242,7 @@ object PluginKillSwitch {
                     bundles = current,
                     at = System.currentTimeMillis(),
                     reason = reason,
+                    allow = emptyList(),
                 ),
             )
             runCatching { forceFlagFile(ctx).delete() }
@@ -272,6 +292,67 @@ object PluginKillSwitch {
             write(ctx, state.copy(phase = Phase.ENABLED, at = System.currentTimeMillis()))
             Log.i(TAG, "restore confirmed: plugins are active again")
         }.onFailure { Log.w(TAG, "cannot mark restored: ${it.message}") }
+    }
+
+    // ================= 单个插件的白名单动作（v1.4.28） =================
+
+    /**
+     * 停用期间**单独恢复**一个第三方插件：加进白名单，下次 spawn 起会加载。
+     *
+     * 排查工作流的核心一步：全禁重启 → 更新/重装嫌疑插件 → 单独启用它 →
+     * 好了再逐个恢复其余，不好就 [requestDisableOne] 摘回去。
+     *
+     * 只在 disabled 相位有效；enabling/enabled 相位下插件本来就全部在加载。
+     */
+    fun requestEnableOne(ctx: Context, pkg: String): Outcome {
+        val state = read(ctx)
+            ?: return Outcome(false, "kill switch has no record")
+        if (state.phase != Phase.DISABLED) {
+            return Outcome(false, "plugins are not disabled; $pkg already loads")
+        }
+        if (!PluginRecovery.isUserBundle(pkg)) {
+            return Outcome(false, "$pkg is not a third-party plugin")
+        }
+        if (pkg !in state.userBundles()) {
+            return Outcome(false, "$pkg was not turned off by the switch")
+        }
+        if (pkg in state.allow) {
+            return Outcome(false, "$pkg is already enabled individually")
+        }
+        if (pkg !in installedPackages(ctx) || !bundleDirExists(ctx, pkg)) {
+            return Outcome(false, "$pkg is not installed on disk")
+        }
+        return runCatching {
+            write(ctx, state.copy(allow = state.allow + pkg, at = System.currentTimeMillis()))
+            runCatching { forceFlagFile(ctx).delete() }
+            Log.i(TAG, "enable-one: $pkg will load on next boot (allow=${state.allow + pkg})")
+            Outcome(true, pkg)
+        }.onFailure {
+            Log.e(TAG, "enable-one $pkg failed: ${it.message}", it)
+        }.getOrElse { Outcome(false, it.message ?: "write failed") }
+    }
+
+    /**
+     * 停用期间把已单独恢复的插件再摘回去（从白名单移除），下次 spawn 生效。
+     * 同样只在 disabled 相位有效。
+     */
+    fun requestDisableOne(ctx: Context, pkg: String): Outcome {
+        val state = read(ctx)
+            ?: return Outcome(false, "kill switch has no record")
+        if (state.phase != Phase.DISABLED) {
+            return Outcome(false, "plugins are not disabled")
+        }
+        if (pkg !in state.allow) {
+            return Outcome(false, "$pkg is not individually enabled")
+        }
+        return runCatching {
+            write(ctx, state.copy(allow = state.allow - pkg, at = System.currentTimeMillis()))
+            runCatching { forceFlagFile(ctx).delete() }
+            Log.i(TAG, "disable-one: $pkg will not load on next boot (allow=${state.allow - pkg})")
+            Outcome(true, pkg)
+        }.onFailure {
+            Log.e(TAG, "disable-one $pkg failed: ${it.message}", it)
+        }.getOrElse { Outcome(false, it.message ?: "write failed") }
     }
 
     // ================= 启动收敛（唯一改 manifest 的地方） =================
@@ -340,7 +421,8 @@ object PluginKillSwitch {
         val current = bundleNames(manifest)
         val skipped = mutableListOf<String>()
         val target = when (state.phase) {
-            Phase.DISABLED -> current.filterNot(PluginRecovery::isUserBundle)
+            // v1.4.28：白名单里的第三方包保留（哪怕 manifest 里已被摘掉，也补回来）
+            Phase.DISABLED -> disabledTarget(ctx, state.allow, current, skipped)
             Phase.ENABLING -> restoreTarget(ctx, state.bundles, current, skipped)
             Phase.ENABLED -> current
         }
@@ -357,6 +439,33 @@ object PluginKillSwitch {
                 (if (skipped.isEmpty()) ")" else ", skipped=${skipped.joinToString(",")})"),
         )
         return Report(state.phase, current.size, target.size, true, skipped)
+    }
+
+    /**
+     * 停用相位的目标 bundle 列表：摘掉白名单外的第三方包；白名单里的包若已在
+     * manifest 里就原地保留（顺序不乱），不在就补到末尾（此前被摘过）。
+     * 白名单包已被卸载时目标里不放（塞回去会让引擎解析失败），包名从白名单
+     * 里也不删 —— 与恢复语义一致：卸载是明确的用户动作，日志保持历史。
+     */
+    private fun disabledTarget(
+        ctx: Context,
+        allow: List<String>,
+        current: List<String>,
+        skipped: MutableList<String>,
+    ): List<String> {
+        val installed = installedPackages(ctx)
+        val kept = allow.filter(PluginRecovery::isUserBundle)
+        val out = LinkedHashSet<String>()
+        for (name in current) {
+            if (PluginRecovery.isUserBundle(name) && name !in kept) continue
+            out += name
+        }
+        for (name in kept) {
+            if (name in out) continue
+            if (name in installed && bundleDirExists(ctx, name)) out += name
+            else skipped += name
+        }
+        return out.toList()
     }
 
     /**

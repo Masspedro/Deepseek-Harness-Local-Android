@@ -830,7 +830,15 @@ class SettingsActivity : ThemedActivity() {
         val st = runCatching { PluginKillSwitch.status(this) }.getOrNull() ?: return
         if (st.active) {
             title.text = getString(R.string.setting_plugin_kill_restore)
-            sub.text = getString(R.string.setting_plugin_kill_restore_sub, st.disabled.size)
+            // v1.4.28：有单独恢复的白名单时显示进度，引导去插件中心逐个启用
+            sub.text = if (st.allow.isNotEmpty()) {
+                getString(
+                    R.string.setting_plugin_kill_restore_sub_partial,
+                    st.allow.size, st.disabled.size,
+                )
+            } else {
+                getString(R.string.setting_plugin_kill_restore_sub, st.disabled.size)
+            }
             sub.setTextColor(getColor(R.color.warning))
         } else {
             title.text = getString(R.string.setting_plugin_kill)

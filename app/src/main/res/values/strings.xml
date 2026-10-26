@@ -594,6 +594,7 @@ You can still continue without updating, but the interface will not display.</st
     <string name="setting_plugin_kill_sub_idle">Turn every third-party plugin off in one tap</string>
     <string name="setting_plugin_kill_restore">Restore third-party plugins</string>
     <string name="setting_plugin_kill_restore_sub">%1$d plugin(s) turned off — tap to bring them back</string>
+    <string name="setting_plugin_kill_restore_sub_partial">%1$d of %2$d re-enabled — tap to bring all back</string>
     <string name="plugin_kill_disable_title">Turn off all third-party plugins?</string>
     <string name="plugin_kill_disable_body">The engine restarts and loads built-in plugins only. Installed packages and their files are kept, so restoring costs no download.\n\nWill be turned off (%1$d):\n%2$s</string>
     <string name="plugin_kill_restore_title">Restore third-party plugins?</string>
@@ -603,8 +604,12 @@ You can still continue without updating, but the interface will not display.</st
     <string name="plugin_kill_failed">Could not change plugin state: %1$s</string>
     <string name="plugin_kill_skipped">%1$d uninstalled plugin(s) skipped</string>
     <string name="plugin_kill_more">· and %1$d more</string>
-    <string name="plugin_kill_banner">All third-party plugins are turned off — tap to restore</string>
-    <string name="plugin_kill_install_blocked">Restore third-party plugins first — anything installed now would not load</string>
+    <string name="plugin_kill_banner">All third-party plugins are turned off — enable them one by one in Installed, or tap to restore all</string>
+    <string name="plugin_kill_enable_one">Enable this one</string>
+    <string name="plugin_kill_disable_one">Turn off again</string>
+    <string name="plugin_kill_enable_one_toast">%1$s will load after the engine restarts</string>
+    <string name="plugin_kill_disable_one_toast">%1$s stays off after the engine restarts</string>
+    <string name="plugin_kill_installed_hint">Installed — it stays off until you enable it under Installed</string>
     <string name="setting_self_check">Full check &amp; repair</string>
     <string name="setting_self_check_sub">Diagnose runtime, storage, links, plugins and settings — repairs what it safely can</string>
     <string name="self_check_running">Checking…</string>

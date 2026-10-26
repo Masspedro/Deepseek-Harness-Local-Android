@@ -593,6 +593,7 @@
     <string name="setting_plugin_kill_sub_idle">一键把第三方插件全部停掉</string>
     <string name="setting_plugin_kill_restore">恢复第三方插件</string>
     <string name="setting_plugin_kill_restore_sub">已停用 %1$d 个 · 点此恢复</string>
+    <string name="setting_plugin_kill_restore_sub_partial">已停用 %2$d 个 · 已单独恢复 %1$d 个 · 点此全部恢复</string>
     <string name="plugin_kill_disable_title">停用全部第三方插件？</string>
     <string name="plugin_kill_disable_body">引擎会重启，只加载自带插件。已安装的包和文件都保留，恢复不需要重新下载。\n\n将被停用（%1$d）：\n%2$s</string>
     <string name="plugin_kill_restore_title">恢复第三方插件？</string>
@@ -602,8 +603,12 @@
     <string name="plugin_kill_failed">插件状态修改失败：%1$s</string>
     <string name="plugin_kill_skipped">已跳过 %1$d 个被卸载的插件</string>
     <string name="plugin_kill_more">· 等 %1$d 个</string>
-    <string name="plugin_kill_banner">第三方插件已全部停用 · 点此恢复</string>
-    <string name="plugin_kill_install_blocked">请先恢复第三方插件 —— 现在装的插件不会被加载</string>
+    <string name="plugin_kill_banner">第三方插件已全部停用 · 可在「已安装」逐个启用 · 点此全部恢复</string>
+    <string name="plugin_kill_enable_one">单独启用</string>
+    <string name="plugin_kill_disable_one">再停用</string>
+    <string name="plugin_kill_enable_one_toast">%1$s 将在引擎重启后加载</string>
+    <string name="plugin_kill_disable_one_toast">%1$s 将在引擎重启后保持停用</string>
+    <string name="plugin_kill_installed_hint">已安装。停用期间不会加载 —— 可在「已安装」里单独启用它试试</string>
     <string name="setting_self_check">全面体检与修复</string>
     <string name="setting_self_check_sub">检查运行时、存储、软链、插件与配置，能修的自动修好</string>
     <string name="self_check_running">正在检查…</string>
