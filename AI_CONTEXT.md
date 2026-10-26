@@ -1,5 +1,20 @@
 # AI_CONTEXT
 
+## v1.4.25 后续（2026-10-26，CI 偶发失败已处置）
+- **现象**：推 AI_CONTEXT 那次 main 的 android-build 红了，唯一失败 job 是
+  `build-apk (x86_64, full)`；同一份代码的 v1.4.25 tag 构建四 lane 全绿。
+- **诊断**：单文件文档 commit 不影响构建；本地用 CI 同一条命令
+  （`assembleDebug -Pabi=x86_64 -Ppackage=full -PruntimeZip=<绝对路径>`）构建成功；
+  GitHub 上 rerun-failed-jobs 后也全绿 → **runner 资源抖动，非代码问题**。
+- **但压力是真实的**：full 形态 debug+release 连续构建，每次吞吐 127MB
+  runtime.zip（解压 ~500MB），8 lane 并行时磁盘/内存都不宽裕。
+- **防护（commit 99c1fb4）**：build-apk 在 checkout 后先清掉用不到的预装组件
+  （dotnet / android ndk / ghc / boost / AGENT_TOOLSDIRECTORY），并前后打印
+  `df -h` + `free -m` —— 下次若复现可直接从日志判断是磁盘还是内存。
+- **验证**：该 commit 的 main 构建 run 40296459217 全绿（8 个产物 job 全 ok）。
+- 注：GitHub Actions 的 job 日志下载 API 需要 admin 权限（token 403），
+  排查失败原因只能用 annotations / 失败步骤名 / 本地复现三条路。
+
 ## v1.4.25 已发布（2026-10-26，PR #48 合并 + #47 修复，CI 7 分钟全绿）
 - **合并 PR #48**（merge ec42f90，作者 XiaoPb，182 文件）：运行时解耦 / full+noruntime
   双形态 / 签名索引 / 原生深浅主题 / 桌宠。合并前验证：merge-tree 无冲突、我方
