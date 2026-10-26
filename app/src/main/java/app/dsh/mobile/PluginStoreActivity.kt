@@ -42,7 +42,7 @@ import app.dsh.mobile.engine.PluginMarket.Entry
  *  - 装前原生模块预检 + 风险确认（[NativePluginCheck]）；
  *  - 按钮状态防抖与视图存活检查（预检期间可能已离开页面）。
  */
-class PluginStoreActivity : Activity() {
+class PluginStoreActivity : ThemedActivity() {
 
     /** 与其余页面一致，按应用内语言偏好包装 Context */
     override fun attachBaseContext(newBase: android.content.Context) {
@@ -129,6 +129,12 @@ class PluginStoreActivity : Activity() {
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         })
 
+        // 从桌宠设置页跳过来时预填搜索词（v1.4.19，如 dsh-pet-bridge）
+        val initialQuery = intent.getStringExtra(EXTRA_QUERY).orEmpty().trim()
+        if (initialQuery.isNotBlank()) {
+            etSearch.setText(initialQuery)
+            etSearch.setSelection(initialQuery.length)
+        }
         buildCategoryChips()
         reload(verbose = true)
     }
@@ -664,5 +670,8 @@ class PluginStoreActivity : Activity() {
 
     companion object {
         private const val STORE_CONTENT_MAX_WIDTH_DP = 720
+
+        /** 从桌宠设置页跳过来时预填搜索词，例如 dsh-pet-bridge。 */
+        const val EXTRA_QUERY = "app.dsh.mobile.extra.PLUGIN_QUERY"
     }
 }
