@@ -93,7 +93,7 @@ class PetSettingsActivity : ThemedActivity() {
         // 状态/错误
         status.lastError?.let { error ->
             card().also { c ->
-                c.addView(rowText(error, 0xFFFFB74D.toInt()))
+                c.addView(rowText(error, getColor(R.color.warning)))
                 content.addView(c)
             }
         }
@@ -106,7 +106,7 @@ class PetSettingsActivity : ThemedActivity() {
                     getString(R.string.pet_permission),
                     getString(R.string.pet_permission_sub),
                     getString(if (canDraw) R.string.pet_permission_granted else R.string.pet_permission_denied),
-                    if (canDraw) 0xFF6EE7B7.toInt() else 0xFFFFB74D.toInt(),
+                    if (canDraw) getColor(R.color.success) else getColor(R.color.warning),
                 ) {
                     openOverlaySettings()
                 },
@@ -123,7 +123,7 @@ class PetSettingsActivity : ThemedActivity() {
                 plugin.webPetInstalled -> getString(R.string.pet_plugin_web_only)
                 else -> getString(R.string.pet_plugin_missing)
             }
-            val pluginColor = if (plugin.bridgeReady) 0xFF6EE7B7.toInt() else 0xFFFFB74D.toInt()
+            val pluginColor = if (plugin.bridgeReady) getColor(R.color.success) else getColor(R.color.warning)
             c.addView(
                 row(
                     getString(R.string.pet_plugin),
@@ -148,7 +148,7 @@ class PetSettingsActivity : ThemedActivity() {
                         getString(R.string.pet_plugin_restart),
                         getString(R.string.pet_plugin_restart_hint),
                         "",
-                        0xFF8A94A3.toInt(),
+                        getColor(R.color.text_secondary),
                     ) { restartEngine() },
                 )
                 content.addView(c)
@@ -165,7 +165,7 @@ class PetSettingsActivity : ThemedActivity() {
                     getString(R.string.pet_pack_import),
                     getString(R.string.pet_pack_keep_open),
                     value,
-                    if (count > 0) 0xFF6EE7B7.toInt() else 0xFF8A94A3.toInt(),
+                    if (count > 0) getColor(R.color.success) else getColor(R.color.text_secondary),
                 ) { pickPack() },
             )
             if (count > 0) {
@@ -175,7 +175,7 @@ class PetSettingsActivity : ThemedActivity() {
                         getString(R.string.pet_pack_clear),
                         "",
                         "",
-                        0xFF8A94A3.toInt(),
+                        getColor(R.color.text_secondary),
                     ) { confirmClearPack() },
                 )
             }
@@ -189,7 +189,7 @@ class PetSettingsActivity : ThemedActivity() {
                     getString(R.string.pet_size),
                     "",
                     getString(R.string.pet_size_value, PetPrefs.sizeDp(this)),
-                    0xFF8A94A3.toInt(),
+                    getColor(R.color.text_secondary),
                 ) { chooseSize() },
             )
             c.addView(divider())
@@ -198,7 +198,7 @@ class PetSettingsActivity : ThemedActivity() {
                     getString(R.string.pet_test_bubble),
                     getString(R.string.pet_test_bubble_text),
                     "",
-                    0xFF8A94A3.toInt(),
+                    getColor(R.color.text_secondary),
                 ) {
                     if (running) {
                         PetOverlayService.showTestBubble(getString(R.string.pet_test_bubble_text))
@@ -211,7 +211,7 @@ class PetSettingsActivity : ThemedActivity() {
         }
 
         if (!engineRunning) {
-            content.addView(rowText(getString(R.string.pet_status_engine_down), 0xFF8A94A3.toInt()))
+            content.addView(rowText(getString(R.string.pet_status_engine_down), getColor(R.color.text_secondary)))
         }
 
         // 状态副标题（运行中/已连接/等待）
@@ -221,7 +221,7 @@ class PetSettingsActivity : ThemedActivity() {
                 status.listening -> getString(R.string.pet_status_waiting)
                 else -> getString(R.string.pet_status_running)
             }
-            content.addView(rowText(st, 0xFF6EE7B7.toInt()))
+            content.addView(rowText(st, getColor(R.color.success)))
         }
     }
 
@@ -389,7 +389,7 @@ class PetSettingsActivity : ThemedActivity() {
     private fun section(title: String) {
         content.addView(TextView(this).apply {
             text = title
-            setTextColor(0xFF7DD3FC.toInt())
+            setTextColor(getColor(R.color.accent))
             textSize = 13f
             setTypeface(typeface, Typeface.BOLD)
             setPadding(dp(8), dp(18), dp(8), dp(8))
@@ -430,7 +430,7 @@ class PetSettingsActivity : ThemedActivity() {
         })
         col.addView(TextView(this).apply {
             text = getString(R.string.pet_enable_sub)
-            setTextColor(0xFF8A94A3.toInt())
+            setTextColor(getColor(R.color.text_secondary))
             textSize = 12f
             setPadding(0, dp(2), 0, 0)
         })
@@ -480,7 +480,7 @@ class PetSettingsActivity : ThemedActivity() {
         if (subtitle.isNotBlank()) {
             col.addView(TextView(this).apply {
                 text = subtitle
-                setTextColor(0xFF8A94A3.toInt())
+                setTextColor(getColor(R.color.text_secondary))
                 textSize = 12f
                 setPadding(0, dp(2), 0, 0)
             })

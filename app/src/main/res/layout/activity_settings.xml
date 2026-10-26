@@ -3,7 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#FF101418">
+    android:background="@color/bg">
 
     <!-- 顶部栏：返回箭头 + 标题 -->
     <LinearLayout
@@ -11,7 +11,7 @@
         android:layout_height="56dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:background="#FF101418"
+        android:background="@color/bg"
         android:elevation="2dp">
 
         <ImageView
@@ -29,7 +29,7 @@
             android:layout_weight="1"
             android:gravity="center_vertical"
             android:text="@string/settings_title"
-            android:textColor="#FFFFFFFF"
+            android:textColor="@color/text_primary"
             android:textSize="20sp"
             android:textStyle="bold" />
     </LinearLayout>
@@ -70,7 +70,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/settings_section_appearance"
-                android:textColor="#FF7DD3FC"
+                android:textColor="@color/accent"
                 android:textSize="13sp"
                 android:textStyle="bold"
                 android:paddingStart="8dp"
@@ -82,6 +82,67 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:background="@drawable/bg_card">
+
+                <!-- 外观主题（深色/浅色/跟随系统）：原生壳的昼夜偏好，聊天区由 dsh 自己管 -->
+                <LinearLayout
+                android:id="@+id/rowTheme"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="14dp"
+                android:background="?android:attr/selectableItemBackground">
+
+                <ImageView
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="8dp"
+                android:src="@drawable/ic_theme"
+                android:background="@drawable/bg_icon_chip_soft"
+                android:tint="@color/accent" />
+
+                <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="14dp">
+
+                <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_theme"
+                android:textColor="@color/text_primary"
+                android:textSize="15sp" />
+
+                <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_theme_sub"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:layout_marginTop="2dp" />
+                </LinearLayout>
+
+                <TextView
+                android:id="@+id/valTheme"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/text_secondary"
+                android:textSize="14sp"
+                android:layout_marginEnd="6dp" />
+
+                <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:src="@drawable/ic_chevron" />
+                </LinearLayout>
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginStart="16dp"
+                    android:background="@color/divider" />
 
                 <LinearLayout
                 android:id="@+id/rowLandscape"
@@ -100,7 +161,7 @@
                 android:padding="8dp"
                 android:src="@drawable/ic_rotate"
                 android:background="@drawable/bg_icon_chip_soft"
-                android:tint="#FF5B8DEF" />
+                android:tint="@color/accent" />
 
                 <LinearLayout
                 android:layout_width="0dp"
@@ -114,7 +175,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/setting_landscape"
-                android:textColor="#FFFFFFFF"
+                android:textColor="@color/text_primary"
                 android:textSize="16sp" />
 
                 <TextView
@@ -122,7 +183,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/setting_landscape_sub"
-                android:textColor="#FF8A94A3"
+                android:textColor="@color/text_secondary"
                 android:textSize="12sp"
                 android:layout_marginTop="2dp" />
                 </LinearLayout>
@@ -132,7 +193,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/setting_orient_portrait"
-                android:textColor="#FF8A94A3"
+                android:textColor="@color/text_secondary"
                 android:textSize="14sp"
                 android:layout_marginEnd="6dp" />
 
@@ -145,7 +206,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
                     android:layout_marginStart="16dp"
-                    android:background="#1FFFFFFF" />
+                    android:background="@color/divider" />
 
                 <LinearLayout
                 android:id="@+id/rowScale"
@@ -164,7 +225,7 @@
                 android:padding="8dp"
                 android:src="@drawable/ic_scale"
                 android:background="@drawable/bg_icon_chip_soft"
-                android:tint="#FF7DD3FC" />
+                android:tint="@color/accent" />
 
                 <LinearLayout
                 android:layout_width="0dp"
@@ -177,14 +238,14 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/setting_scale"
-                android:textColor="#FFFFFFFF"
+                android:textColor="@color/text_primary"
                 android:textSize="16sp" />
 
                 <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/setting_scale_sub"
-                android:textColor="#FF8A94A3"
+                android:textColor="@color/text_secondary"
                 android:textSize="12sp"
                 android:layout_marginTop="2dp" />
                 </LinearLayout>
@@ -194,7 +255,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="90%"
-                android:textColor="#FF8A94A3"
+                android:textColor="@color/text_secondary"
                 android:textSize="14sp"
                 android:layout_marginEnd="6dp" />
 
@@ -207,7 +268,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
                     android:layout_marginStart="16dp"
-                    android:background="#1FFFFFFF" />
+                    android:background="@color/divider" />
 
                 <LinearLayout
                 android:id="@+id/rowAccent"
@@ -225,7 +286,7 @@
                 android:padding="8dp"
                 android:src="@drawable/ic_palette"
                 android:background="@drawable/bg_icon_chip_soft"
-                android:tint="#FF5B8DEF" />
+                android:tint="@color/accent" />
 
                 <LinearLayout
                 android:layout_width="0dp"
@@ -238,14 +299,14 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/setting_accent"
-                android:textColor="#FFE8ECF2"
+                android:textColor="@color/text_primary"
                 android:textSize="15sp" />
 
                 <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/setting_accent_sub"
-                android:textColor="#FF8A94A3"
+                android:textColor="@color/text_secondary"
                 android:textSize="12sp"
                 android:layout_marginTop="2dp" />
                 </LinearLayout>
@@ -254,7 +315,7 @@
                 android:id="@+id/valAccent"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textColor="#FF8A94A3"
+                android:textColor="@color/text_secondary"
                 android:textSize="14sp"
                 android:layout_marginEnd="6dp" />
 
@@ -267,7 +328,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
                     android:layout_marginStart="16dp"
-                    android:background="#1FFFFFFF" />
+                    android:background="@color/divider" />
 
                 <LinearLayout
                 android:id="@+id/rowLayoutMode"
@@ -285,7 +346,7 @@
                 android:padding="8dp"
                 android:src="@drawable/ic_layout"
                 android:background="@drawable/bg_icon_chip_soft"
-                android:tint="#FF5B8DEF" />
+                android:tint="@color/accent" />
 
                 <LinearLayout
                 android:layout_width="0dp"
@@ -298,14 +359,14 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/setting_layout_mode"
-                android:textColor="#FFE8ECF2"
+                android:textColor="@color/text_primary"
                 android:textSize="15sp" />
 
                 <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/setting_layout_mode_sub"
-                android:textColor="#FF8A94A3"
+                android:textColor="@color/text_secondary"
                 android:textSize="12sp"
                 android:layout_marginTop="2dp" />
                 </LinearLayout>
@@ -314,7 +375,7 @@
                 android:id="@+id/valLayoutMode"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textColor="#FF8A94A3"
+                android:textColor="@color/text_secondary"
                 android:textSize="14sp"
                 android:layout_marginEnd="6dp" />
 
@@ -330,7 +391,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/settings_section_permission"
-                android:textColor="#FF7DD3FC"
+                android:textColor="@color/accent"
                 android:textSize="13sp"
                 android:textStyle="bold"
                 android:paddingStart="8dp"
@@ -360,7 +421,7 @@
                 android:padding="8dp"
                 android:src="@drawable/ic_shield"
                 android:background="@drawable/bg_icon_chip_soft"
-                android:tint="#FFFF8A65" />
+                android:tint="@color/danger" />
 
                 <LinearLayout
                 android:layout_width="0dp"
@@ -373,14 +434,14 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/setting_priv_mode"
-                android:textColor="#FFFFFFFF"
+                android:textColor="@color/text_primary"
                 android:textSize="16sp" />
 
                 <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/setting_priv_mode_sub"
-                android:textColor="#FF8A94A3"
+                android:textColor="@color/text_secondary"
                 android:textSize="12sp"
                 android:layout_marginTop="2dp" />
                 </LinearLayout>
@@ -390,7 +451,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/priv_normal"
-                android:textColor="#FF8A94A3"
+                android:textColor="@color/text_secondary"
                 android:textSize="14sp"
                 android:layout_marginEnd="6dp" />
 
@@ -403,7 +464,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
                     android:layout_marginStart="16dp"
-                    android:background="#1FFFFFFF" />
+                    android:background="@color/divider" />
 
                 <LinearLayout
                 android:id="@+id/rowRootStatus"
@@ -420,7 +481,7 @@
                 android:padding="8dp"
                 android:src="@drawable/ic_key"
                 android:background="@drawable/bg_icon_chip_soft"
-                android:tint="#FFFFB74D" />
+                android:tint="@color/warning" />
 
                 <LinearLayout
                 android:layout_width="0dp"
@@ -433,14 +494,14 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/setting_root_status"
-                android:textColor="#FFFFFFFF"
+                android:textColor="@color/text_primary"
                 android:textSize="16sp" />
 
                 <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/setting_root_sub"
-                android:textColor="#FF8A94A3"
+                android:textColor="@color/text_secondary"
                 android:textSize="12sp"
                 android:layout_marginTop="2dp" />
                 </LinearLayout>
@@ -450,7 +511,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/setting_root_status_no"
-                android:textColor="#FF8A94A3"
+                android:textColor="@color/text_secondary"
                 android:textSize="14sp" />
                 </LinearLayout>
 
@@ -458,12 +519,12 @@
                 android:layout_width="match_parent"
                 android:layout_height="0.5dp"
                 android:layout_marginStart="66dp"
-                android:background="#22FFFFFF" />
+                android:background="@color/divider" />
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
                     android:layout_marginStart="16dp"
-                    android:background="#1FFFFFFF" />
+                    android:background="@color/divider" />
 
                 <LinearLayout
                 android:id="@+id/rowShizukuStatus"
@@ -480,7 +541,7 @@
                 android:padding="8dp"
                 android:src="@drawable/ic_link"
                 android:background="@drawable/bg_icon_chip_soft"
-                android:tint="#FF6EE7B7" />
+                android:tint="@color/success" />
 
                 <LinearLayout
                 android:layout_width="0dp"
@@ -493,14 +554,14 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/setting_shizuku_status"
-                android:textColor="#FFFFFFFF"
+                android:textColor="@color/text_primary"
                 android:textSize="16sp" />
 
                 <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/setting_shizuku_sub"
-                android:textColor="#FF8A94A3"
+                android:textColor="@color/text_secondary"
                 android:textSize="12sp"
                 android:layout_marginTop="2dp" />
                 </LinearLayout>
@@ -510,7 +571,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/setting_shizuku_absent"
-                android:textColor="#FF8A94A3"
+                android:textColor="@color/text_secondary"
                 android:textSize="14sp" />
                 </LinearLayout>
 
@@ -518,12 +579,12 @@
                 android:layout_width="match_parent"
                 android:layout_height="0.5dp"
                 android:layout_marginStart="66dp"
-                android:background="#22FFFFFF" />
+                android:background="@color/divider" />
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
                     android:layout_marginStart="16dp"
-                    android:background="#1FFFFFFF" />
+                    android:background="@color/divider" />
 
                 <LinearLayout
                 android:id="@+id/rowAccess"
@@ -542,7 +603,7 @@
                 android:padding="8dp"
                 android:src="@drawable/ic_touch"
                 android:background="@drawable/bg_icon_chip_soft"
-                android:tint="#FFA78BFA" />
+                android:tint="@color/accent_alt" />
 
                 <LinearLayout
                 android:layout_width="0dp"
@@ -555,7 +616,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/setting_access"
-                android:textColor="#FFFFFFFF"
+                android:textColor="@color/text_primary"
                 android:textSize="16sp" />
 
                 <TextView
@@ -563,7 +624,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/setting_access_sub_off"
-                android:textColor="#FF8A94A3"
+                android:textColor="@color/text_secondary"
                 android:textSize="12sp"
                 android:layout_marginTop="2dp" />
                 </LinearLayout>
@@ -573,7 +634,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/state_off"
-                android:textColor="#FF8A94A3"
+                android:textColor="@color/text_secondary"
                 android:textSize="14sp"
                 android:layout_marginEnd="6dp" />
 
@@ -586,7 +647,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
                     android:layout_marginStart="16dp"
-                    android:background="#1FFFFFFF" />
+                    android:background="@color/divider" />
 
                 <LinearLayout
                 android:id="@+id/rowStorage"
@@ -604,7 +665,7 @@
                 android:padding="8dp"
                 android:src="@drawable/ic_folder"
                 android:background="@drawable/bg_icon_chip_soft"
-                android:tint="#FF64D2FF" />
+                android:tint="@color/accent" />
 
                 <LinearLayout
                 android:layout_width="0dp"
@@ -617,14 +678,14 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/setting_storage"
-                android:textColor="#FFFFFFFF"
+                android:textColor="@color/text_primary"
                 android:textSize="16sp" />
 
                 <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/setting_storage_sub"
-                android:textColor="#FF8A94A3"
+                android:textColor="@color/text_secondary"
                 android:textSize="12sp"
                 android:layout_marginTop="2dp" />
                 </LinearLayout>
@@ -633,7 +694,7 @@
                 android:id="@+id/valStorage"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textColor="#FF8A94A3"
+                android:textColor="@color/text_secondary"
                 android:textSize="14sp"
                 android:layout_marginEnd="6dp" />
                 </LinearLayout>
@@ -641,7 +702,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
                     android:layout_marginStart="16dp"
-                    android:background="#1FFFFFFF" />
+                    android:background="@color/divider" />
 
                 <LinearLayout
                 android:id="@+id/rowNotif"
@@ -659,7 +720,7 @@
                 android:padding="8dp"
                 android:src="@drawable/ic_bell"
                 android:background="@drawable/bg_icon_chip_soft"
-                android:tint="#FFF0B44A" />
+                android:tint="@color/warning" />
 
                 <LinearLayout
                 android:layout_width="0dp"
@@ -672,14 +733,14 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/setting_notif"
-                android:textColor="#FFFFFFFF"
+                android:textColor="@color/text_primary"
                 android:textSize="16sp" />
 
                 <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/setting_notif_sub"
-                android:textColor="#FF8A94A3"
+                android:textColor="@color/text_secondary"
                 android:textSize="12sp"
                 android:layout_marginTop="2dp" />
                 </LinearLayout>
@@ -688,7 +749,7 @@
                 android:id="@+id/valNotif"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textColor="#FF8A94A3"
+                android:textColor="@color/text_secondary"
                 android:textSize="14sp"
                 android:layout_marginEnd="6dp" />
                 </LinearLayout>
@@ -707,7 +768,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/settings_section_voice"
-                    android:textColor="#FF7DD3FC"
+                    android:textColor="@color/accent"
                     android:textSize="13sp"
                     android:textStyle="bold"
                     android:paddingStart="8dp"
@@ -736,7 +797,7 @@
                     android:padding="8dp"
                     android:src="@drawable/ic_speaker"
                     android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="#FF3FE295" />
+                    android:tint="@color/success" />
 
                     <LinearLayout
                     android:layout_width="0dp"
@@ -749,14 +810,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_tts"
-                    android:textColor="#FFFFFFFF"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp" />
 
                     <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_tts_sub"
-                    android:textColor="#FF8A94A3"
+                    android:textColor="@color/text_secondary"
                     android:textSize="12sp"
                     android:layout_marginTop="2dp" />
                     </LinearLayout>
@@ -765,7 +826,7 @@
                     android:id="@+id/valTts"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textColor="#FF8A94A3"
+                    android:textColor="@color/text_secondary"
                     android:textSize="14sp"
                     android:layout_marginEnd="6dp" />
                     </LinearLayout>
@@ -773,7 +834,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
                         android:layout_marginStart="16dp"
-                        android:background="#1FFFFFFF" />
+                        android:background="@color/divider" />
 
                     <LinearLayout
                     android:id="@+id/rowMic"
@@ -791,7 +852,7 @@
                     android:padding="8dp"
                     android:src="@drawable/ic_mic_wave"
                     android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="#FFF28B82" />
+                    android:tint="@color/danger" />
 
                     <LinearLayout
                     android:layout_width="0dp"
@@ -804,14 +865,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_mic"
-                    android:textColor="#FFFFFFFF"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp" />
 
                     <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_mic_sub"
-                    android:textColor="#FF8A94A3"
+                    android:textColor="@color/text_secondary"
                     android:textSize="12sp"
                     android:layout_marginTop="2dp" />
                     </LinearLayout>
@@ -820,7 +881,7 @@
                     android:id="@+id/valMic"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textColor="#FF8A94A3"
+                    android:textColor="@color/text_secondary"
                     android:textSize="14sp"
                     android:layout_marginEnd="6dp" />
                     </LinearLayout>
@@ -828,7 +889,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
                         android:layout_marginStart="16dp"
-                        android:background="#1FFFFFFF" />
+                        android:background="@color/divider" />
 
                     <LinearLayout
                     android:id="@+id/rowVoiceService"
@@ -846,7 +907,7 @@
                     android:padding="8dp"
                     android:src="@drawable/ic_headset"
                     android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="#FF7DD3FC" />
+                    android:tint="@color/accent" />
 
                     <LinearLayout
                     android:layout_width="0dp"
@@ -859,14 +920,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_voice_service"
-                    android:textColor="#FFFFFFFF"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp" />
 
                     <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_voice_service_sub"
-                    android:textColor="#FF8A94A3"
+                    android:textColor="@color/text_secondary"
                     android:textSize="12sp"
                     android:layout_marginTop="2dp" />
                     </LinearLayout>
@@ -883,7 +944,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/settings_section_extension"
-                    android:textColor="#FF7DD3FC"
+                    android:textColor="@color/accent"
                     android:textSize="13sp"
                     android:textStyle="bold"
                     android:paddingStart="8dp"
@@ -913,7 +974,7 @@
                     android:padding="8dp"
                     android:src="@drawable/ic_package"
                     android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="#FFB39DFF" />
+                    android:tint="@color/accent_alt" />
 
                     <LinearLayout
                     android:layout_width="0dp"
@@ -926,14 +987,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_ext"
-                    android:textColor="#FFFFFFFF"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp" />
 
                     <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_ext_sub"
-                    android:textColor="#FF8A94A3"
+                    android:textColor="@color/text_secondary"
                     android:textSize="12sp"
                     android:layout_marginTop="2dp" />
                     </LinearLayout>
@@ -942,7 +1003,7 @@
                     android:id="@+id/valExt"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textColor="#FF8A94A3"
+                    android:textColor="@color/text_secondary"
                     android:textSize="14sp"
                     android:layout_marginEnd="6dp" />
 
@@ -955,7 +1016,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
                         android:layout_marginStart="16dp"
-                        android:background="#1FFFFFFF" />
+                        android:background="@color/divider" />
 
                     <LinearLayout
                     android:id="@+id/rowPlugin"
@@ -973,7 +1034,7 @@
                     android:padding="8dp"
                     android:src="@drawable/ic_puzzle"
                     android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="#FF7DD3FC" />
+                    android:tint="@color/accent" />
 
                     <LinearLayout
                     android:layout_width="0dp"
@@ -986,14 +1047,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_plugin"
-                    android:textColor="#FFFFFFFF"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp" />
 
                     <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_plugin_sub"
-                    android:textColor="#FF8A94A3"
+                    android:textColor="@color/text_secondary"
                     android:textSize="12sp"
                     android:layout_marginTop="2dp" />
                     </LinearLayout>
@@ -1007,7 +1068,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
                         android:layout_marginStart="16dp"
-                        android:background="#1FFFFFFF" />
+                        android:background="@color/divider" />
 
                     <LinearLayout
                     android:id="@+id/rowAsrApps"
@@ -1025,7 +1086,7 @@
                     android:padding="8dp"
                     android:src="@drawable/ic_apk"
                     android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="#FF81C995" />
+                    android:tint="@color/success" />
 
                     <LinearLayout
                     android:layout_width="0dp"
@@ -1038,14 +1099,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/asrapp_entry"
-                    android:textColor="#FFFFFFFF"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp" />
 
                     <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/asrapp_entry_sub"
-                    android:textColor="#FF8A94A3"
+                    android:textColor="@color/text_secondary"
                     android:textSize="12sp"
                     android:layout_marginTop="2dp" />
                     </LinearLayout>
@@ -1060,7 +1121,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
                         android:layout_marginStart="16dp"
-                        android:background="#1FFFFFFF" />
+                        android:background="@color/divider" />
 
                     <!-- 桌宠悬浮窗（v1.4.19）：插件驱动；桥插件须 @xiaopb/dsh-pet-bridge 0.3.1+ -->
                     <LinearLayout
@@ -1079,7 +1140,7 @@
                     android:padding="8dp"
                     android:src="@drawable/ic_pet"
                     android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="#FF7DD3FC" />
+                    android:tint="@color/accent" />
 
                     <LinearLayout
                     android:layout_width="0dp"
@@ -1092,14 +1153,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_pet"
-                    android:textColor="#FFFFFFFF"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp" />
 
                     <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_pet_sub"
-                    android:textColor="#FF8A94A3"
+                    android:textColor="@color/text_secondary"
                     android:textSize="12sp"
                     android:layout_marginTop="2dp" />
                     </LinearLayout>
@@ -1108,7 +1169,7 @@
                     android:id="@+id/valPet"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textColor="#FF8A94A3"
+                    android:textColor="@color/text_secondary"
                     android:textSize="13sp"
                     android:layout_marginEnd="6dp" />
 
@@ -1124,7 +1185,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/settings_section_data"
-                    android:textColor="#FF7DD3FC"
+                    android:textColor="@color/accent"
                     android:textSize="13sp"
                     android:textStyle="bold"
                     android:paddingStart="8dp"
@@ -1153,7 +1214,7 @@
                     android:padding="8dp"
                     android:src="@drawable/ic_note"
                     android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="#FFA5B4FC" />
+                    android:tint="@color/accent_alt" />
 
                     <LinearLayout
                     android:layout_width="0dp"
@@ -1166,14 +1227,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_user_prompt"
-                    android:textColor="#FFFFFFFF"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp" />
 
                     <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_user_prompt_sub"
-                    android:textColor="#FF8A94A3"
+                    android:textColor="@color/text_secondary"
                     android:textSize="12sp"
                     android:layout_marginTop="2dp" />
                     </LinearLayout>
@@ -1187,7 +1248,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
                         android:layout_marginStart="16dp"
-                        android:background="#1FFFFFFF" />
+                        android:background="@color/divider" />
 
                     <LinearLayout
                     android:id="@+id/rowExportData"
@@ -1205,7 +1266,7 @@
                     android:padding="8dp"
                     android:src="@drawable/ic_export"
                     android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="#FF66BB6A" />
+                    android:tint="@color/success" />
 
                     <LinearLayout
                     android:layout_width="0dp"
@@ -1218,7 +1279,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_export_data"
-                    android:textColor="#FFFFFFFF"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp" />
 
                     <TextView
@@ -1226,7 +1287,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_export_data_sub"
-                    android:textColor="#FF8A94A3"
+                    android:textColor="@color/text_secondary"
                     android:textSize="12sp"
                     android:layout_marginTop="2dp" />
                     </LinearLayout>
@@ -1240,7 +1301,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
                         android:layout_marginStart="16dp"
-                        android:background="#1FFFFFFF" />
+                        android:background="@color/divider" />
 
                     <LinearLayout
                     android:id="@+id/rowRecoverChats"
@@ -1258,7 +1319,7 @@
                     android:padding="8dp"
                     android:src="@drawable/ic_restore"
                     android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="#FF66BB6A" />
+                    android:tint="@color/success" />
 
                     <LinearLayout
                     android:layout_width="0dp"
@@ -1271,7 +1332,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_recover_chats"
-                    android:textColor="#FFFFFFFF"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp" />
 
                     <TextView
@@ -1279,7 +1340,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_recover_chats_sub"
-                    android:textColor="#FF8A94A3"
+                    android:textColor="@color/text_secondary"
                     android:textSize="12sp"
                     android:layout_marginTop="2dp" />
                     </LinearLayout>
@@ -1296,7 +1357,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/settings_section_network"
-                    android:textColor="#FF7DD3FC"
+                    android:textColor="@color/accent"
                     android:textSize="13sp"
                     android:textStyle="bold"
                     android:paddingStart="8dp"
@@ -1325,7 +1386,7 @@
                     android:padding="8dp"
                     android:src="@drawable/ic_lan"
                     android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="#FF7DD3FC" />
+                    android:tint="@color/accent" />
 
                     <LinearLayout
                     android:layout_width="0dp"
@@ -1338,7 +1399,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_lan_web"
-                    android:textColor="#FFFFFFFF"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp" />
 
                     <TextView
@@ -1346,7 +1407,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_lan_web_sub"
-                    android:textColor="#FF8A94A3"
+                    android:textColor="@color/text_secondary"
                     android:textSize="12sp"
                     android:layout_marginTop="2dp" />
                     </LinearLayout>
@@ -1362,7 +1423,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
                         android:layout_marginStart="16dp"
-                        android:background="#1FFFFFFF" />
+                        android:background="@color/divider" />
 
                     <!-- 运行时下载代理（v1.4.21）：默认 gh-proxy.org。
                          国内直连 GitHub Releases 经常超时，运行时 zip/索引下载都走这里。 -->
@@ -1382,7 +1443,7 @@
                     android:padding="8dp"
                     android:src="@drawable/ic_download"
                     android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="#FF81C995" />
+                    android:tint="@color/success" />
 
                     <LinearLayout
                     android:layout_width="0dp"
@@ -1395,7 +1456,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_runtime_proxy"
-                    android:textColor="#FFFFFFFF"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp" />
 
                     <TextView
@@ -1403,7 +1464,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_runtime_proxy_sub"
-                    android:textColor="#FF8A94A3"
+                    android:textColor="@color/text_secondary"
                     android:textSize="12sp"
                     android:layout_marginTop="2dp" />
                     </LinearLayout>
@@ -1420,7 +1481,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/settings_section_maintenance"
-                    android:textColor="#FF7DD3FC"
+                    android:textColor="@color/accent"
                     android:textSize="13sp"
                     android:textStyle="bold"
                     android:paddingStart="8dp"
@@ -1449,7 +1510,7 @@
                     android:padding="8dp"
                     android:src="@drawable/ic_health"
                     android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="#FFFFA726" />
+                    android:tint="@color/warning" />
 
                     <LinearLayout
                     android:layout_width="0dp"
@@ -1462,7 +1523,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_self_check"
-                    android:textColor="#FFFFFFFF"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp" />
 
                     <TextView
@@ -1470,7 +1531,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_self_check_sub"
-                    android:textColor="#FF8A94A3"
+                    android:textColor="@color/text_secondary"
                     android:textSize="12sp"
                     android:layout_marginTop="2dp" />
                     </LinearLayout>
@@ -1484,7 +1545,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
                         android:layout_marginStart="16dp"
-                        android:background="#1FFFFFFF" />
+                        android:background="@color/divider" />
 
                     <LinearLayout
                     android:id="@+id/rowBootTrace"
@@ -1502,7 +1563,7 @@
                     android:padding="8dp"
                     android:src="@drawable/ic_log"
                     android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="#FF7DD3FC" />
+                    android:tint="@color/accent" />
 
                     <LinearLayout
                     android:layout_width="0dp"
@@ -1515,7 +1576,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_boot_trace"
-                    android:textColor="#FFFFFFFF"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp" />
 
                     <TextView
@@ -1523,7 +1584,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_boot_trace_sub"
-                    android:textColor="#FF8A94A3"
+                    android:textColor="@color/text_secondary"
                     android:textSize="12sp"
                     android:layout_marginTop="2dp" />
                     </LinearLayout>
@@ -1537,7 +1598,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
                         android:layout_marginStart="16dp"
-                        android:background="#1FFFFFFF" />
+                        android:background="@color/divider" />
 
                     <LinearLayout
                     android:id="@+id/rowRestart"
@@ -1555,7 +1616,7 @@
                     android:padding="8dp"
                     android:src="@drawable/ic_restart"
                     android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="#FF4DD0E1" />
+                    android:tint="@color/accent" />
 
                     <LinearLayout
                     android:layout_width="0dp"
@@ -1568,14 +1629,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_restart_engine"
-                    android:textColor="#FFFFFFFF"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp" />
 
                     <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_restart_engine_sub"
-                    android:textColor="#FF8A94A3"
+                    android:textColor="@color/text_secondary"
                     android:textSize="12sp"
                     android:layout_marginTop="2dp" />
                     </LinearLayout>
@@ -1592,7 +1653,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/settings_section_about"
-                    android:textColor="#FF7DD3FC"
+                    android:textColor="@color/accent"
                     android:textSize="13sp"
                     android:textStyle="bold"
                     android:paddingStart="8dp"
@@ -1621,7 +1682,7 @@
                     android:padding="8dp"
                     android:src="@drawable/ic_language"
                     android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="#FFA78BFA" />
+                    android:tint="@color/accent_alt" />
 
                     <LinearLayout
                     android:layout_width="0dp"
@@ -1634,7 +1695,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/app_language"
-                    android:textColor="#FFFFFFFF"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp" />
 
                     <TextView
@@ -1642,7 +1703,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/app_language_sub"
-                    android:textColor="#FF8A94A3"
+                    android:textColor="@color/text_secondary"
                     android:textSize="12sp"
                     android:layout_marginTop="2dp" />
                     </LinearLayout>
@@ -1652,7 +1713,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
                         android:layout_marginStart="16dp"
-                        android:background="#1FFFFFFF" />
+                        android:background="@color/divider" />
 
                     <LinearLayout
                     android:id="@+id/rowAbout"
@@ -1670,7 +1731,7 @@
                     android:padding="8dp"
                     android:src="@drawable/ic_info"
                     android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="#FF8A94A3" />
+                    android:tint="@color/text_secondary" />
 
                     <LinearLayout
                     android:layout_width="0dp"
@@ -1683,14 +1744,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_about"
-                    android:textColor="#FFFFFFFF"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp" />
 
                     <TextView
                     android:id="@+id/subAbout"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:textColor="#FF8A94A3"
+                    android:textColor="@color/text_secondary"
                     android:textSize="12sp"
                     android:layout_marginTop="2dp" />
                     </LinearLayout>

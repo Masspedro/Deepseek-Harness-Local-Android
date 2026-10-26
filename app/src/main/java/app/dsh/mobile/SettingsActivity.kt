@@ -1,6 +1,5 @@
 package app.dsh.mobile
 
-import android.app.Activity
 import android.app.AlertDialog
 import android.Manifest
 import android.content.Intent
@@ -42,7 +41,7 @@ import app.dsh.mobile.pet.PetSettingsActivity
  * 权限切换与缩放均复用 MainActivity 的既有决策（Root 双警告、缩放 −/＋ 步进、
  * 无障碍跳系统设置），落库到同一组 SharedPreferences，MainActivity 在 onResume 重新读取生效。
  */
-class SettingsActivity : Activity() {
+class SettingsActivity : ThemedActivity() {
 
     /** 屏幕朝向偏好（v1.2.120 三态） */
     private var orientMode: OrientationMode = OrientationMode.PORTRAIT
@@ -173,6 +172,14 @@ class SettingsActivity : Activity() {
         findViewById<LinearLayout>(R.id.rowScale).setOnClickListener {
             showScaleDialog()
         }
+
+        // —— 显示：外观主题（深色/浅色/跟随系统）——
+        // 与引导页写同一份偏好（ThemePref）；改动后本页 recreate 立即生效，
+        // 返回主界面时 MainActivity.onResume 检测到偏好变化会自行重建。
+        findViewById<LinearLayout>(R.id.rowTheme)?.setOnClickListener {
+            showThemeDialog()
+        }
+        findViewById<TextView>(R.id.valTheme)?.text = getString(ThemePref.get(this).labelRes)
 
         // —— 显示：配色方案（v1.4.23）——
         // v1.4.22 把 DSHA 靛蓝写死了，宝宝反馈"跟主题不搭"。配色不再拍板，
@@ -667,7 +674,7 @@ class SettingsActivity : Activity() {
             it.text = getString(
                 if (rootOk) R.string.setting_root_status_yes else R.string.setting_root_status_no
             )
-            it.setTextColor(if (rootOk) 0xFF6EE7B7.toInt() else 0xFF8A94A3.toInt())
+            it.setTextColor(if (rootOk) getColor(R.color.success) else getColor(R.color.text_secondary))
         }
         refreshShizuku()
         refreshAccess()
@@ -701,9 +708,9 @@ class SettingsActivity : Activity() {
         v.text = text
         v.setTextColor(
             when {
-                running -> 0xFF6EE7B7.toInt()
-                !canDraw || !plugin.bridgeReady -> 0xFFFFB74D.toInt()
-                else -> 0xFF8A94A3.toInt()
+                running -> getColor(R.color.success)
+                !canDraw || !plugin.bridgeReady -> getColor(R.color.warning)
+                else -> getColor(R.color.text_secondary)
             },
         )
     }
@@ -713,7 +720,7 @@ class SettingsActivity : Activity() {
         val count = ExtensionManager(this).activeCount()
         val v = findViewById<TextView>(R.id.valExt)
         v.text = getString(R.string.setting_ext_active_count, count)
-        v.setTextColor(if (count > 0) 0xFF6EE7B7.toInt() else 0xFF8A94A3.toInt())
+        v.setTextColor(if (count > 0) getColor(R.color.success) else getColor(R.color.text_secondary))
     }
 
     /** 权限中心：所有文件访问状态（MANAGE_EXTERNAL_STORAGE，Android 11+ 系统设置页授予；
@@ -725,7 +732,7 @@ class SettingsActivity : Activity() {
             android.content.pm.PackageManager.PERMISSION_GRANTED
         val v = findViewById<TextView>(R.id.valStorage)
         v.text = getString(if (granted) R.string.storage_granted else R.string.storage_denied)
-        v.setTextColor(if (granted) 0xFF6EE7B7.toInt() else 0xFFFFB74D.toInt())
+        v.setTextColor(if (granted) getColor(R.color.success) else getColor(R.color.warning))
     }
 
     /** 权限中心：TTS 引擎可用性（列出 TextToSpeechService 提供方，不触发绑定） */
@@ -733,7 +740,7 @@ class SettingsActivity : Activity() {
         val n = TtsManager.engineCount(this)
         val v = findViewById<TextView>(R.id.valTts)
         v.text = if (n == 0) getString(R.string.tts_missing) else getString(R.string.tts_engines, n)
-        v.setTextColor(if (n > 0) 0xFF6EE7B7.toInt() else 0xFF8A94A3.toInt())
+        v.setTextColor(if (n > 0) getColor(R.color.success) else getColor(R.color.text_secondary))
     }
 
     /** 权限中心：通知权限（Android 13+ 运行时授权；低版本默认持有） */
@@ -745,7 +752,7 @@ class SettingsActivity : Activity() {
         else true
         val v = findViewById<TextView>(R.id.valNotif)
         v.text = getString(if (granted) R.string.notif_granted else R.string.notif_denied)
-        v.setTextColor(if (granted) 0xFF6EE7B7.toInt() else 0xFF8A94A3.toInt())
+        v.setTextColor(if (granted) getColor(R.color.success) else getColor(R.color.text_secondary))
     }
 
     /** 麦克风权限是否已授予（语音输入的前提） */
@@ -758,7 +765,7 @@ class SettingsActivity : Activity() {
         val granted = hasMicPermission()
         val v = findViewById<TextView>(R.id.valMic)
         v.text = getString(if (granted) R.string.mic_granted else R.string.mic_denied)
-        v.setTextColor(if (granted) 0xFF6EE7B7.toInt() else 0xFF8A94A3.toInt())
+        v.setTextColor(if (granted) getColor(R.color.success) else getColor(R.color.text_secondary))
     }
 
     /** 权限回调：麦克风授权结果 → 刷新状态行 */
@@ -787,13 +794,13 @@ class SettingsActivity : Activity() {
         when {
             Privilege.shizukuUsable() -> {
                 v.text = getString(R.string.setting_shizuku_granted)
-                v.setTextColor(0xFF6EE7B7.toInt())
+                v.setTextColor(getColor(R.color.success))
             }
             Privilege.shizukuServerRunning() -> {
                 // v1.2.158 隐私修复：这里**不再**自动请求（拒绝后回调又会回到此处 →
                 // 死循环弹窗）。改为展示状态 + 允许点击该行**显式**重新申请。
                 v.text = getString(R.string.setting_shizuku_request)
-                v.setTextColor(0xFFFFB74D.toInt())
+                v.setTextColor(getColor(R.color.warning))
                 v.isClickable = true
                 v.setOnClickListener {
                     Privilege.requestShizukuPermission(SHIZUKU_REQ, this@SettingsActivity, explicit = true)
@@ -801,7 +808,7 @@ class SettingsActivity : Activity() {
             }
             else -> {
                 v.text = getString(R.string.setting_shizuku_absent)
-                v.setTextColor(0xFF8A94A3.toInt())
+                v.setTextColor(getColor(R.color.text_secondary))
             }
         }
     }
@@ -815,7 +822,7 @@ class SettingsActivity : Activity() {
         findViewById<TextView>(R.id.valAccess).text =
             getString(if (on) R.string.state_on else R.string.state_off)
         findViewById<TextView>(R.id.valAccess).setTextColor(
-            if (on) 0xFF6EE7B7.toInt() else 0xFF8A94A3.toInt()
+            if (on) getColor(R.color.success) else getColor(R.color.text_secondary)
         )
     }
 
@@ -1029,12 +1036,12 @@ class SettingsActivity : Activity() {
                 addView(TextView(this@SettingsActivity).apply {
                     text = label
                     textSize = 16f
-                    setTextColor(0xFFFFFFFF.toInt())
+                    setTextColor(getColor(R.color.text_primary))
                 })
                 if (sub.isNotEmpty()) addView(TextView(this@SettingsActivity).apply {
                     text = sub
                     textSize = 12f
-                    setTextColor(0xFF8A94A3.toInt())
+                    setTextColor(getColor(R.color.text_secondary))
                 })
             }
             return LinearLayout(this).apply {
@@ -1198,6 +1205,29 @@ class SettingsActivity : Activity() {
     // ───────────────────────────────────────────────────────────────────
     // v1.4.23：配色方案 / 布局样式 / 快捷栏样式
     // ───────────────────────────────────────────────────────────────────
+
+    /**
+     * 外观主题：深色 / 浅色 / 跟随系统。
+     *
+     * 落库到 `ThemePref`（SharedPreferences `dsh_ui.theme_mode`），与引导页共用。
+     * 选完必须 `recreate()`：`ThemeManager.wrap()` 在 `attachBaseContext` 阶段
+     * 改 `uiMode`，只有重建 Activity 才会重新取 values / values-night 资源。
+     * 主界面不用管——`MainActivity.onResume` 会比对 `appliedTheme` 并自行重建。
+     */
+    private fun showThemeDialog() {
+        val modes = ThemeMode.entries
+        val labels = modes.map { getString(it.labelRes) }.toTypedArray()
+        val checked = modes.indexOf(ThemePref.get(this))
+        android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.setting_theme)
+            .setSingleChoiceItems(labels, checked) { d, which ->
+                ThemePref.set(this, modes[which])
+                d.dismiss()
+                recreate()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
 
     /** 配色方案选择：5 种强调色，默认项目原本的天蓝 */
     private fun showAccentDialog() {

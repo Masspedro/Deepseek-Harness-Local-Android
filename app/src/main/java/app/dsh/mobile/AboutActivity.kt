@@ -1,6 +1,5 @@
 package app.dsh.mobile
 
-import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.os.Build
@@ -20,7 +19,7 @@ import java.io.File
  * 关于页（MIUI 风格）：应用标识卡 + 介绍/特性 + 开源地址（点击复制）。
  * v1.4.18：与设置页一致，跟随应用屏幕朝向偏好（不再固定竖屏）。
  */
-class AboutActivity : Activity() {
+class AboutActivity : ThemedActivity() {
 
     override fun attachBaseContext(newBase: android.content.Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
@@ -95,7 +94,7 @@ class AboutActivity : Activity() {
         val tv = findViewById<TextView>(R.id.txtRuntime)
         pendingRuntime = null
         tv.text = getString(R.string.about_runtime_checking)
-        tv.setTextColor(0xFF8A94A3.toInt())
+        tv.setTextColor(getColor(R.color.text_secondary))
         val abi = deviceAbi()
         val code = currentVersionCode()
         val proxy = runtimeProxy()
@@ -110,16 +109,16 @@ class AboutActivity : Activity() {
                             R.string.about_runtime_failed,
                             getString(R.string.about_runtime_no_pin),
                         )
-                        tv.setTextColor(0xFF8A94A3.toInt())
+                        tv.setTextColor(getColor(R.color.text_secondary))
                     }
                     entry.version == installedRuntimeVersion() -> {
                         tv.text = getString(R.string.about_runtime_latest, entry.version)
-                        tv.setTextColor(0xFF81C995.toInt())
+                        tv.setTextColor(getColor(R.color.success))
                     }
                     else -> {
                         pendingRuntime = entry
                         tv.text = getString(R.string.about_runtime_available, entry.version)
-                        tv.setTextColor(0xFF7DD3FC.toInt())
+                        tv.setTextColor(getColor(R.color.accent))
                     }
                 }
             }
@@ -129,7 +128,7 @@ class AboutActivity : Activity() {
     private fun installRuntime(entry: RuntimeIndexClient.Entry) {
         val tv = findViewById<TextView>(R.id.txtRuntime)
         tv.text = getString(R.string.about_runtime_installing, 0)
-        tv.setTextColor(0xFF7DD3FC.toInt())
+        tv.setTextColor(getColor(R.color.accent))
         pendingRuntime = null
         runtimeInstalling = true
         val proxy = runtimeProxy()
@@ -151,7 +150,7 @@ class AboutActivity : Activity() {
                 )
                 runOnUiThread {
                     tv.text = getString(R.string.about_runtime_installed)
-                    tv.setTextColor(0xFF81C995.toInt())
+                    tv.setTextColor(getColor(R.color.success))
                 }
             } catch (e: Exception) {
                 runOnUiThread {
@@ -159,7 +158,7 @@ class AboutActivity : Activity() {
                         R.string.about_runtime_failed,
                         e.message ?: e.javaClass.simpleName,
                     )
-                    tv.setTextColor(0xFFF87171.toInt())
+                    tv.setTextColor(getColor(R.color.danger))
                 }
             } finally {
                 runtimeInstalling = false
@@ -208,11 +207,11 @@ class AboutActivity : Activity() {
                     }
                     r.error.isNotEmpty() -> {
                         tv.text = getString(R.string.about_update_failed, r.error)
-                        tv.setTextColor(0xFF8A94A3.toInt())
+                        tv.setTextColor(getColor(R.color.text_secondary))
                     }
                     else -> {
                         tv.text = getString(R.string.about_update_latest)
-                        tv.setTextColor(0xFF81C995.toInt())
+                        tv.setTextColor(getColor(R.color.success))
                     }
                 }
             }
