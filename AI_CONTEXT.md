@@ -1,5 +1,35 @@
 # AI_CONTEXT
 
+## v1.4.24 已发布（2026-10-26，tag run 40269198794，8 分钟全绿）
+- **宝宝反馈四条 → 全部处理**：
+  ① 社区 dsh-web-mobile 插件 bug 太多 → **整体移除**（assets 860KB/6 文件、
+     overlay insert、部署列表、shell-overrides 注入、失效的 sidebar_* 设置全清）。
+     实测 overlay 只剩自有 4 个窄屏插件。**v1.4.23 已下架**（改 draft 后删除，
+     远端 tag 也已删）。
+  ② 插件中心太简单 → 参考 dsh-market（8.9k star）接入 `dsh-plugin-catalog`：
+     3540 插件 / 23 分类 / 中英双语 / 版本历史，精简后 1.7MB 内置进
+     `assets/market/catalog.json`（**注意：不能放 assets/extensions/，会被
+     check-i18n.py 当扩展目录解析而报错**）。browse 改本地子串搜索，零延迟。
+     分类 chip 切换要强制重载（缓存是全分类结果）。
+  ③ 设置页杂乱 → 4 分区拆成 8 个语义分区（外观/权限/语音/扩展/数据/网络/
+     维护/关于），22 项变 25 项（补回 Root 能力 / Shizuku 状态两行——它们原本
+     是 rowPriv 的兄弟节点，按 row id 提取会漏）。
+  ④ 图标重复 → 新做 11 个（rotate/palette/layout/mic_wave/headset/apk/note/
+     export/lan/log/clock），替换 10 处重复，25 项图标全唯一。
+- **引擎重启逻辑重写**（宝宝要求「异常退出时把 3080 上所有东西杀掉再完整启动」）：
+  * `reclaimPort` 改为按**端口持有者**清场：读 /proc/net/tcp{,6} 的 LISTEN
+    inode → 扫 /proc/<pid>/fd 匹配 socket:[inode] → kill -9。不再依赖 cmdline
+    匹配 files/engine/bin/node（包装层会失效）。
+  * **关键盲区**：引擎「健康运行后被杀」走的是 Healthy 分支，原来直接进下一轮
+    spawn、完全跳过自愈判定段——第一次加的清场代码根本没执行。已在该分支补
+    reclaimPort。
+  * 新增 `looksLikeAuthFailure()`：只扫本次启动日志段，命中 401/403/
+    unauthorized/invalid api key/token expired/credentials/EACCES → State.Failed
+    + 三语提示「登录已失效，请重新登录」，return 不再重试（防重启风暴）。
+- **实测**：kill -9 引擎 node → 'port 3080 is free after thorough reclaim'
+  → 6.4s 后 'engine healthy' ✓
+- 4 资产上线（release 227.4MB）。
+
 ## v1.4.23 已发布（2026-10-26，配色/布局/快捷栏三项用户反馈，tag run 40254177003）
 - **宝宝三条反馈**：① DSHA 蓝太丑、要原来的颜色；② 手机插件的侧边快捷栏没了；
   ③ 设置页太乱，想要卡片/网格布局。
