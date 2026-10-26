@@ -260,9 +260,9 @@ class PluginStoreActivity : ThemedActivity() {
         hideKeyboard()
         etSearch.clearFocus()
         // 标签样式：选中蓝色加粗，未选中灰色
-        btnTabMarket.setTextColor(if (market) Accent.current(this@PluginStoreActivity).argb else 0xFF5A626E.toInt())
+        btnTabMarket.setTextColor(if (market) Accent.current(this@PluginStoreActivity).argb else getColor(R.color.text_muted))
         btnTabMarket.setTypeface(null, if (market) Typeface.BOLD else Typeface.NORMAL)
-        btnTabInstalled.setTextColor(if (!market) Accent.current(this@PluginStoreActivity).argb else 0xFF5A626E.toInt())
+        btnTabInstalled.setTextColor(if (!market) Accent.current(this@PluginStoreActivity).argb else getColor(R.color.text_muted))
         btnTabInstalled.setTypeface(null, if (!market) Typeface.BOLD else Typeface.NORMAL)
         etSearch.visibility = if (market) View.VISIBLE else View.GONE
         btnCheckUpdates.visibility = if (market) View.GONE else View.VISIBLE
@@ -311,7 +311,7 @@ class PluginStoreActivity : ThemedActivity() {
 
     private fun hint(text: String): TextView = TextView(this).apply {
         this.text = text
-        setTextColor(0xFF8A94A3.toInt())
+        setTextColor(getColor(R.color.text_secondary))
         textSize = 14f
         gravity = Gravity.CENTER
         setPadding(0, dp(30), 0, dp(10))
@@ -341,7 +341,7 @@ class PluginStoreActivity : ThemedActivity() {
         }
         nameCol.addView(TextView(this).apply {
             text = e.name
-            setTextColor(0xFFFFFFFF.toInt())
+            setTextColor(getColor(R.color.text_primary))
             textSize = 15f
             setTypeface(null, Typeface.BOLD)
             maxLines = 1
@@ -369,7 +369,7 @@ class PluginStoreActivity : ThemedActivity() {
         e.metaLine().takeIf { it.isNotBlank() }?.let { meta ->
             card.addView(TextView(this).apply {
                 text = meta
-                setTextColor(if (e.hasUpdate) 0xFFFBBF24.toInt() else 0xFF8A94A3.toInt())
+                setTextColor(if (e.hasUpdate) getColor(R.color.warning) else getColor(R.color.text_secondary))
                 textSize = 11f
                 setPadding(0, dp(4), 0, 0)
             })
@@ -379,7 +379,7 @@ class PluginStoreActivity : ThemedActivity() {
         if (e.desc.isNotBlank()) {
             card.addView(TextView(this).apply {
                 text = e.desc
-                setTextColor(0xFFB8C0CC.toInt())
+                setTextColor(getColor(R.color.text_secondary))
                 textSize = 12f
                 maxLines = 2
                 ellipsize = android.text.TextUtils.TruncateAt.END
@@ -398,9 +398,9 @@ class PluginStoreActivity : ThemedActivity() {
     private fun compatBadge(e: Entry): TextView? {
         val (label, color) = when (e.compat) {
             Compat.PURE_JS -> return null   // 纯 JS 是常态，不加徽标
-            Compat.NEEDS_NATIVE -> getString(R.string.plugin_compat_native) to 0xFFF87171.toInt()
-            Compat.ENGINE_FORK -> getString(R.string.plugin_compat_fork) to 0xFFF87171.toInt()
-            Compat.UNKNOWN -> getString(R.string.plugin_compat_unknown) to 0xFF8A94A3.toInt()
+            Compat.NEEDS_NATIVE -> getString(R.string.plugin_compat_native) to getColor(R.color.danger)
+            Compat.ENGINE_FORK -> getString(R.string.plugin_compat_fork) to getColor(R.color.danger)
+            Compat.UNKNOWN -> getString(R.string.plugin_compat_unknown) to getColor(R.color.text_secondary)
         }
         return TextView(this).apply {
             text = "⚠ $label"
@@ -436,7 +436,7 @@ class PluginStoreActivity : ThemedActivity() {
             e.hasUpdate -> {
                 // 精确版本升级：pnpm 12 下 add pkg / @latest / update 全部无效（v1.4.18 实测）
                 btn.text = getString(R.string.plugin_upgrade)
-                btn.setTextColor(0xFFFBBF24.toInt())
+                btn.setTextColor(getColor(R.color.warning))
                 btn.setText(getString(R.string.plugin_upgrade) + " → ${e.version}")
                 btn.setOnClickListener {
                     runInstall("${e.pkg}@${e.version}", btn, e.pkg)
@@ -444,7 +444,7 @@ class PluginStoreActivity : ThemedActivity() {
             }
             else -> {
                 btn.text = getString(R.string.plugin_installed)
-                btn.setTextColor(0xFF4ADE80.toInt())
+                btn.setTextColor(getColor(R.color.success))
                 btn.setOnClickListener { confirmUninstall(e.pkg, btn) }
             }
         }
@@ -613,12 +613,12 @@ class PluginStoreActivity : ThemedActivity() {
         }
         btn.text = getString(R.string.plugin_installing)
         btn.isEnabled = false
-        btn.setTextColor(0xFF8A94A3.toInt())
+        btn.setTextColor(getColor(R.color.text_secondary))
         PluginCenter.install(this, pkg) { ok, msg ->
             runOnUiThread {
                 if (ok) {
                     btn.text = getString(R.string.plugin_installed)
-                    btn.setTextColor(0xFF4ADE80.toInt())
+                    btn.setTextColor(getColor(R.color.success))
                     btn.isClickable = true
                     btn.isEnabled = true
                     btn.setOnClickListener { confirmUninstall(basePkg, btn) }
@@ -626,7 +626,7 @@ class PluginStoreActivity : ThemedActivity() {
                     reload(verbose = true)
                 } else {
                     btn.text = getString(R.string.plugin_failed, msg.take(28))
-                    btn.setTextColor(0xFFF87171.toInt())
+                    btn.setTextColor(getColor(R.color.danger))
                     btn.isEnabled = true
                     btn.isClickable = true
                 }
@@ -646,7 +646,7 @@ class PluginStoreActivity : ThemedActivity() {
     private fun runUninstall(pkg: String, btn: TextView) {
         btn.text = getString(R.string.plugin_uninstalling)
         btn.isEnabled = false
-        btn.setTextColor(0xFF8A94A3.toInt())
+        btn.setTextColor(getColor(R.color.text_secondary))
         PluginCenter.uninstall(this, pkg) { ok, msg ->
             runOnUiThread {
                 if (ok) {
@@ -660,7 +660,7 @@ class PluginStoreActivity : ThemedActivity() {
                     reload(verbose = true)
                 } else {
                     btn.text = getString(R.string.plugin_failed, msg.take(28))
-                    btn.setTextColor(0xFFF87171.toInt())
+                    btn.setTextColor(getColor(R.color.danger))
                     btn.isEnabled = true
                     btn.isClickable = true
                 }

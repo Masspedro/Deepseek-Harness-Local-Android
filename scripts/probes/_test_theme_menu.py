@@ -145,6 +145,28 @@ check(
 )
 check("about: applies the theme (extends ThemedActivity)", "ThemedActivity()" in kt("AboutActivity.kt"))
 
+# --------------------------------- code-drawn colours must follow the theme too
+# These pages draw status text in code; the literals were tuned for the dark
+# palette only (plugin names were literally 0xFFFFFFFF -> invisible in light).
+THEMED_PAGES = [
+    "PluginStoreActivity.kt",
+    "AboutActivity.kt",
+    "ExtensionStoreActivity.kt",
+    "SettingsActivity.kt",
+    os.path.join("pet", "PetSettingsActivity.kt"),
+]
+DARK_ONLY = ("0xFF6EE7B7", "0xFF81C995", "0xFFFFB74D", "0xFFFBBF24",
+             "0xFFF87171", "0xFF8A94A3", "0xFF7DD3FC", "0xFFB8C0CC",
+             "0xFFB0BAC7", "0xFF5A626E", "0xFF4ADE80")
+for name in THEMED_PAGES:
+    text = kt(name)
+    found = sorted({lit for lit in DARK_ONLY if lit in text})
+    check("code: %s has no dark-only colour literals" % name, not found, ", ".join(found))
+check(
+    "code: plugin name no longer hardcodes white",
+    "getColor(R.color.text_primary)" in kt("PluginStoreActivity.kt"),
+)
+
 # --------------------------------------------------- palettes must be themeable
 for name in ("activity_settings.xml", "activity_plugin_store.xml"):
     text = layout(name)

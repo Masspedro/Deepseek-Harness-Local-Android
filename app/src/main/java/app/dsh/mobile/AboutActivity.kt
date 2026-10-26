@@ -94,7 +94,7 @@ class AboutActivity : ThemedActivity() {
         val tv = findViewById<TextView>(R.id.txtRuntime)
         pendingRuntime = null
         tv.text = getString(R.string.about_runtime_checking)
-        tv.setTextColor(0xFF8A94A3.toInt())
+        tv.setTextColor(getColor(R.color.text_secondary))
         val abi = deviceAbi()
         val code = currentVersionCode()
         val proxy = runtimeProxy()
@@ -109,16 +109,16 @@ class AboutActivity : ThemedActivity() {
                             R.string.about_runtime_failed,
                             getString(R.string.about_runtime_no_pin),
                         )
-                        tv.setTextColor(0xFF8A94A3.toInt())
+                        tv.setTextColor(getColor(R.color.text_secondary))
                     }
                     entry.version == installedRuntimeVersion() -> {
                         tv.text = getString(R.string.about_runtime_latest, entry.version)
-                        tv.setTextColor(0xFF81C995.toInt())
+                        tv.setTextColor(getColor(R.color.success))
                     }
                     else -> {
                         pendingRuntime = entry
                         tv.text = getString(R.string.about_runtime_available, entry.version)
-                        tv.setTextColor(0xFF7DD3FC.toInt())
+                        tv.setTextColor(getColor(R.color.accent))
                     }
                 }
             }
@@ -128,7 +128,7 @@ class AboutActivity : ThemedActivity() {
     private fun installRuntime(entry: RuntimeIndexClient.Entry) {
         val tv = findViewById<TextView>(R.id.txtRuntime)
         tv.text = getString(R.string.about_runtime_installing, 0)
-        tv.setTextColor(0xFF7DD3FC.toInt())
+        tv.setTextColor(getColor(R.color.accent))
         pendingRuntime = null
         runtimeInstalling = true
         val proxy = runtimeProxy()
@@ -150,7 +150,7 @@ class AboutActivity : ThemedActivity() {
                 )
                 runOnUiThread {
                     tv.text = getString(R.string.about_runtime_installed)
-                    tv.setTextColor(0xFF81C995.toInt())
+                    tv.setTextColor(getColor(R.color.success))
                 }
             } catch (e: Exception) {
                 runOnUiThread {
@@ -158,7 +158,7 @@ class AboutActivity : ThemedActivity() {
                         R.string.about_runtime_failed,
                         e.message ?: e.javaClass.simpleName,
                     )
-                    tv.setTextColor(0xFFF87171.toInt())
+                    tv.setTextColor(getColor(R.color.danger))
                 }
             } finally {
                 runtimeInstalling = false
@@ -207,11 +207,11 @@ class AboutActivity : ThemedActivity() {
                     }
                     r.error.isNotEmpty() -> {
                         tv.text = getString(R.string.about_update_failed, r.error)
-                        tv.setTextColor(0xFF8A94A3.toInt())
+                        tv.setTextColor(getColor(R.color.text_secondary))
                     }
                     else -> {
                         tv.text = getString(R.string.about_update_latest)
-                        tv.setTextColor(0xFF81C995.toInt())
+                        tv.setTextColor(getColor(R.color.success))
                     }
                 }
             }

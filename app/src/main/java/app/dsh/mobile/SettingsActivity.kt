@@ -674,7 +674,7 @@ class SettingsActivity : ThemedActivity() {
             it.text = getString(
                 if (rootOk) R.string.setting_root_status_yes else R.string.setting_root_status_no
             )
-            it.setTextColor(if (rootOk) 0xFF6EE7B7.toInt() else 0xFF8A94A3.toInt())
+            it.setTextColor(if (rootOk) getColor(R.color.success) else getColor(R.color.text_secondary))
         }
         refreshShizuku()
         refreshAccess()
@@ -708,9 +708,9 @@ class SettingsActivity : ThemedActivity() {
         v.text = text
         v.setTextColor(
             when {
-                running -> 0xFF6EE7B7.toInt()
-                !canDraw || !plugin.bridgeReady -> 0xFFFFB74D.toInt()
-                else -> 0xFF8A94A3.toInt()
+                running -> getColor(R.color.success)
+                !canDraw || !plugin.bridgeReady -> getColor(R.color.warning)
+                else -> getColor(R.color.text_secondary)
             },
         )
     }
@@ -720,7 +720,7 @@ class SettingsActivity : ThemedActivity() {
         val count = ExtensionManager(this).activeCount()
         val v = findViewById<TextView>(R.id.valExt)
         v.text = getString(R.string.setting_ext_active_count, count)
-        v.setTextColor(if (count > 0) 0xFF6EE7B7.toInt() else 0xFF8A94A3.toInt())
+        v.setTextColor(if (count > 0) getColor(R.color.success) else getColor(R.color.text_secondary))
     }
 
     /** 权限中心：所有文件访问状态（MANAGE_EXTERNAL_STORAGE，Android 11+ 系统设置页授予；
@@ -732,7 +732,7 @@ class SettingsActivity : ThemedActivity() {
             android.content.pm.PackageManager.PERMISSION_GRANTED
         val v = findViewById<TextView>(R.id.valStorage)
         v.text = getString(if (granted) R.string.storage_granted else R.string.storage_denied)
-        v.setTextColor(if (granted) 0xFF6EE7B7.toInt() else 0xFFFFB74D.toInt())
+        v.setTextColor(if (granted) getColor(R.color.success) else getColor(R.color.warning))
     }
 
     /** 权限中心：TTS 引擎可用性（列出 TextToSpeechService 提供方，不触发绑定） */
@@ -740,7 +740,7 @@ class SettingsActivity : ThemedActivity() {
         val n = TtsManager.engineCount(this)
         val v = findViewById<TextView>(R.id.valTts)
         v.text = if (n == 0) getString(R.string.tts_missing) else getString(R.string.tts_engines, n)
-        v.setTextColor(if (n > 0) 0xFF6EE7B7.toInt() else 0xFF8A94A3.toInt())
+        v.setTextColor(if (n > 0) getColor(R.color.success) else getColor(R.color.text_secondary))
     }
 
     /** 权限中心：通知权限（Android 13+ 运行时授权；低版本默认持有） */
@@ -752,7 +752,7 @@ class SettingsActivity : ThemedActivity() {
         else true
         val v = findViewById<TextView>(R.id.valNotif)
         v.text = getString(if (granted) R.string.notif_granted else R.string.notif_denied)
-        v.setTextColor(if (granted) 0xFF6EE7B7.toInt() else 0xFF8A94A3.toInt())
+        v.setTextColor(if (granted) getColor(R.color.success) else getColor(R.color.text_secondary))
     }
 
     /** 麦克风权限是否已授予（语音输入的前提） */
@@ -765,7 +765,7 @@ class SettingsActivity : ThemedActivity() {
         val granted = hasMicPermission()
         val v = findViewById<TextView>(R.id.valMic)
         v.text = getString(if (granted) R.string.mic_granted else R.string.mic_denied)
-        v.setTextColor(if (granted) 0xFF6EE7B7.toInt() else 0xFF8A94A3.toInt())
+        v.setTextColor(if (granted) getColor(R.color.success) else getColor(R.color.text_secondary))
     }
 
     /** 权限回调：麦克风授权结果 → 刷新状态行 */
@@ -794,13 +794,13 @@ class SettingsActivity : ThemedActivity() {
         when {
             Privilege.shizukuUsable() -> {
                 v.text = getString(R.string.setting_shizuku_granted)
-                v.setTextColor(0xFF6EE7B7.toInt())
+                v.setTextColor(getColor(R.color.success))
             }
             Privilege.shizukuServerRunning() -> {
                 // v1.2.158 隐私修复：这里**不再**自动请求（拒绝后回调又会回到此处 →
                 // 死循环弹窗）。改为展示状态 + 允许点击该行**显式**重新申请。
                 v.text = getString(R.string.setting_shizuku_request)
-                v.setTextColor(0xFFFFB74D.toInt())
+                v.setTextColor(getColor(R.color.warning))
                 v.isClickable = true
                 v.setOnClickListener {
                     Privilege.requestShizukuPermission(SHIZUKU_REQ, this@SettingsActivity, explicit = true)
@@ -808,7 +808,7 @@ class SettingsActivity : ThemedActivity() {
             }
             else -> {
                 v.text = getString(R.string.setting_shizuku_absent)
-                v.setTextColor(0xFF8A94A3.toInt())
+                v.setTextColor(getColor(R.color.text_secondary))
             }
         }
     }
@@ -822,7 +822,7 @@ class SettingsActivity : ThemedActivity() {
         findViewById<TextView>(R.id.valAccess).text =
             getString(if (on) R.string.state_on else R.string.state_off)
         findViewById<TextView>(R.id.valAccess).setTextColor(
-            if (on) 0xFF6EE7B7.toInt() else 0xFF8A94A3.toInt()
+            if (on) getColor(R.color.success) else getColor(R.color.text_secondary)
         )
     }
 
@@ -1036,12 +1036,12 @@ class SettingsActivity : ThemedActivity() {
                 addView(TextView(this@SettingsActivity).apply {
                     text = label
                     textSize = 16f
-                    setTextColor(0xFFFFFFFF.toInt())
+                    setTextColor(getColor(R.color.text_primary))
                 })
                 if (sub.isNotEmpty()) addView(TextView(this@SettingsActivity).apply {
                     text = sub
                     textSize = 12f
-                    setTextColor(0xFF8A94A3.toInt())
+                    setTextColor(getColor(R.color.text_secondary))
                 })
             }
             return LinearLayout(this).apply {
