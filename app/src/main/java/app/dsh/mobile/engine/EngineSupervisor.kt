@@ -712,6 +712,16 @@ class EngineSupervisor(private val ctx: Context) {
                         val status = proc.exitFuture.get()
                         if (shouldExitLoop()) break
                         Log.w(TAG, "engine exited, raw status=0x${status.toString(16)}")
+                        // 把退出原因写进 engine.log（用户分享日志时能看到是信号杀还是退出码），
+                        // 否则只能靠 logcat 排查引擎「起来又没了」这种静默重启。
+                        runCatching {
+                            EngineLog.append(
+                                logFile(),
+                                "engine exited, raw status=0x${status.toString(16)} " +
+                                    "(signal=${status and 0x7f}, core=${(status and 0x80) != 0}, " +
+                                    "exitCode=${(status shr 8) and 0xff})",
+                            )
+                        }
                         // ── v1.4.24（宝宝要求）：异常退出后彻底清场再完整重启 ──────
                         // 这条路径是「引擎健康运行过、然后被杀/OOM/崩溃」——正是用户
                         // 说的「进程异常退出」。旧实现直接进入下一轮 spawn，残留的
