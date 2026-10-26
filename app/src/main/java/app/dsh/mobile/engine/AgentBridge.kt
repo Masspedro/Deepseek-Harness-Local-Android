@@ -401,6 +401,8 @@ object AgentBridge {
             method == "GET" && path == "/ext/list" -> extList(ctx)
             method == "GET" && path == "/plugin/list" -> pluginList()
             method == "POST" && path == "/plugin/install" -> pluginInstall(body)
+            method == "GET" && path == "/plugin/killswitch" -> pluginKillSwitch(ctx, query, "")
+            method == "POST" && path == "/plugin/killswitch" -> pluginKillSwitch(ctx, query, body)
             method == "GET" && path == "/ext/check" -> extCheck(ctx)
             method == "GET" && path == "/diag" -> diag(ctx)
             method == "POST" && path == "/say" -> say(ctx, body)
@@ -1153,6 +1155,14 @@ document.getElementById('api').textContent = checks.map(function(c){
             .getOrDefault("").trim()
         if (pkg.isBlank()) return 400 to """{"ok":false,"error":"field 'package' required"}"""
         val ctx = shotCtx ?: return 503 to """{"ok":false,"error":"app context not ready"}"""
+        // v1.4.27：应急总开关期间安装会被 PluginCenter 拒绝，但那是异步的 ——
+        // 之前这里照样回 202 started，调用方（curl / AI）以为装上了，实际什么都没发生。
+        // 停用与恢复中都直接 409，让调用方立刻知道该先恢复。
+        if (PluginKillSwitch.isBusy(ctx)) {
+            val reason = if (PluginKillSwitch.isActive(ctx)) "all third-party plugins are turned off; restore them first"
+            else "plugins are being restored; try again in a moment"
+            return 409 to """{"ok":false,"error":"$reason","package":"$pkg"}"""
+        }
         PluginCenter.install(ctx, pkg) { ok, msg ->
             runCatching {
                 notify(
@@ -1165,6 +1175,59 @@ document.getElementById('api').textContent = checks.map(function(c){
             }
         }
         return 202 to """{"ok":true,"started":true,"package":"$pkg"}"""
+    }
+
+    /**
+     * `/plugin/killswitch` —— 第三方插件应急总开关（v1.4.27）。
+     *
+     * 这是「WebUI 被插件搞坏、界面点不动」时的无 UI 逃生门：
+     * ```
+     * adb forward tcp:3083 tcp:3083
+     * curl -s 'http://127.0.0.1:3083/plugin/killswitch'                      # 查状态
+     * curl -s -X POST -d '{"action":"disable"}' http://127.0.0.1:3083/plugin/killswitch
+     * curl -s -X POST -d '{"action":"enable"}'  http://127.0.0.1:3083/plugin/killswitch
+     * ```
+     * 只写意图日志并重启引擎；真正的 bundle 列表改写发生在下次 spawn 前
+     * （[PluginKillSwitch.enforceBeforeBoot]），所以这里不会和运行中的引擎抢文件。
+     */
+    private fun pluginKillSwitch(ctx: Context, query: String, body: String): Pair<Int, String> {
+        val fromBody = runCatching { JSONObject(body).optString("action") }.getOrDefault("")
+        val action = fromBody.ifBlank { parseQuery(query)["action"].orEmpty() }
+            .trim().lowercase()
+        val state = PluginKillSwitch.read(ctx)
+        val status = PluginKillSwitch.status(ctx)
+
+        fun statusJson(): JSONObject = JSONObject().apply {
+            put("ok", true)
+            put("active", status.active)
+            put("phase", state?.phase?.wire ?: "none")
+            put("thirdParty", org.json.JSONArray(status.thirdParty))
+            put("disabled", org.json.JSONArray(status.disabled))
+            put("total", status.total)
+            put("at", status.at)
+        }
+
+        if (action.isEmpty() || action == "status") return 200 to statusJson().toString()
+
+        val outcome = when (action) {
+            "disable" -> PluginKillSwitch.requestDisable(ctx, "bridge")
+            "enable" -> PluginKillSwitch.requestEnable(ctx)
+            else -> return 400 to
+                """{"ok":false,"error":"action must be status|disable|enable"}"""
+        }
+        if (!outcome.ok) {
+            return 409 to JSONObject().put("ok", false).put("error", outcome.message).toString()
+        }
+        // 意图已落盘 → 异步重启引擎让它生效（restart 自身幂等，重复请求是 no-op）
+        runCatching { (ctx.applicationContext as app.dsh.mobile.DshApp).supervisor.restart() }
+            .onFailure { Log.w(TAG, "kill-switch restart failed: ${it.message}") }
+        Log.w(TAG, "plugin kill-switch: $action accepted (${outcome.message})")
+        return 202 to JSONObject().apply {
+            put("ok", true)
+            put("action", action)
+            put("affected", outcome.message)
+            put("restarting", true)
+        }.toString()
     }
 
     /**

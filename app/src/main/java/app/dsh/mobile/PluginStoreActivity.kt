@@ -13,6 +13,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import app.dsh.mobile.engine.PluginCenter
+import app.dsh.mobile.engine.PluginKillSwitch
 import app.dsh.mobile.engine.PluginMarket
 import app.dsh.mobile.engine.PluginMarket.Compat
 import app.dsh.mobile.engine.PluginMarket.Entry
@@ -104,6 +105,26 @@ class PluginStoreActivity : ThemedActivity() {
         btnTabInstalled.setOnClickListener { switchTab(false) }
         btnSort.setOnClickListener { showSortDialog() }
         btnCheckUpdates.setOnClickListener { checkUpdates() }
+
+        // v1.4.27：应急总开关生效时的常驻提示（点一下直接恢复）
+        val killBanner = findViewById<TextView>(R.id.tvKillBanner)
+        killBanner.setOnClickListener {
+            val outcome = PluginKillSwitch.requestEnable(this)
+            if (!outcome.ok) {
+                android.widget.Toast.makeText(
+                    this,
+                    getString(R.string.plugin_kill_failed, outcome.message),
+                    android.widget.Toast.LENGTH_LONG,
+                ).show()
+                return@setOnClickListener
+            }
+            android.widget.Toast.makeText(
+                this, getString(R.string.plugin_kill_restarting), android.widget.Toast.LENGTH_SHORT,
+            ).show()
+            (application as DshApp).supervisor.restart()
+            refreshKillBanner()
+        }
+        refreshKillBanner()
 
         btnClear = findViewById(R.id.btnClear)
         btnClear.setOnClickListener {
@@ -559,6 +580,18 @@ class PluginStoreActivity : ThemedActivity() {
     // 安装 / 卸载（保留 v1.4.15–v1.4.18 已验证的全部行为）
     // ───────────────────────────────────────────────────────────────────
 
+    override fun onResume() {
+        super.onResume()
+        refreshKillBanner()
+    }
+
+    /** 应急总开关生效时把提示条露出来；恢复后立即收起（v1.4.27） */
+    private fun refreshKillBanner() {
+        val banner = findViewById<TextView>(R.id.tvKillBanner) ?: return
+        val active = runCatching { PluginKillSwitch.isActive(this) }.getOrDefault(false)
+        banner.visibility = if (active) View.VISIBLE else View.GONE
+    }
+
     private fun runInstall(pkg: String, btn: TextView, basePkg: String) {
         btn.text = getString(R.string.plugin_checking)
         btn.isEnabled = false
@@ -607,6 +640,16 @@ class PluginStoreActivity : ThemedActivity() {
 
     private fun doInstall(pkg: String, btn: TextView, basePkg: String) {
         if (isFinishing || isDestroyed) return
+        // v1.4.27：全部停用期间不许装 —— 装了也不会加载，只会让用户以为「装完没反应」
+        if (PluginKillSwitch.isActive(this)) {
+            android.widget.Toast.makeText(
+                this, getString(R.string.plugin_kill_install_blocked),
+                android.widget.Toast.LENGTH_LONG,
+            ).show()
+            btn.text = getString(R.string.plugin_install)
+            btn.isEnabled = true
+            return
+        }
         if (!btn.isAttachedToWindow) {
             android.util.Log.w("PluginStore", "install of $pkg dropped: row re-rendered")
             return

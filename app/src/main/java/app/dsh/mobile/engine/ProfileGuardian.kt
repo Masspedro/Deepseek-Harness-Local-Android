@@ -57,7 +57,11 @@ class ProfileGuardian(private val ctx: Context) {
         EngineConfig.dshHome(ctx).listFiles()
             ?.filter {
                 it.isFile && (it.name == "settings.yaml" || it.name == "pet.json" ||
-                    it.name.endsWith(".yml") || it.name.endsWith(".yaml") || it.name.endsWith(".json"))
+                    it.name.endsWith(".yml") || it.name.endsWith(".yaml") || it.name.endsWith(".json")) &&
+                    // ⚠️ 插件应急总开关的意图日志必须排除（v1.4.27）：它是「怎么恢复
+                    // 插件」的唯一依据，被安全模式归档+删除就等于用户永久失去回滚目标，
+                    // 而这恰好是它最该起作用的时刻（坏插件导致的连锁崩溃）。
+                    it.name != PluginKillSwitch.LOG_NAME
             }
             ?: emptyList()
 

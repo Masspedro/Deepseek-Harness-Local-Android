@@ -220,6 +220,20 @@ object PluginCenter {
      * @param onDone (成功, 详情或错误信息) —— 在后台线程回调
      */
     fun install(ctx: Context, pkg: String, onDone: (Boolean, String) -> Unit) {
+        // v1.4.27：应急总开关生效期间拒绝安装。装进来也不会被加载 —— 下次启动的
+        // 收敛会把 bundles 再摘一遍，用户只会看到「装完没反应」这种更难查的现象。
+        // 恢复中（enabling）同样拒绝：那会儿监督器正要按日志写回 bundles，
+        // 新装的包会被写回动作丢掉，还会和 pnpm 抢 node_modules。
+        if (PluginKillSwitch.isBusy(ctx)) {
+            val off = PluginKillSwitch.isActive(ctx)
+            Log.w(TAG, "install $pkg refused: ${if (off) "plugins turned off" else "restore in progress"}")
+            onDone(
+                false,
+                if (off) "all third-party plugins are turned off; restore them first"
+                else "plugins are being restored; try again in a moment",
+            )
+            return
+        }
         installExecutor.execute({
             var ok = false
             var msg = "?"
