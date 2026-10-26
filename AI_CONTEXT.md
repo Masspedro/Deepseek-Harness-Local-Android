@@ -1,5 +1,31 @@
 # AI_CONTEXT
 
+## v1.4.22 已发布（2026-10-26，DSHA 风格 UI 移植包，tag run 40250425058，7 分钟全绿）
+- **来源**：宝宝转发的 `ya2rUQDS,dshx.zip`（community contribution，MIT，上游 dsh-web-mobile）。
+  含 ① 860KB 移动端 WebUI 客户端插件 ② 原生壳配色 7DD3FC→4F6EF7（22 文件）。
+- **安全审查（逐项实测，结论：安全）**：
+  client.js 无 eval/new Function/document.write/XHR；http:// 只有 w3.org SVG 命名空间与
+  127.0.0.1；无 base64 大载荷（860KB 是正常 TS 产物）；index.js 删除路由复用
+  engine connection.requestRejection 鉴权 + same-origin + 1MiB body 上限；
+  delete-session.js 不 rm、移入 .sessions-trash + manifest、重命名失败逐条回滚、
+  路径必须落在 storage root 内。
+- **集成踩坑**：
+  ① patch 的 PluginStoreActivity 2 hunk 因 v1.4.21 重写失败 → 手动替换颜色解决；
+  ② patch 未覆盖 activity_plugin_store.xml（v1.4.21 新增）→ 补替换；
+  ③ **patch 的 -p2 前缀解析把文件建到仓库根 `src/` 而非 `app/src/`** → 手动搬到
+     app/src/ 并删误建目录（下次用 patch 要先确认落点）。
+- **端到端验证（emulator-5554 / dsh36 / Chrome 133 / 412x842）**：
+  插件部署到 engine/android-plugins/dsh-web-mobile（5 文件，日志 readable=true）✓
+  前端加载 bundle 200/2.7MB、模块在 ?? 列表第 6 位 ✓
+  **手机版布局实际渲染**（Into the Unknown 头部 + Choose workspace/Standard mode 胶囊 +
+  大圆角输入框 + 底部输入条 + 头部导航）✓ 159 个 style 表含 DSHA 蓝 ✓
+  设置页分区标题变靛蓝 ✓
+- **排查经验**：CDP 里手动调 `__ModuleLoader__.create()` 会抛
+  "SyntaxError: Invalid or unexpected token" —— 那是**调用方式**错（create 只能在
+  boot 前用，mode=live 后必须走已注册链路），不是插件语法问题。判断插件是否生效
+  应看 DOM/style 痕迹（style[data-*]、注入的 CSS、底部 composer 节点）。
+- versionCode 272。4 资产上线（release 226.8MB）。
+
 ## 2026-10-26 PR #48 复审结论（未合并，等作者处理 P1-1）
 - **作者已按上轮意见修复**（head f972136 → 35570dc，rebase 到含 v1.4.21 的 main）：
   - P0 MANIFEST.json modify/delete 冲突：**已解**（`git merge-tree main pr-48-v2` 干净）
