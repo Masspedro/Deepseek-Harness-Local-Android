@@ -73,7 +73,7 @@ class AboutActivity : Activity() {
                     r.hasUpdate -> {
                         pendingReleaseUrl = r.releaseUrl
                         tv.text = getString(R.string.about_update_available, r.latestTag)
-                        tv.setTextColor(0xFF4F6EF7.toInt())
+                        tv.setTextColor(app.dsh.mobile.Accent.current(applicationContext).argb)
                     }
                     r.error.isNotEmpty() -> {
                         tv.text = getString(R.string.about_update_failed, r.error)

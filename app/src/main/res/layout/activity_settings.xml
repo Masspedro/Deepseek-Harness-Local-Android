@@ -70,7 +70,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/settings_section_display"
-                android:textColor="#FF4F6EF7"
+                android:textColor="#FF7DD3FC"
                 android:textSize="13sp"
                 android:textStyle="bold"
                 android:paddingStart="8dp"
@@ -167,7 +167,7 @@
                         android:padding="8dp"
                         android:src="@drawable/ic_scale"
                         android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="#FF4F6EF7" />
+                        android:tint="#FF7DD3FC" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -206,6 +206,118 @@
                         android:layout_height="20dp"
                         android:src="@drawable/ic_chevron" />
                 </LinearLayout>
+
+                <!-- v1.4.23：配色方案（强调色可切换，默认回到项目原本的天蓝） -->
+                <LinearLayout
+                    android:id="@+id/rowAccent"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="14dp"
+                    android:background="?android:attr/selectableItemBackground">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:padding="8dp"
+                        android:src="@drawable/ic_display"
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:tint="#FF5B8DEF" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:layout_marginStart="14dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_accent"
+                            android:textColor="#FFE8ECF2"
+                            android:textSize="15sp" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_accent_sub"
+                            android:textColor="#FF8A94A3"
+                            android:textSize="12sp"
+                            android:layout_marginTop="2dp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/valAccent"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="#FF8A94A3"
+                        android:textSize="14sp"
+                        android:layout_marginEnd="6dp" />
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_chevron" />
+                </LinearLayout>
+
+                <!-- v1.4.23：设置页布局（列表 / 卡片 / 网格） -->
+                <LinearLayout
+                    android:id="@+id/rowLayoutMode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="14dp"
+                    android:background="?android:attr/selectableItemBackground">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:padding="8dp"
+                        android:src="@drawable/ic_display"
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:tint="#FF5B8DEF" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:layout_marginStart="14dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_layout_mode"
+                            android:textColor="#FFE8ECF2"
+                            android:textSize="15sp" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_layout_mode_sub"
+                            android:textColor="#FF8A94A3"
+                            android:textSize="12sp"
+                            android:layout_marginTop="2dp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/valLayoutMode"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="#FF8A94A3"
+                        android:textSize="14sp"
+                        android:layout_marginEnd="6dp" />
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_chevron" />
+                </LinearLayout>
             </LinearLayout>
 
             <!-- ============ 权限中心分组 ============ -->
@@ -213,7 +325,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/settings_section_priv"
-                android:textColor="#FF4F6EF7"
+                android:textColor="#FF7DD3FC"
                 android:textSize="13sp"
                 android:textStyle="bold"
                 android:paddingStart="8dp"
@@ -688,7 +800,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/settings_section_ext"
-                android:textColor="#FF4F6EF7"
+                android:textColor="#FF7DD3FC"
                 android:textSize="13sp"
                 android:textStyle="bold"
                 android:paddingStart="8dp"
@@ -781,7 +893,7 @@
                         android:padding="8dp"
                         android:src="@drawable/ic_puzzle"
                         android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="#FF4F6EF7" />
+                        android:tint="#FF7DD3FC" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -889,7 +1001,7 @@
                         android:padding="8dp"
                         android:src="@drawable/ic_waveform"
                         android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="#FF4F6EF7" />
+                        android:tint="#FF7DD3FC" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -998,7 +1110,7 @@
                         android:padding="8dp"
                         android:src="@drawable/ic_link"
                         android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="#FF4F6EF7" />
+                        android:tint="#FF7DD3FC" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -1038,7 +1150,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/settings_section_other"
-                android:textColor="#FF4F6EF7"
+                android:textColor="#FF7DD3FC"
                 android:textSize="13sp"
                 android:textStyle="bold"
                 android:paddingStart="8dp"
@@ -1284,7 +1396,7 @@
                         android:padding="8dp"
                         android:src="@drawable/ic_info"
                         android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="#FF4F6EF7" />
+                        android:tint="#FF7DD3FC" />
 
                     <LinearLayout
                         android:layout_width="0dp"

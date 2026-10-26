@@ -114,7 +114,7 @@ class ExtensionStoreActivity : Activity() {
 
     private fun sectionHeader(title: String): TextView = TextView(this).apply {
         text = title
-        setTextColor(0xFF4F6EF7.toInt())
+        setTextColor(Accent.current(this@ExtensionStoreActivity).argb)
         textSize = 13f
         setTypeface(typeface, Typeface.BOLD)
         setPadding(dp(8), dp(18), dp(8), dp(8))
@@ -156,7 +156,7 @@ class ExtensionStoreActivity : Activity() {
                 isFocusable = true
             },
             progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-                progressTintList = android.content.res.ColorStateList.valueOf(0xFF4F6EF7.toInt())
+                progressTintList = android.content.res.ColorStateList.valueOf(Accent.current(this@ExtensionStoreActivity).argb)
                 visibility = View.GONE
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, dp(8)
@@ -319,7 +319,7 @@ class ExtensionStoreActivity : Activity() {
                     else View.VISIBLE
                 when (state) {
                     ExtensionManager.ExtState.NOT_DOWNLOADED -> {
-                        styleAction(refs.action, getString(R.string.ext_action_download), COLOR_BLUE, true)
+                        styleAction(refs.action, getString(R.string.ext_action_download), accentColor(this), true)
                     }
                     ExtensionManager.ExtState.DOWNLOADED -> {
                         styleAction(refs.action, getString(R.string.ext_action_activate), COLOR_ORANGE, true)
@@ -437,7 +437,7 @@ class ExtensionStoreActivity : Activity() {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                     .apply { marginStart = dp(4); marginEnd = dp(4) }
             }
-        addView(tool(getString(R.string.ext_tool_check), COLOR_BLUE, true) { runHealthCheck() })
+        addView(tool(getString(R.string.ext_tool_check), accentColor(this@ExtensionStoreActivity), true) { runHealthCheck() })
         addView(tool(getString(R.string.ext_tool_install_all), COLOR_ORANGE, true) { installAllMissing() })
         addView(tool(getString(R.string.ext_tool_repair), 0, false) { repairBroken() })
     }.also { toolsBar = it }
@@ -577,7 +577,8 @@ class ExtensionStoreActivity : Activity() {
         val COLOR_RED = 0xFFFF5A5F.toInt()
         val COLOR_YELLOW = 0xFFFFB74D.toInt()
         val COLOR_GREEN = 0xFF6EE7B7.toInt()
-        val COLOR_BLUE = 0xFF4F6EF7.toInt()
+        /** 强调色（v1.4.23 起随配色方案变化，故不能在 companion 里固化） */
+        fun accentColor(ctx: android.content.Context): Int = Accent.current(ctx).argb
         val COLOR_ORANGE = 0xFFFFB74D.toInt()
 
         /** 平板/横屏下列表内容最大宽度（dp） */

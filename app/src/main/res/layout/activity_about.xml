@@ -152,7 +152,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/about_repo"
-                        android:textColor="#FF4F6EF7"
+                        android:textColor="#FF7DD3FC"
                         android:textSize="13sp"
                         android:layout_marginTop="2dp" />
                 </LinearLayout>
@@ -195,7 +195,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="@string/about_qq_group_id"
-                        android:textColor="#FF4F6EF7"
+                        android:textColor="#FF7DD3FC"
                         android:textSize="13sp"
                         android:fontFamily="monospace"
                         android:layout_marginTop="2dp" />

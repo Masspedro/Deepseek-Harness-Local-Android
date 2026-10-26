@@ -16,7 +16,7 @@
         <item name="android:popupBackground">@drawable/bg_menu_card</item>
         <item name="android:textColorPrimary">#FFE8ECF2</item>
         <item name="android:textColorSecondary">#FF9AA5B4</item>
-        <item name="android:colorAccent">#FF4F6EF7</item>
+        <item name="android:colorAccent">#FF7DD3FC</item>
         <!-- 下拉条目：暗色文字 + 深色背景 -->
         <item name="android:textColor">#FFE8ECF2</item>
     </style>
@@ -24,7 +24,7 @@
     <style name="Theme.Dsh.Dialog" parent="android:Theme.Material.Dialog.Alert">
         <!-- 与手动设过背景的弹窗同款：深色 #1D232B + 22dp 圆角 -->
         <item name="android:windowBackground">@drawable/bg_dialog_rounded</item>
-        <item name="android:colorAccent">#FF4F6EF7</item>
+        <item name="android:colorAccent">#FF7DD3FC</item>
         <item name="android:textColorPrimary">#FFE8ECF2</item>
         <item name="android:textColorSecondary">#FF9AA5B4</item>
     </style>

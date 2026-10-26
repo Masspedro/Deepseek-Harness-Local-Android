@@ -27,7 +27,7 @@ import android.widget.TextView
  * 文档承诺了功能却没做，用户实测发现「不能移动」。本次补上。
  *
  * ## 外观
- * 对齐设置页设计语言：深色表面 #1C232C + 16dp 圆角 + 细描边 + 强调色 #4F6EF7；
+ * 对齐设置页设计语言：深色表面 #1C232C + 16dp 圆角 + 细描边 + 强调色随用户配色方案（默认 #7DD3FC）；
  * 左侧状态点用颜色区分状态（强调色=执行中 / 绿=完成 / 灰=空闲）。
  */
 object StatusOverlay {
@@ -100,7 +100,12 @@ object StatusOverlay {
 
     /** 状态点配色（与 drawable 默认色一致，运行时切换） */
     private const val COLOR_IDLE = 0xFF9AA0A6.toInt()      // 中性灰
-    private const val COLOR_WORKING = 0xFF4F6EF7.toInt()   // 强调蓝
+    /** 强调色（v1.4.23 起跟随用户配色方案，不再是编译期常量） */
+    private val colorWorking: Int
+        get() {
+            val ctx = appCtx ?: return 0xFF7DD3FC.toInt()
+            return Accent.current(ctx).argb
+        }
     private const val COLOR_DONE = 0xFF81C995.toInt()      // 完成绿
     private const val COLOR_RECORDING = 0xFFF28B82.toInt() // 录音红
 
@@ -497,7 +502,7 @@ object StatusOverlay {
                 val when_ = android.text.format.DateUtils.getRelativeTimeSpanString(last.at)
                 text = ctx.getString(R.string.overlay_last_action_at, when_)
                 textSize = 10f
-                setTextColor(0xFF4F6EF7.toInt())
+                setTextColor(colorWorking)
                 setPadding(0, dp(ctx, 3), 0, 0)
             })
         }
@@ -723,7 +728,7 @@ object StatusOverlay {
             cancelIdleReset()   // 新状态来了 → 作废"回空闲"定时器（否则会把这里覆盖掉）
             working = true
             statusText?.text = text
-            statusDot?.background?.setTint(COLOR_WORKING)
+            statusDot?.background?.setTint(colorWorking)
             // 若此刻还是折叠球（档位 0），自动展开一档 ——
             // 主人要的是「AI 在干什么」能直接看到（旧版只有一颗球，什么都不显示）
             if (expandLevel == 0) {

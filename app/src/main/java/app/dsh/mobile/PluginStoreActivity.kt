@@ -199,9 +199,9 @@ class PluginStoreActivity : Activity() {
         hideKeyboard()
         etSearch.clearFocus()
         // 标签样式：选中蓝色加粗，未选中灰色
-        btnTabMarket.setTextColor(if (market) 0xFF4F6EF7.toInt() else 0xFF5A626E.toInt())
+        btnTabMarket.setTextColor(if (market) Accent.current(this@PluginStoreActivity).argb else 0xFF5A626E.toInt())
         btnTabMarket.setTypeface(null, if (market) Typeface.BOLD else Typeface.NORMAL)
-        btnTabInstalled.setTextColor(if (!market) 0xFF4F6EF7.toInt() else 0xFF5A626E.toInt())
+        btnTabInstalled.setTextColor(if (!market) Accent.current(this@PluginStoreActivity).argb else 0xFF5A626E.toInt())
         btnTabInstalled.setTypeface(null, if (!market) Typeface.BOLD else Typeface.NORMAL)
         etSearch.visibility = if (market) View.VISIBLE else View.GONE
         btnCheckUpdates.visibility = if (market) View.GONE else View.VISIBLE
@@ -289,7 +289,7 @@ class PluginStoreActivity : Activity() {
         if (e.official) {
             nameCol.addView(TextView(this).apply {
                 text = getString(R.string.plugin_official)
-                setTextColor(0xFF4F6EF7.toInt())
+                setTextColor(Accent.current(this@PluginStoreActivity).argb)
                 textSize = 10f
                 setPadding(dp(6), dp(1), dp(6), dp(1))
                 setBackgroundResource(R.drawable.bg_icon_chip_soft)
@@ -366,7 +366,7 @@ class PluginStoreActivity : Activity() {
         when {
             !e.isInstalled -> {
                 btn.text = getString(R.string.plugin_install)
-                btn.setTextColor(0xFF4F6EF7.toInt())
+                btn.setTextColor(Accent.current(this@PluginStoreActivity).argb)
                 btn.setOnClickListener {
                     val spec = if (e.version.isNotBlank()) "${e.pkg}@${e.version}" else e.pkg
                     runInstall(spec, btn, e.pkg)
@@ -590,7 +590,7 @@ class PluginStoreActivity : Activity() {
             runOnUiThread {
                 if (ok) {
                     btn.text = getString(R.string.plugin_install)
-                    btn.setTextColor(0xFF4F6EF7.toInt())
+                    btn.setTextColor(Accent.current(this@PluginStoreActivity).argb)
                     btn.isEnabled = true
                     btn.isClickable = true
                     btn.setOnClickListener {

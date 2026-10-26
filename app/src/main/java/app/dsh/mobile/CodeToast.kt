@@ -122,7 +122,7 @@ object CodeToast {
 
             addView(TextView(ctx).apply {
                 text = ctx.getString(R.string.code_copy)
-                setTextColor(0xFF4F6EF7.toInt())
+                setTextColor(app.dsh.mobile.Accent.current(ctx).argb)
                 textSize = 15f
                 val p = dp(ctx, 12).toInt()
                 setPadding(p, dp(ctx, 8).toInt(), p, dp(ctx, 8).toInt())

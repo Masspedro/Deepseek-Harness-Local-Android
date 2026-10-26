@@ -482,6 +482,20 @@ class MainActivity : Activity() {
                 runCatching {
                     view.evaluateJavascript(CLIPBOARD_FALLBACK_JS, null)
                 }.onFailure { logWebView("clipboard bridge inject failed: ${it.message}") }
+                // v1.4.23：手机版 WebUI 二改覆盖层。社区插件把侧栏 translateX(-110%)
+                // 推出屏幕（只剩抽屉按钮），宝宝要回原来的常驻快捷栏——这里注入覆盖
+                // CSS 把它放回文档流（56px 窄栏、只显示图标），同时保留插件的底部输入
+                // 条/全屏面板/头部胶囊等优化。样式由设置页「快捷栏样式」切换。
+                runCatching {
+                    val js = assets.open("js/shell-overrides.js")
+                        .use { it.readBytes().toString(Charsets.UTF_8) }
+                    view.evaluateJavascript(
+                        "window.__dshAccent = '${String.format("#%06X", Accent.current(this@MainActivity).argb and 0xFFFFFF)}';" +
+                            "document.documentElement.style.setProperty('--dsh-accent', window.__dshAccent);" +
+                            js,
+                        null,
+                    )
+                }.onFailure { logWebView("shell overrides inject failed: ${it.message}") }
                 // v1.4.6：视口缩放必须在**启动遮罩收起之前**定稿，并在遮罩之下整页
                 // 重栅格化一次。旧顺序是「先 dismissSplash()、再改 meta」——用户会先看到
                 // 按 initial-scale=1 画好的首屏（含登录/开始使用弹窗），紧接着整页缩放

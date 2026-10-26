@@ -160,6 +160,29 @@ class SettingsActivity : Activity() {
             showScaleDialog()
         }
 
+        // —— 显示：配色方案（v1.4.23）——
+        // v1.4.22 把 DSHA 靛蓝写死了，宝宝反馈"跟主题不搭"。配色不再拍板，
+        // 交给用户选，默认回到项目原本的天蓝。
+        findViewById<LinearLayout>(R.id.rowAccent)?.setOnClickListener {
+            showAccentDialog()
+        }
+
+        // —— 显示：设置页布局（v1.4.23）——
+        findViewById<LinearLayout>(R.id.rowLayoutMode)?.setOnClickListener {
+            showLayoutModeDialog()
+        }
+
+        // 应用已保存的布局模式与当前值显示（v1.4.23）
+        val savedLayout = SettingsLayoutMode.current(this)
+        findViewById<TextView>(R.id.valLayoutMode)?.text = getString(savedLayout.labelRes)
+        findViewById<TextView>(R.id.valAccent)?.text = getString(Accent.current(this).labelRes)
+        findViewById<TextView>(R.id.valLayoutMode)?.deprecatedAccent()
+        findViewById<TextView>(R.id.valAccent)?.deprecatedAccent()
+        if (savedLayout != SettingsLayoutMode.LIST) {
+            // 布局参数改动需要在视图完成布局后进行
+            findViewById<View>(R.id.columnPrimary)?.post { applyLayoutMode(savedLayout) }
+        }
+
         // —— 权限中心：运行权限模式 ——
         findViewById<LinearLayout>(R.id.rowPriv).setOnClickListener {
             showPrivDialog()
@@ -811,8 +834,8 @@ class SettingsActivity : Activity() {
         val bar = SeekBar(this).apply {
             max = (MAX_PAGE_SCALE - MIN_PAGE_SCALE) / SCALE_STEP   // 索引 0..20 → 50..150 步长5
             progress = (pageScale - MIN_PAGE_SCALE) / SCALE_STEP
-            progressTintList = android.content.res.ColorStateList.valueOf(0xFF4F6EF7.toInt())
-            thumbTintList = android.content.res.ColorStateList.valueOf(0xFF4F6EF7.toInt())
+            progressTintList = android.content.res.ColorStateList.valueOf(Accent.current(this@SettingsActivity).argb)
+            thumbTintList = android.content.res.ColorStateList.valueOf(Accent.current(this@SettingsActivity).argb)
             setPadding(dp(24), 0, dp(24), 0)
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -1010,6 +1033,8 @@ class SettingsActivity : Activity() {
             show()
         }
 
+
+
     private companion object {
         const val SHIZUKU_REQ = 4202
 
@@ -1034,6 +1059,258 @@ class SettingsActivity : Activity() {
 
         /** 窄窗内容最大宽度：手机/平板竖屏保持易读行宽 */
         const val NARROW_CONTENT_MAX_WIDTH_DP = 680
+    }
+
+    /** 给设置项的当前值文字上强调色（v1.4.23，配色可切换后动态取色） */
+    private fun TextView.deprecatedAccent() {
+        setTextColor(Accent.current(this.context).argb)
+    }
+
+    // ───────────────────────────────────────────────────────────────────
+    // v1.4.23：配色方案 / 布局样式 / 快捷栏样式
+    // ───────────────────────────────────────────────────────────────────
+
+    /** 配色方案选择：5 种强调色，默认项目原本的天蓝 */
+    private fun showAccentDialog() {
+        val modes = Accent.entries
+        val labels = modes.map { getString(it.labelRes) }.toTypedArray()
+        val checked = modes.indexOf(Accent.current(this))
+        android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.setting_accent)
+            .setSingleChoiceItems(labels, checked) { d, which ->
+                Accent.set(this, modes[which])
+                d.dismiss()
+                // 配色影响整个原生壳（含本页所有强调色），重建本页最省事且无状态丢失风险
+                recreate()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /**
+     * 设置页布局选择。三种模式的实现差异：
+     *  - LIST：现状（单列分组卡片，`columnPrimary` 内按原顺序排）
+     *  - CARD：每个分区一张独立卡片，分区之间加大间距（视觉分块更强）
+     *  - GRID：每个分区转成 2 列图标网格，只留图标 + 标题，一屏看全部
+     *
+     * 实现上不复制任何条目：三种模式都来自同一份 XML 视图。CARD 通过调整
+     * 分区卡片之间的外边距实现；GRID 通过把每个分区卡片的行改为
+     * `weight=1` 的两列流式布局实现（行内左图标+标题保留，描述在网格下隐藏）。
+     */
+    private fun showLayoutModeDialog() {
+        val modes = SettingsLayoutMode.entries
+        val labels = modes.map { getString(it.labelRes) }.toTypedArray()
+        val checked = modes.indexOf(SettingsLayoutMode.current(this))
+        android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.setting_layout_mode)
+            .setSingleChoiceItems(labels, checked) { d, which ->
+                SettingsLayoutMode.set(this, modes[which])
+                d.dismiss()
+                // 重建本页：布局改动涉及视图层级重排，重新 inflate 最可靠
+                recreate()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /** 把当前 Activity 的视图按模式重排（不改 XML，运行时改布局参数） */
+    private fun applyLayoutMode(mode: SettingsLayoutMode) {
+        // 分区横跨两列：Display/Permissions 在 columnPrimary，Extensions/Other 在
+        // columnSecondary（v1.2.79 双栏改造的产物）。只重排第一列会漏掉后两个分区
+        // ——实测网格模式下 Extensions 仍是一列。
+        val columns = listOfNotNull(
+            findViewById<LinearLayout>(R.id.columnPrimary),
+            findViewById<LinearLayout>(R.id.columnSecondary),
+        )
+        if (columns.isEmpty()) return
+        val sections = columns.flatMap { sectionCards(it) }
+        when (mode) {
+            SettingsLayoutMode.LIST -> {
+                sections.forEach { card ->
+                    (card.layoutParams as? LinearLayout.LayoutParams)?.let {
+                        it.bottomMargin = dp(4); card.layoutParams = it
+                    }
+                    card.orientation = LinearLayout.VERTICAL
+                    rowsOf(card).forEach { row ->
+                        row.layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                        )
+                        setDescriptionsVisible(row, true)
+                    }
+                }
+            }
+            SettingsLayoutMode.CARD -> {
+                // 分区之间拉开距离，卡内保持单列（读起来还是"每区一卡"）
+                sections.forEach { card ->
+                    (card.layoutParams as? LinearLayout.LayoutParams)?.let {
+                        it.bottomMargin = dp(18); card.layoutParams = it
+                    }
+                    card.orientation = LinearLayout.VERTICAL
+                    rowsOf(card).forEach { row ->
+                        row.layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                        )
+                        setDescriptionsVisible(row, true)
+                    }
+                }
+            }
+            SettingsLayoutMode.GRID -> {
+                // 真正两列：每两行包进一个横向容器（卡片的父方向是 vertical，
+                // 直接把行设 weight=1/width=0 会得到宽度 0 —— 实测踩过）。
+                val gap = dp(6)
+                sections.forEach { card ->
+                    (card.layoutParams as? LinearLayout.LayoutParams)?.let {
+                        it.bottomMargin = dp(18); card.layoutParams = it
+                    }
+                    val rows = rowsOf(card)
+                    card.removeAllViews()
+                    rows.chunked(2).forEach { pair ->
+                        val wrap = LinearLayout(this).apply {
+                            orientation = LinearLayout.HORIZONTAL
+                            layoutParams = LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.MATCH_PARENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT,
+                            )
+                        }
+                        pair.forEachIndexed { idx, row ->
+                            row.layoutParams = LinearLayout.LayoutParams(
+                                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
+                            ).apply { if (idx == 0 && pair.size == 2) marginEnd = gap }
+                            setDescriptionsVisible(row, false)
+                            // 网格里每行只剩图标 + 标题 + 当前值：文字必须单行省略，
+                            // 否则会被逐字换行（实测「Landscape mode」竖排成一列）
+                            compactRowForGrid(row)
+                            wrap.addView(row)
+                        }
+                        if (pair.size == 1) {
+                            // 奇数行：补占位保持左对齐，避免最后一项被拉满整行
+                            wrap.addView(View(this).apply {
+                                layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
+                            })
+                        }
+                        card.addView(wrap)
+                    }
+                }
+            }
+        }
+        findViewById<TextView>(R.id.valLayoutMode)?.text = getString(mode.labelRes)
+    }
+
+    /**
+     * 找 columnPrimary 下的分区卡片（v1.4.23）。
+     *
+     * ⚠️ 不能只认「有 background 的 LinearLayout」：Extensions / Other 两个分区
+     * 的卡片没有 bg_card 背景（实测漏识 → 网格模式下它们不参与重排）。
+     * 这里改为「分区标题 TextView 之后、且包含至少一个可点击行的容器」。
+     */
+    private fun sectionCards(primary: LinearLayout): List<LinearLayout> {
+        val out = mutableListOf<LinearLayout>()
+        var afterHeader = false
+        for (i in 0 until primary.childCount) {
+            val v = primary.getChildAt(i)
+            if (v is TextView && !afterHeader) {
+                afterHeader = true      // 分区标题（大写字重仅用于视觉，无需判文案）
+                continue
+            }
+            if (afterHeader && v is LinearLayout) {
+                out.add(v)
+                afterHeader = false
+            }
+        }
+        return out
+    }
+
+    /** 卡片内的行容器（直接子 View 里可点击的 LinearLayout） */
+    private fun rowsOf(card: LinearLayout): List<LinearLayout> =
+        (0 until card.childCount).mapNotNull { card.getChildAt(it) as? LinearLayout }
+
+    /**
+     * 网格模式下隐藏「说明文字」（v1.4.23）。
+     *
+     * ⚠️ 不能一律隐藏文本列的第 2 个子节点：部分行（如「所有文件访问」）把当前值
+     * `valStorage` 放在文本列内，直接按索引隐藏会把值也藏掉，标题被挤成省略号。
+     * 判据：**小字号（≤12sp）的那一个**才是说明文字；当前值通常 14sp 且有 id。
+     */
+    private fun setDescriptionsVisible(row: LinearLayout, visible: Boolean) {
+        for (i in 0 until row.childCount) {
+            val col = row.getChildAt(i) as? LinearLayout ?: continue
+            if (col.childCount < 2) continue
+            for (k in 0 until col.childCount) {
+                val tv = col.getChildAt(k) as? TextView ?: continue
+                // 说明文字 = 小字号（≤12sp）**且**不是第一个子节点（第一个是标题）。
+                // 不再用 id 判断"是否当前值"：部分描述 TextView 也有 id。
+                val small = tv.textSize / resources.displayMetrics.scaledDensity <= 12.5f
+                val notTitle = k > 0
+                if (notTitle && small) {
+                    tv.visibility = if (visible) View.VISIBLE else View.GONE
+                }
+            }
+        }
+    }
+
+
+    /**
+     * 网格模式下行内文字压缩（v1.4.23）：标题单行省略、当前值不换行、
+     * 图标缩小，保证 2 列宽度下仍可读（实测不处理会逐字竖排）。
+     */
+    private fun compactRowForGrid(row: LinearLayout) {
+        row.setPadding(dp(8), dp(10), dp(8), dp(10))
+        for (i in 0 until row.childCount) {
+            when (val c = row.getChildAt(i)) {
+                is android.widget.ImageView -> {
+                    (c.layoutParams as? LinearLayout.LayoutParams)?.let {
+                        it.width = dp(28); it.height = dp(28); it.marginStart = 0
+                        c.layoutParams = it
+                    }
+                    c.setPadding(dp(6), dp(6), dp(6), dp(6))
+                }
+                is LinearLayout -> {
+                    // 文本列：占满剩余宽度
+                    (c.layoutParams as? LinearLayout.LayoutParams)?.let {
+                        it.width = 0; it.weight = 1f; it.marginStart = dp(8)
+                        c.layoutParams = it
+                    }
+                    for (k in 0 until c.childCount) {
+                        (c.getChildAt(k) as? TextView)?.apply {
+                            maxLines = 1
+                            ellipsize = android.text.TextUtils.TruncateAt.END
+                            setSingleLine(true)
+                        }
+                    }
+                }
+                is TextView -> {
+                    c.maxLines = 1
+                    c.ellipsize = android.text.TextUtils.TruncateAt.END
+                    c.setSingleLine(true)
+                    (c.layoutParams as? LinearLayout.LayoutParams)?.let {
+                        it.width = LinearLayout.LayoutParams.WRAP_CONTENT
+                        it.marginStart = dp(4)
+                        c.layoutParams = it
+                    }
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    /** 快捷栏样式：常驻窄栏 / 滑动抽屉（写入 WebView 的 localStorage） */
+    private fun showSidebarStyleDialog() {
+        val prefs = getSharedPreferences("dsh_web_prefs", MODE_PRIVATE)
+        val current = prefs.getString("sidebar_style", "rail") ?: "rail"
+        val labels = arrayOf(getString(R.string.sidebar_rail), getString(R.string.sidebar_drawer))
+        val idx = if (current == "drawer") 1 else 0
+        android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.sidebar_style)
+            .setSingleChoiceItems(labels, idx) { d, which ->
+                val style = if (which == 1) "drawer" else "rail"
+                prefs.edit().putString("sidebar_style", style).apply()
+                d.dismiss()
+                android.widget.Toast.makeText(this, R.string.sidebar_style, android.widget.Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
 }
