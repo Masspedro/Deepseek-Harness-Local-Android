@@ -1,5 +1,30 @@
 # AI_CONTEXT
 
+## v1.4.25 已发布（2026-10-26，PR #48 合并 + #47 修复，CI 7 分钟全绿）
+- **合并 PR #48**（merge ec42f90，作者 XiaoPb，182 文件）：运行时解耦 / full+noruntime
+  双形态 / 签名索引 / 原生深浅主题 / 桌宠。合并前验证：merge-tree 无冲突、我方
+  v1.4.21–24 全部修复均保留、编译通过、i18n + 两个探针全过。
+- **合并前确认前置条件**：`@xiaopb/dsh-pet-bridge@0.3.1` 已发布，且实测其 tarball
+  确实含 `X-DSH-Pet-Token`（bubble.js 2 处）+ `Content-Length` + 读
+  `DSH_PET_BRIDGE_TOKEN` —— 这是我上轮提的 P1 缺口，作者实现完整。
+- **#47 真因修复**（355d44f）：`loadCatalog()` 从未解析 `apkUrl`/`apkSha256`/
+  `apkPackage`（数据类有字段、构造时没赋值）→ APK 型扩展（Offline ASR / 本地识别
+  应用）**从 v1.2.127 引入功能起就没装上过**。v1.4.24 我只改了报错文案，是误判。
+- **构建流程变更（重要，以后本地构建必须照做）**：
+  1. `src/main/assets/runtime.zip` 现在**会和新流程冲突**（Duplicate resources）——
+     构建前先挪走；
+  2. 用 `-PruntimeZip=<绝对路径>` 指定运行时（**相对路径会失败**：Gradle 的
+     `file()` 基准是 app 模块目录）；
+  3. 源 zip 必须已带 PTC v2 补丁 + polyfill v4，否则 prepareRuntime 门禁直接抛
+     「APK builds must not patch runtime.zip anymore」（门禁设计如此，不许现场打）；
+  4. 完整命令：`gradle :app:assembleDebug -Pabi=x86_64
+     -PruntimeZip="<abs>"/_runtime_bak/rt-x86_64-zodded.zip`
+- **发布产物结构变化**：12 个资产 = 8 APK（arm64/x86_64 × debug/release ×
+  full/noruntime）+ 2 runtime zip + runtime-index.json + .sig。
+  full 包 146.8MB（比之前 227MB 小很多，运行时去重生效）；noruntime 仅 23MB。
+- **模拟器实测**：装 full 包 → RuntimeInstaller 识别 bundled 版本更新 → 重装
+  （engine.old 保留待健康）→ 16s 引擎健康 → 插件中心 3540 插件正常。
+
 ## v1.4.24 已发布（2026-10-26，tag run 40269198794，8 分钟全绿）
 - **宝宝反馈四条 → 全部处理**：
   ① 社区 dsh-web-mobile 插件 bug 太多 → **整体移除**（assets 860KB/6 文件、
