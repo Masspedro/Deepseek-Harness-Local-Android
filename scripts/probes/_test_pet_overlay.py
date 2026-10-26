@@ -214,6 +214,7 @@ check("gate: catalog points to XiaoPb repo", "github.com/XiaoPb/dsh-pet-bridge" 
 bundled_market = read(os.path.join(APP, "assets", "market", "catalog.json"))
 check("gate: bundled market catalog lists scoped package", '"name":"@xiaopb/dsh-pet-bridge"' in bundled_market)
 check("gate: bundled market catalog drops legacy 0.1.0 entry", '{"name":"dsh-pet-bridge"' not in bundled_market)
+check("receiver: token compare is constant-time", "MessageDigest.isEqual" in server)
 check("gate: docs declare min version + 403/400", "0.3.1" in read(DOCS) and "403" in read(DOCS) and "400" in read(DOCS))
 
 # ---------------------------------------------------------------- result

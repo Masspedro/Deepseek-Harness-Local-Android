@@ -233,7 +233,12 @@ class PetBridgeServer(
             if (line.startsWith(PetProtocol.TOKEN_HEADER, ignoreCase = true) &&
                 line.getOrNull(PetProtocol.TOKEN_HEADER.length) == ':'
             ) {
-                return line.substringAfter(':').trim() == expected
+                // 常量时间比较（评审 P2）：避免按前缀长度/提前返回泄露 token 信息。
+                // MessageDigest.isEqual 对等长输入做无分支归约，长度不同直接 false。
+                return java.security.MessageDigest.isEqual(
+                    line.substringAfter(':').trim().toByteArray(Charsets.UTF_8),
+                    expected.toByteArray(Charsets.UTF_8),
+                )
             }
         }
         return false
