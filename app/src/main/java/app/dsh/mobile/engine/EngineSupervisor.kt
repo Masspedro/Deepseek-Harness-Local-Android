@@ -276,8 +276,12 @@ class EngineSupervisor(private val ctx: Context) {
      * @param graceMs 优雅退出等待上限。
      * @param explicit true = 用户在通知栏点了「退出」（会结束主界面并销毁 WebView
      *                 以释放内存）；false = 服务销毁等被动停止。
+     * @return v1.4.26：**是否确认已停干净**（进程已退出且 3080 已释放）。
+     *         换运行时前必须看这个返回值 —— 引擎还在跑就换 `engine/`，
+     *         新进程会继续读旧 inode，等我们把 `engine.old` 删掉它就崩。
+     *         其余调用方可以忽略（Kotlin 允许丢弃返回值）。
      */
-    fun stop(graceMs: Long = 10_000, explicit: Boolean = false) {
+    fun stop(graceMs: Long = 10_000, explicit: Boolean = false): Boolean {
         // ⚠️ v1.4.6（审查 P0）：只有**用户显式退出**才置 userStop。
         // 旧实现在服务被动销毁（explicit=false，如 OEM 清后台、系统回收前台服务、
         // 划掉任务）时也置 userStop=true —— 而 isUserStopped() 会因此恒为真，
@@ -286,7 +290,8 @@ class EngineSupervisor(private val ctx: Context) {
         if (explicit) userStop = true
         stopping = true
         loopJob?.cancel()
-        process?.stop(graceMs)
+        val proc = process
+        proc?.stop(graceMs)
         process = null
         // v1.2.188（审查 P2）：stop() 只 cancel 不 join 监督循环 —— 若恰好在
         // spawnEngine() 的阻塞段里，已 fork 的 node 可能没有引用、无人 stop。
@@ -309,6 +314,28 @@ class EngineSupervisor(private val ctx: Context) {
         }
         _state.value = State.Stopped
         if (explicit) dispatchExplicitExit()
+        // v1.4.26：给「是否真的停干净」一个确定的答案。上面的 cleanupOrphanEngine
+        // 已经是尽力而为，这里再等一小段端口释放 —— 换运行时那种「文件要被整体
+        // 替换掉」的操作不能拿「大概停了」当依据。
+        // 端口已释放时这一步几乎是零成本（connect 立即 refused）；只有真的还被占
+        // 才等到超时，而那正是需要如实报告的场合。
+        val portFree = awaitPortFree(800)
+        // 等完再判一次进程：force kill 之后 exitFuture 的完成有几百毫秒的延迟。
+        val alive = proc != null && !proc.exitFuture.isDone
+        if (alive || !portFree) {
+            Log.w(TAG, "stop incomplete: alive=$alive portFree=$portFree (engine may still hold files)")
+        }
+        return !alive && portFree
+    }
+
+    /** 轮询等待端口释放；超时返回是否已释放。 */
+    private fun awaitPortFree(timeoutMs: Long): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (!portInUse(200)) return true
+            runCatching { Thread.sleep(100) }
+        }
+        return !portInUse(300)
     }
 
     /**
@@ -712,16 +739,6 @@ class EngineSupervisor(private val ctx: Context) {
                         val status = proc.exitFuture.get()
                         if (shouldExitLoop()) break
                         Log.w(TAG, "engine exited, raw status=0x${status.toString(16)}")
-                        // 把退出原因写进 engine.log（用户分享日志时能看到是信号杀还是退出码），
-                        // 否则只能靠 logcat 排查引擎「起来又没了」这种静默重启。
-                        runCatching {
-                            EngineLog.append(
-                                logFile(),
-                                "engine exited, raw status=0x${status.toString(16)} " +
-                                    "(signal=${status and 0x7f}, core=${(status and 0x80) != 0}, " +
-                                    "exitCode=${(status shr 8) and 0xff})",
-                            )
-                        }
                         // ── v1.4.24（宝宝要求）：异常退出后彻底清场再完整重启 ──────
                         // 这条路径是「引擎健康运行过、然后被杀/OOM/崩溃」——正是用户
                         // 说的「进程异常退出」。旧实现直接进入下一轮 spawn，残留的

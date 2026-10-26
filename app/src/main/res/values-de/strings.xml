@@ -613,29 +613,6 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="export_log_hint">Es wurde keine Sicherungsdatei behalten. Details stehen in engine.log (Zeilen mit [export]).</string>
     <string name="export_no_creds">API-Schlüssel und Anmeldungen sind nicht enthalten. Nach dem Wiederherstellen erneut anmelden.</string>
     <string name="export_no_registry">Hinweis: Die Arbeitsbereichsliste (workspace.json) wurde nicht gefunden. Unterhaltungen erscheinen nach dem Wiederherstellen eventuell nicht in der Liste.</string>
-    <!-- Native Terminal (an DSHA PTY-Terminal angelehnt) -->
-    <string name="btn_terminal">Terminal</string>
-    <string name="terminal_title">Terminal</string>
-    <string name="terminal_new">Neu</string>
-    <string name="terminal_empty">Kein Terminal\nTippe „Neu“, um eines zu öffnen</string>
-    <string name="terminal_number">Terminal %1$d</string>
-    <string name="terminal_closing">Terminal %1$d · wird geschlossen…</string>
-    <string name="terminal_switch_to">Zu Terminal %1$d wechseln</string>
-    <string name="terminal_close">Terminal %1$d schließen</string>
-    <string name="terminal_font_smaller">A−</string>
-    <string name="terminal_font_larger">A+</string>
-    <string name="terminal_session_ended">Sitzung beendet (Exit %1$s)</string>
-    <string name="terminal_copied">Kopiert</string>
-    <string name="terminal_start_failed">Terminal konnte nicht gestartet werden: %1$s</string>
-    <string name="terminal_close_failed">Schließen fehlgeschlagen, Sitzung bleibt: %1$s</string>
-    <string name="terminal_session_ended_hint">Sitzung ist beendet – tippe „Neu“</string>
-    <!-- Logbetrachter -->
-    <string name="btn_log">Logs</string>
-    <string name="log_viewer_title">Logs</string>
-    <string name="log_viewer_refresh">Aktualisieren</string>
-    <string name="log_viewer_empty">Noch kein Log\nSobald die Engine gestartet ist, erscheint hier das Ende von engine.log / boot.log.</string>
-    <string name="log_viewer_size">%1$s · %2$s Bytes</string>
-    <string name="log_viewer_share">Teilen</string>
 
     <!-- Desktop-Pet-Overlay (reserviert, plugin-gesteuert) -->
     <string name="setting_pet">Desktop-Pet</string>
@@ -723,4 +700,5 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="about_runtime_installed">Runtime installiert – Engine wird neu gestartet</string>
     <string name="about_runtime_no_pin">Signierter Runtime-Index nicht verfügbar</string>
     <string name="about_runtime_busy">Runtime wird installiert – bitte warten</string>
+    <string name="about_runtime_engine_busy">Die Engine wurde nicht rechtzeitig beendet – die Runtime wurde nicht ersetzt. Bitte gleich erneut versuchen.</string>
 </resources>

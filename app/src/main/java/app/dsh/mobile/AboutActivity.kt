@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
@@ -98,6 +99,9 @@ class AboutActivity : ThemedActivity() {
         val abi = deviceAbi()
         val code = currentVersionCode()
         val proxy = runtimeProxy()
+        // 本机已装运行时（版本 + 构建时间）。文件很小，在主线程读可接受；
+        // 原先的 installedRuntimeVersion() 也是在这条路径上读的。
+        val installed = installedRuntime()
         Thread({
             val entry = RuntimeIndexClient.resolve(
                 this, runtimeIndexUrl, proxy, abi, null, code,
@@ -111,8 +115,16 @@ class AboutActivity : ThemedActivity() {
                         )
                         tv.setTextColor(getColor(R.color.text_secondary))
                     }
-                    entry.version == installedRuntimeVersion() -> {
+                    installed != null && entry.version == installed.version -> {
                         tv.text = getString(R.string.about_runtime_latest, entry.version)
+                        tv.setTextColor(getColor(R.color.success))
+                    }
+                    // v1.4.26 防降级：索引里的构建**不比本机新**就不提示更新。
+                    // 只比版本号会漏掉「同版本号但 builtAt 更早」和「preview 频道
+                    // 回退到 stable」两种情况 —— 装下去等于把用户拽回旧构建。
+                    installed != null && installed.builtAt > 0 && entry.builtAt > 0 &&
+                        entry.builtAt <= installed.builtAt -> {
+                        tv.text = getString(R.string.about_runtime_latest, installed.version)
                         tv.setTextColor(getColor(R.color.success))
                     }
                     else -> {
@@ -135,8 +147,23 @@ class AboutActivity : ThemedActivity() {
         Thread({
             // 运行中的引擎会持续读 engine/lib；先停引擎再替换运行时，成功后自动重启。
             val app = application as DshApp
-            runCatching { app.supervisor.stop(graceMs = 3_500) }
+            // ⚠️ v1.4.26：stop 失败不能装作没发生。旧实现是
+            // `runCatching { stop() }` —— 引擎没停住照样往下走，换完名再删
+            // engine.old，那个还在跑的进程立刻崩（读的是被删掉的旧 inode）。
+            // 现在拿 stop() 的返回值当闸门：没停干净就明确报错，让用户重试。
+            val stopped = runCatching { app.supervisor.stop(graceMs = 3_500) }.getOrDefault(false)
             try {
+                if (!stopped) {
+                    Log.w(TAG, "runtime install aborted: engine did not stop in time")
+                    runOnUiThread {
+                        tv.text = getString(
+                            R.string.about_runtime_failed,
+                            getString(R.string.about_runtime_engine_busy),
+                        )
+                        tv.setTextColor(getColor(R.color.danger))
+                    }
+                    return@Thread
+                }
                 RuntimeInstaller(this).installFromIndex(
                     entry = entry,
                     indexUrl = runtimeIndexUrl,
@@ -178,13 +205,23 @@ class AboutActivity : ThemedActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode.toInt() else info.versionCode
     }.getOrDefault(0)
 
-    private fun installedRuntimeVersion(): String? = runCatching {
+    /** 本机已装运行时：版本号 + 构建时间（builtAt 用于防降级判断）。 */
+    private data class InstalledRuntime(val version: String, val builtAt: Long)
+
+    private fun installedRuntime(): InstalledRuntime? = runCatching {
         val root = EngineConfig.engineRoot(this)
         val meta = File(root, ".runtime.json")
         if (meta.isFile) {
-            JSONObject(meta.readText()).optString("version").takeIf { it.isNotBlank() }
+            val o = JSONObject(meta.readText())
+            InstalledRuntime(
+                version = o.optString("version"),
+                builtAt = o.optLong("builtAt", 0L),
+            )
         } else {
-            File(root, ".runtime-version").takeIf { it.isFile }?.readText()?.trim()
+            File(root, ".runtime-version").takeIf { it.isFile }
+                ?.readText()?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { InstalledRuntime(it, 0L) }
         }
     }.getOrNull()
 
@@ -234,4 +271,8 @@ class AboutActivity : ThemedActivity() {
     private fun versionName(): String =
         runCatching { packageManager.getPackageInfo(packageName, 0).versionName }
             .getOrNull() ?: "?"
+
+    private companion object {
+        private const val TAG = "About"
+    }
 }
