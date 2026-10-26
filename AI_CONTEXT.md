@@ -1,5 +1,56 @@
 # AI_CONTEXT
 
+## v1.4.27 待发（2026-10-27，插件应急总开关 + 设置页横屏分列均衡）
+- **需求**：装了个第三方插件，**引擎没死但界面用不了**，要能一键把全部第三方插件
+  临时停掉、之后还能一键恢复。这一格现有自救层全部漏掉：`quarantineOne` 要探针
+  degraded + 精确归因，`isolateRecentBundleOnBootFailure` 要引擎起不来，
+  `ProfileGuardian` 要同签名真死 10 次 —— 而用户此刻正被困在打不开的 WebUI 里，
+  连去插件中心卸载都点不到。
+- **核心设计（`engine/PluginKillSwitch.kt`）**：**意图日志 + 每次启动收敛**。
+  用户动作只写 `$DSH_HOME/.plugin-killswitch.json`（原子写 tmp→fsync→rename），
+  manifest（`profiles/web/package.json` 的 `dsh.profile.bundles`）**只在 spawn 前**
+  由 `enforceBeforeBoot()` 改写。理由：引擎运行中会把自己内存里的 profile 写回去，
+  运行中改会被覆盖；而"先停再改"中间的强杀窗口又会留半改状态。
+  `phase` 三态 `disabled / enabling / enabled`，任何一步被杀，下次启动都收敛到
+  日志说的状态（幂等）；`enabling` 中途被杀会**再写回一遍**，不会停在半恢复。
+- **恢复的过滤规则（别简化）**：只写回「`dependencies` 里还在 **且**
+  `profiles/web/node_modules/<pkg>`（或 `engine/lib/node_modules/<pkg>`）目录存在」的包。
+  禁用期间被卸载的包塞回去会让引擎 bundle 解析失败 —— 等于亲手再造一次启动故障。
+- **防呆**：`requestDisable` 在已 `disabled` 时**拒绝重写日志**（否则会把只剩内置的
+  列表当成"原始记录"，用户永远恢复不了）；`enabling` 被 SafeMode 打断不标 enabled
+  （那时 profiles 已被归档重建，bundles 根本没写回去）。
+- **`ProfileGuardian.topLevelConfigFiles()` 排除该日志**：它按 `*.json` 收快照并在
+  `enterSafeMode()` 里 `delete()`，不排除就等于"坏插件连锁崩溃 → 安全模式 →
+  恢复依据被删"，正好砸在最需要它的时刻。`PluginRecovery.isUserBundle` 改为
+  `internal`，两处共用同一套第三方口径。
+- **三条触发路径**：设置 → 维护新增一行（标题随状态变，确认框列出每个包名）；
+  `AgentBridge` `GET/POST /plugin/killswitch`（127.0.0.1:3083，
+  `adb forward` 后 curl 即可自救）；`$DSH_HOME/.plugin-killswitch.force` 冷启动标志
+  （连原生界面都进不去时的最后手段，消费后自动删除）。
+- **配套**：禁用期间 `PluginCenter.install` 直接拒绝（装了也不会加载）+ 插件中心
+  顶部常驻提示条（点一下恢复）。`PluginStoreActivity` 新增 `onResume` 刷新提示条。
+- **顺带修**：设置页横屏双栏是**写死在 XML** 的（primary 放前两个分区，其余全塞
+  secondary），v1.4.24 扩到 8 个分区后是左 12 行 / 右 18 行，右边要滚很久、左边
+  一屏未完就空了，而且每加一行都加剧。现在 `applyResponsiveLayout()` 按**行数**
+  找连续切分点，让两列最接近（当前 15 / 15），加行自动重新均衡。分区归属从
+  XML 改成运行时计算，`cachedSections` 只收集一次（原始阅读顺序），窄屏时全部
+  收回 primary —— 不这么做会重复挂载或漏挂。
+- **验证**：`compileDebugKotlin` / `assembleDebug -Ppackage=noruntime` 通过、
+  `scripts/check-i18n.py` 全过（9 条新文案 × 3 语言）。**模拟器 x86_64 实测三条路径全通**：
+  ① 设置页点确认 → `converged bundles 3 -> 2 (phase=disabled)`（engine.log 同款日志在
+  logcat 可见）→ 重启后引擎 healthy、对话/工作区正常；② 恢复后 bundles 回到
+  `[dsh-base, dsh-web-app, @xiaopb/dsh-pet-bridge]` **顺序一致**、phase 推进到 enabled；
+  ③ `curl`（带 `X-DSH-Token`）disable/enable 往返一致，无 token 返回 403；
+  ④ 冷启动标志：touch + force-stop + 重开 → 收敛为禁用、标志自动删除、reason=force-flag。
+- **注意（写文档时容易漏）**：`/plugin/killswitch` 与其它端点一样要 `X-DSH-Token`，
+  token 每进程随机、只进引擎环境变量 —— 所以 adb 路线实际只对调试包（`run-as`）或
+  root 用户可用，普通用户的入口就是设置页那一行。别在文档里承诺"一条 curl 就能救"。
+- **未做**：断点（写完日志后 / 写完 manifest 后分别强杀）没有跑；"装个真坏插件复现
+  界面不可用"也没有跑（手头插件都正常）。收敛逻辑本身可重入，风险不高，但留着。
+- **风险留档**：若实测发现引擎会从 `dependencies` 反推 `bundles`（把摘掉的又加回来），
+  则 `disabled` 收敛要升级为 Plan B —— 把 `node_modules/<pkg>` 软链 rename 到
+  `profiles/web/.disabled-plugins/`，恢复时 rename 回来。**上真机第一件事就是验这个。**
+
 ## v1.4.26 待发（2026-10-26，issue #49：运行时换装事务化）
 - **问题**（PR #48 审查 P1-2）：换装在逐条 `engine/<x> → engine.old` 期间被强杀
   （低内存 / OEM 清后台 / 用户强杀）没有任何持久化证据 —— `.pending-health` 在换装
