@@ -1,6 +1,17 @@
 # 桌宠悬浮窗（预留能力，插件驱动）
 
-DSH Mobile 现在预留了一套系统级桌宠悬浮窗：**安装包不包含桌宠插件，也不包含任何动画素材**。用户自行安装 `dsh-pet-bridge` 后，到「设置 → 扩展 → 桌面宠物」开启即可。
+DSH Mobile 现在预留了一套系统级桌宠悬浮窗：**安装包不包含桌宠插件，也不包含任何动画素材**。用户自行安装桥插件后，到「设置 → 扩展 → 桌面宠物」开启即可。
+
+> **插件来源与版本声明（v1.4.21 起）**
+>
+> 桥插件必须是 **`@xiaopb/dsh-pet-bridge` ≥ 0.3.1**（npm 包名或 GitHub 仓库
+> `https://github.com/XiaoPb/dsh-pet-bridge` 均可）。原因：
+>
+> - `/bubble` 从协议 v2 起强制 `X-DSH-Pet-Token`（fail-closed，缺失/不匹配 403），token 支持从 0.3.1 起才有；
+> - 0.3.1 同时修了上游 `dsh-pet-bridge@0.1.0` 的真 bug —— 它 POST 不带 `Content-Length`（Node 走 chunked 编码），原生侧只按定长读 body，**必然回 400**；
+> - npm 上那个无 scope 的 `dsh-pet-bridge` 只到 0.1.0（归上游作者所有，无法发新版），**装上也不通**。App 会在设置页直接标注「需 0.3.1+」并禁止开启，不会让你对着静默失败排查。
+>
+> 低于 0.3.1 的版本属于「已安装但不兼容」，不是「没装」——两者在设置页的提示不同。
 
 ## 1. 它是什么
 
@@ -23,7 +34,9 @@ DSH Mobile 现在预留了一套系统级桌宠悬浮窗：**安装包不包含�
 ## 2. 安装与开启
 
 1. 先正常启动引擎。
-2. 打开 App → 设置 → 扩展 → 社区插件，搜索并安装 **`dsh-pet-bridge`**。
+2. 安装桥插件（**≥ 0.3.1**，二选一）：
+   - npm：`dsh plugin add @xiaopb/dsh-pet-bridge`，或在 App 的插件中心搜 `dsh-pet-bridge` 选带 `@xiaopb/` 前缀的那条；
+   - GitHub：`dsh plugin add github:XiaoPb/dsh-pet-bridge`。
 3. **重启引擎**（bundle 插件不会热加载）。
 4. 设置 → 扩展 → 桌面宠物 → 授予「显示在其他应用上层」。
 5. 打开「开启桌宠」。通知栏会出现常驻通知，点「收起来」即停止。
@@ -85,4 +98,16 @@ DSH Mobile 现在预留了一套系统级桌宠悬浮窗：**安装包不包含�
 - 动画包只写 `filesDir/pet/`，不碰 `dsh-home` / `profiles`。
 - 端口 `7779` 被占用（例如 cc-pet 正在运行）时，状态会显示「端口被占用」，桌宠仍可显示但不接收事件；停掉占用者后重新开启。
 
-> 桥插件必须使用**带 token 的版本**（v0.2.0 起，POST 时从 `process.env.DSH_PET_BRIDGE_TOKEN` 读 token 加 `X-DSH-Pet-Token` 头）。旧版 0.1.0 不带 token，会被 403 拒绝。
+> 桥插件必须使用 **`@xiaopb/dsh-pet-bridge` ≥ 0.3.1**（POST 时从 `process.env.DSH_PET_BRIDGE_TOKEN` 读 token 加 `X-DSH-Pet-Token` 头，并显式带 `Content-Length`）。上游 0.1.0 既无 token（403）也不带 `Content-Length`（400），不兼容。
+
+## 8. 故障排查（桥插件侧）
+
+| 现象 | 原因 | 处理 |
+|---|---|---|
+| 设置页显示「需 0.3.1+」，无法开启 | 装的是旧版（多半是 npm 上游 `dsh-pet-bridge@0.1.0`） | 换 `@xiaopb/dsh-pet-bridge@0.3.1+`，重启引擎 |
+| 带 token 仍返回 `400` | 插件未带 `Content-Length`（0.1.0 的 chunked 编码） | 升级到 0.3.1+ |
+| 返回 `403` | token 缺失或不匹配：插件旧版、或引擎未重启导致 token 未注入 | 升级插件 + 重启引擎 |
+| 通知显示「已连接」但从不弹气泡 | 插件装了但没进 `dsh.profile.bundles`，引擎未加载 | 设置页点「重启引擎」；仍不行则重装插件 |
+| 端口 `7779` 被占用 | 其他桌宠工具（如 cc-pet）在跑 | 停掉占用者后重新开启桌宠 |
+
+`/ping` 返回的 `protocol` 字段可用于确认协议版本：`2` 表示带 token 门控的新版；`1` 表示旧 APK。

@@ -61,9 +61,9 @@
   },
   {
     "id": "pet-bridge",
-    "package": "dsh-pet-bridge",
-    "desc": "安卓桌宠状态桥：把 DSH 回合/工具状态推送到系统悬浮窗",
-    "repo": ""
+    "package": "@xiaopb/dsh-pet-bridge",
+    "desc": "安卓桌宠状态桥（需 0.3.1+，token 鉴权）：把 DSH 回合/工具状态推送到系统悬浮窗",
+    "repo": "https://github.com/XiaoPb/dsh-pet-bridge"
   },
   {
     "id": "dream-skin",

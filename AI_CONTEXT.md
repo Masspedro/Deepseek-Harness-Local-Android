@@ -153,6 +153,12 @@
   entry/大小/空间限制，临时目录原子替换。素材许可为「禁止商用」，见 `NOTICE`。
 - **协议/限制**：仅 `127.0.0.1:7779`；8KB body、5s 超时、2 worker；stop 1.5s 宽限；
   引擎被杀时 30s 看门狗回待机；窗口矩形透明区仍挡触摸（已写文档）。
+- **插件来源与版本声明（硬约束）**：桥插件必须是 `@xiaopb/dsh-pet-bridge` ≥ **0.3.1**
+  （npm 包名或 GitHub `XiaoPb/dsh-pet-bridge` 均可）。协议 v2 的 `X-DSH-Pet-Token`
+  与显式 `Content-Length` 均从 0.3.1 起；npm 无 scope 的 `dsh-pet-bridge` 只到 0.1.0
+  （归上游，无法发新版），装上必 403/400。App 侧 `PetPluginDetector.MIN_BRIDGE_VERSION`
+  做 fail-closed 门禁：装了旧版 → 设置页显示「需 0.3.1+」并禁止开启（弹窗引导去插件中心，
+  无「仍然开启」旁路）；同时兼容识别上游遗留包名并标记 legacy。
 - **验证**：`scripts/probes/_test_pet_overlay.py`、`scripts/check-i18n.py`、
   `_test_responsive_native_ui.py` 全过；pet 包用 kotlinc 2.3.20 + android.jar 编译通过；
   aapt2 compile + link（android-36）全资源通过；本机无 Gradle wrapper/ML Kit 缓存，
