@@ -1192,14 +1192,10 @@ object EngineConfig {
             |- insert:
             |    - id: android-chat-perf
             |      name: ./android-plugins/chat-perf/index.js
-            |
-            |# DSHA-style mobile WebUI (adapted from the upstream dsh-web-mobile
-            |# plugin): a client plugin package that reskins the desktop WebUI into
-            |# a phone UI. Host side also registers a same-origin session-delete
-            |# route (/api/mobile-nav.session.delete) used by the mobile drawer.
-            |- insert:
-            |    - id: dsh-web-mobile
-            |      name: ./android-plugins/dsh-web-mobile/index.js
+            |# v1.4.24：社区 dsh-web-mobile 插件已移除。它把侧栏改成抽屉、还注册了
+            |# 会话删除路由与响应压缩，实际使用中 bug 较多（快捷栏消失、面板错乱），
+            |# 不再随包提供；手机版适配回到本仓库自己的四个窄屏插件
+            |# （narrow-sidebar / narrow-settings / narrow-rightbar / chat-perf）。
 
             |""".trimMargin()
         runCatching {
@@ -1233,9 +1229,6 @@ object EngineConfig {
                 "narrow-settings" to listOf("package.json", "index.js", "client.js"),
                 "narrow-rightbar" to listOf("package.json", "index.js", "client.js"),
                 "chat-perf" to listOf("package.json", "index.js", "client.js"),
-                "dsh-web-mobile" to listOf(
-                    "package.json", "index.js", "client.js", "compress.js", "delete-session.js",
-                ),
             ).forEach { (pkg, files) ->
                 files.forEach { fileName ->
                     val src = ctx.assets.open("android-plugins/$pkg/$fileName")

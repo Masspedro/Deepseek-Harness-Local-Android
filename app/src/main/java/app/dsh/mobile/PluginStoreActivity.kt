@@ -70,6 +70,11 @@ class PluginStoreActivity : Activity() {
     private var installedVer: Map<String, String> = emptyMap()
 
     private var sortMode = PluginMarket.Sort.NAME_ASC
+
+    /** 当前分类筛选（空 = 全部）；目录来自 dsh-market 的 23 个分类 */
+    private var selectedCategory: String = ""
+
+    private lateinit var categoryChips: LinearLayout
     private var loading = false
     private var lastError: String? = null
 
@@ -94,6 +99,7 @@ class PluginStoreActivity : Activity() {
         findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
 
         btnSort.text = getString(sortMode.labelRes)
+        categoryChips = findViewById(R.id.categoryChips)
         btnTabMarket.setOnClickListener { switchTab(true) }
         btnTabInstalled.setOnClickListener { switchTab(false) }
         btnSort.setOnClickListener { showSortDialog() }
@@ -123,7 +129,56 @@ class PluginStoreActivity : Activity() {
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         })
 
+        buildCategoryChips()
         reload(verbose = true)
+    }
+
+    /** 构建分类筛选条：「全部」+ 目录里的 23 个分类 */
+    private fun buildCategoryChips() {
+        categoryChips.removeAllViews()
+        val cats = PluginMarket.categories(this)
+        val items = listOf("" to getString(R.string.plugin_category_all)) +
+            cats.map { it.first to it.second }
+        val d: (Int) -> Int = { dp(it) }
+        items.forEach { (id, label) ->
+            val tv = TextView(this).apply {
+                text = label
+                textSize = 12f
+                setPadding(d(12), d(6), d(12), d(6))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { marginEnd = d(8) }
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    if (selectedCategory == id) return@setOnClickListener
+                    selectedCategory = id
+                    refreshChipStyles()
+                    // 分类变了必须重新过滤目录（缓存里是「全部分类」的结果）
+                    marketEntries = emptyList()
+                    reload(verbose = true)
+                }
+            }
+            categoryChips.addView(tv)
+        }
+        refreshChipStyles()
+    }
+
+    /** 选中的分类用实心强调色，其余描边 */
+    private fun refreshChipStyles() {
+        val accent = Accent.current(this)
+        for (i in 0 until categoryChips.childCount) {
+            val tv = categoryChips.getChildAt(i) as? TextView ?: continue
+            val id = if (i == 0) "" else PluginMarket.categories(this).getOrNull(i - 1)?.first ?: ""
+            if (id == selectedCategory) {
+                tv.background = accent.filledDrawable()
+                tv.setTextColor(0xFFFFFFFF.toInt())
+            } else {
+                tv.background = accent.outlinedDrawable()
+                tv.setTextColor(accent.argb)
+            }
+        }
     }
 
     private fun dp(v: Int): Int = (v * dp).toInt()
@@ -156,7 +211,7 @@ class PluginStoreActivity : Activity() {
         loading = true
         lastError = null
         showLoadingState()
-        PluginMarket.browse(query, installedVer, checkCompat = true) { entries, err ->
+        PluginMarket.browse(this, query, selectedCategory, installedVer, checkCompat = false) { entries, err ->
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 loading = false

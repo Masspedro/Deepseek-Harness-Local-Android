@@ -158,6 +158,22 @@
             android:contentDescription="@string/plugin_search_clear" />
     </FrameLayout>
 
+    <!-- v1.4.24：分类筛选（dsh-market 目录的 23 个分类，横向滚动） -->
+    <HorizontalScrollView
+        android:id="@+id/categoryBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="20dp"
+        android:paddingBottom="8dp"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:id="@+id/categoryChips"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal" />
+    </HorizontalScrollView>
+
     <TextView
         android:id="@+id/tvSubtitle"
         android:layout_width="match_parent"

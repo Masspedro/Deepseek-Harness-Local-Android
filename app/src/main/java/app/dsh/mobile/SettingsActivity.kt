@@ -1295,22 +1295,4 @@ class SettingsActivity : Activity() {
         }
     }
 
-    /** 快捷栏样式：常驻窄栏 / 滑动抽屉（写入 WebView 的 localStorage） */
-    private fun showSidebarStyleDialog() {
-        val prefs = getSharedPreferences("dsh_web_prefs", MODE_PRIVATE)
-        val current = prefs.getString("sidebar_style", "rail") ?: "rail"
-        val labels = arrayOf(getString(R.string.sidebar_rail), getString(R.string.sidebar_drawer))
-        val idx = if (current == "drawer") 1 else 0
-        android.app.AlertDialog.Builder(this)
-            .setTitle(R.string.sidebar_style)
-            .setSingleChoiceItems(labels, idx) { d, which ->
-                val style = if (which == 1) "drawer" else "rail"
-                prefs.edit().putString("sidebar_style", style).apply()
-                d.dismiss()
-                android.widget.Toast.makeText(this, R.string.sidebar_style, android.widget.Toast.LENGTH_SHORT).show()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
-
 }
