@@ -35,7 +35,7 @@ DSH Mobile 现在预留了一套系统级桌宠悬浮窗：**安装包不包含�
 
 1. 先正常启动引擎。
 2. 安装桥插件（**≥ 0.3.1**，二选一）：
-   - npm：`dsh plugin add @xiaopb/dsh-pet-bridge`，或在 App 的插件中心搜 `dsh-pet-bridge` 选带 `@xiaopb/` 前缀的那条；
+   - npm：`dsh plugin add @xiaopb/dsh-pet-bridge`，或在 App 的插件中心搜 `dsh-pet-bridge`，选名为 `@xiaopb/dsh-pet-bridge` 的条目（v1.4.24 起内置目录里已用它替换上游 0.1.0 条目）；
    - GitHub：`dsh plugin add github:XiaoPb/dsh-pet-bridge`。
 3. **重启引擎**（bundle 插件不会热加载）。
 4. 设置 → 扩展 → 桌面宠物 → 授予「显示在其他应用上层」。

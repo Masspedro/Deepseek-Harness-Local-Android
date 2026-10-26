@@ -211,6 +211,9 @@ check("gate: outdated path has no enable-anyway bypass",
       pet_settings.index("pet_plugin_outdated_msg") < pet_settings.index("pet_enable_without_plugin"))
 check("gate: catalog entry is scoped official package", '"@xiaopb/dsh-pet-bridge"' in catalog)
 check("gate: catalog points to XiaoPb repo", "github.com/XiaoPb/dsh-pet-bridge" in catalog)
+bundled_market = read(os.path.join(APP, "assets", "market", "catalog.json"))
+check("gate: bundled market catalog lists scoped package", '"name":"@xiaopb/dsh-pet-bridge"' in bundled_market)
+check("gate: bundled market catalog drops legacy 0.1.0 entry", '{"name":"dsh-pet-bridge"' not in bundled_market)
 check("gate: docs declare min version + 403/400", "0.3.1" in read(DOCS) and "403" in read(DOCS) and "400" in read(DOCS))
 
 # ---------------------------------------------------------------- result
