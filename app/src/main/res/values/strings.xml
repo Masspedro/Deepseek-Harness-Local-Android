@@ -559,7 +559,8 @@ You can still continue without updating, but the interface will not display.</st
     <string name="boot_trace_title">Last startup details</string>
     <string name="boot_trace_none">No startup has been recorded yet on this install.</string>
     <string name="boot_trace_running">A startup is currently in progress.</string>
-    <string name="error_runtime_arch_mismatch">This build contains a runtime for a different CPU architecture and cannot run on this device. Please install the correct APK (arm64-v8a for phones).</string>
+        <string name="error_auth_expired">Login or API key has expired, so the engine cannot start. Reopen the app and sign in again, or update your API key in Settings. Retrying automatically will not help.</string>
+<string name="error_runtime_arch_mismatch">This build contains a runtime for a different CPU architecture and cannot run on this device. Please install the correct APK (arm64-v8a for phones).</string>
     <string name="setting_recover_chats">Recover conversations</string>
     <string name="setting_recover_chats_sub">Find sessions on disk that are missing from the list and re-register them</string>
     <string name="recover_scanning">Scanning…</string>

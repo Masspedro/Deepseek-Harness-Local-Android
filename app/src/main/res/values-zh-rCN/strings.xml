@@ -558,7 +558,8 @@
     <string name="boot_trace_title">上次启动详情</string>
     <string name="boot_trace_none">这台设备上还没有启动记录。</string>
     <string name="boot_trace_running">当前有一次启动正在进行中。</string>
-    <string name="error_runtime_arch_mismatch">这个安装包内置的运行环境与设备 CPU 架构不匹配，无法在本机运行。请安装对应架构的安装包（手机请选 arm64-v8a）。</string>
+        <string name="error_auth_expired">登录状态或 API Key 已失效，引擎无法启动。请重新打开应用并登录，或在设置里更新 API Key。自动重启无法解决这个问题。</string>
+<string name="error_runtime_arch_mismatch">这个安装包内置的运行环境与设备 CPU 架构不匹配，无法在本机运行。请安装对应架构的安装包（手机请选 arm64-v8a）。</string>
     <string name="setting_recover_chats">对话恢复</string>
     <string name="setting_recover_chats_sub">扫描磁盘上没出现在列表里的会话，重新登记回来</string>
     <string name="recover_scanning">正在扫描…</string>

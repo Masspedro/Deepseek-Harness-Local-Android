@@ -1192,10 +1192,12 @@ object EngineConfig {
             |- insert:
             |    - id: android-chat-perf
             |      name: ./android-plugins/chat-perf/index.js
-            |# v1.4.24：社区 dsh-web-mobile 插件已移除。它把侧栏改成抽屉、还注册了
-            |# 会话删除路由与响应压缩，实际使用中 bug 较多（快捷栏消失、面板错乱），
-            |# 不再随包提供；手机版适配回到本仓库自己的四个窄屏插件
-            |# （narrow-sidebar / narrow-settings / narrow-rightbar / chat-perf）。
+            |# v1.4.24: the community dsh-web-mobile plugin was removed. It turned the
+            |# sidebar into a drawer and also registered a session-delete route plus
+            |# response compression; in practice it produced many bugs (vanishing quick
+            |# rail, broken panels), so it is no longer shipped. Mobile adaptation is back
+            |# to this repo's own four narrow-screen plugins (narrow-sidebar /
+            |# narrow-settings / narrow-rightbar / chat-perf).
 
             |""".trimMargin()
         runCatching {
