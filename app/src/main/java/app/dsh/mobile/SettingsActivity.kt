@@ -9,8 +9,10 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.text.InputType
 import android.view.Gravity
 import android.view.View
+import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
@@ -21,9 +23,13 @@ import app.dsh.mobile.engine.ChatRecovery
 import app.dsh.mobile.engine.ExtensionManager
 import app.dsh.mobile.engine.PrivMode
 import app.dsh.mobile.engine.Privilege
+import app.dsh.mobile.engine.RuntimeDownloadConfig
 import app.dsh.mobile.engine.SelfCheck
 import app.dsh.mobile.engine.TtsManager
 import app.dsh.mobile.engine.LanWebProxy
+import app.dsh.mobile.pet.PetOverlayService
+import app.dsh.mobile.pet.PetPluginDetector
+import app.dsh.mobile.pet.PetSettingsActivity
 
 /**
  * 独立设置页（MIUI 分组卡片风格，替代原先的悬浮菜单）。
@@ -147,6 +153,14 @@ class SettingsActivity : Activity() {
             }
         }
 
+        // —— 扩展：运行时下载代理（v1.4.21）——
+        // 运行时 zip / 签名索引都从 GitHub Releases 取；国内直连经常超时。
+        // 默认 gh-proxy.org，可换自建前缀，留空则直连。
+        refreshRuntimeProxyRow()
+        findViewById<LinearLayout>(R.id.rowRuntimeProxy).setOnClickListener {
+            showRuntimeProxyDialog()
+        }
+
         // —— 顶部返回 ——
         findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
 
@@ -256,6 +270,11 @@ class SettingsActivity : Activity() {
         // —— 社区插件（v1.2.113）：一键安装 dsh 生态插件 ——
         findViewById<LinearLayout>(R.id.rowPlugin).setOnClickListener {
             startActivity(Intent(this, PluginStoreActivity::class.java))
+        }
+
+        // —— 桌宠悬浮窗（预留，插件驱动）：独立设置页负责权限/包/开关 ——
+        findViewById<LinearLayout>(R.id.rowPet).setOnClickListener {
+            startActivity(Intent(this, PetSettingsActivity::class.java))
         }
 
         // 自定义指令（v1.3.2，issue #19）：在 App 的环境说明之上补写用户自己的长期指令。
@@ -657,7 +676,36 @@ class SettingsActivity : Activity() {
         refreshNotifRow()
         refreshMicRow()
         refreshExt()
+        refreshPetRow()
         // 缩放副标题文案无需变；图标着色按打开时状态由静态 XML 决定
+    }
+
+    /** 扩展分组：桌宠入口状态（未装桥插件 / 已就绪 / 运行中 / 缺权限）。 */
+    private fun refreshPetRow() {
+        val v = findViewById<TextView>(R.id.valPet)
+        val plugin = PetPluginDetector.detect(this)
+        val running = PetOverlayService.isRunning()
+        val canDraw = Settings.canDrawOverlays(this)
+        val status = app.dsh.mobile.pet.PetStatusBus.state.value
+        val text = when {
+            !canDraw -> getString(R.string.pet_permission_denied)
+            running && status.connected -> getString(R.string.pet_status_connected)
+            running -> getString(R.string.pet_status_running)
+            !plugin.profileExists -> getString(R.string.pet_status_engine_down)
+            // 装了但低于 0.3.1：不能报「未安装」，否则用户会重复装同一个旧版
+            plugin.bridgeInstalled && !plugin.bridgeVersionOk ->
+                getString(R.string.pet_status_plugin_outdated)
+            !plugin.bridgeReady -> getString(R.string.pet_plugin_missing)
+            else -> getString(R.string.pet_status_stopped)
+        }
+        v.text = text
+        v.setTextColor(
+            when {
+                running -> 0xFF6EE7B7.toInt()
+                !canDraw || !plugin.bridgeReady -> 0xFFFFB74D.toInt()
+                else -> 0xFF8A94A3.toInt()
+            },
+        )
     }
 
     /** 扩展中心入口：显示已激活扩展数（>0 变绿提示已并入引擎） */
@@ -818,6 +866,87 @@ class SettingsActivity : Activity() {
             .showStyled()
     }
 
+    // ================= 扩展：运行时下载代理 =================
+
+    /** 刷新「运行时下载代理」行的说明文字（默认 / 自定义 / 直连）。 */
+    private fun refreshRuntimeProxyRow() {
+        val sub = findViewById<TextView>(R.id.subRuntimeProxy)
+        val current = RuntimeDownloadConfig.proxy(this)
+        sub.text = when {
+            current.isBlank() -> getString(R.string.setting_runtime_proxy_value_direct)
+            RuntimeDownloadConfig.isDefault(this) ||
+                current.equals(RuntimeDownloadConfig.DEFAULT_PROXY.trimEnd('/'), ignoreCase = true) ->
+                getString(R.string.setting_runtime_proxy_value_default)
+            else -> getString(R.string.setting_runtime_proxy_value_custom, current)
+        }
+    }
+
+    /**
+     * 运行时下载代理编辑框（v1.4.21）。
+     *
+     * 运行时 zip 与签名索引都从 GitHub Releases 取；默认 gh-proxy.org，
+     * 国内网络不用先等一轮直连超时。用户可换自建镜像，或留空直连。
+     */
+    private fun showRuntimeProxyDialog() {
+        val current = RuntimeDownloadConfig.proxy(this)
+        val input = EditText(this).apply {
+            setText(current)
+            hint = RuntimeDownloadConfig.DEFAULT_PROXY
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            setSingleLine()
+            setSelection(text.length)
+        }
+        val tip = TextView(this).apply {
+            text = getString(
+                R.string.setting_runtime_proxy_dialog_hint,
+                RuntimeDownloadConfig.DEFAULT_PROXY,
+            )
+            textSize = 12f
+            setTextColor(getColor(R.color.text_secondary))
+            setPadding(0, dp(8), 0, 0)
+            setLineSpacing(dp(2).toFloat(), 1f)
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(12), dp(24), dp(4))
+            addView(input)
+            addView(tip)
+        }
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.setting_runtime_proxy)
+            .setView(box)
+            .setPositiveButton(android.R.string.ok, null)
+            .setNeutralButton(R.string.setting_runtime_proxy_reset, null)
+            .setNegativeButton(android.R.string.cancel, null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val raw = input.text.toString()
+                if (!RuntimeDownloadConfig.isValid(raw)) {
+                    input.error = getString(R.string.setting_runtime_proxy_invalid)
+                    return@setOnClickListener
+                }
+                RuntimeDownloadConfig.setProxy(this, raw)
+                refreshRuntimeProxyRow()
+                Toast.makeText(
+                    this, getString(R.string.setting_runtime_proxy_saved), Toast.LENGTH_SHORT,
+                ).show()
+                dialog.dismiss()
+            }
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                RuntimeDownloadConfig.setProxy(this, null)
+                refreshRuntimeProxyRow()
+                Toast.makeText(
+                    this, getString(R.string.setting_runtime_proxy_reset_done), Toast.LENGTH_SHORT,
+                ).show()
+                dialog.dismiss()
+            }
+        }
+        dialog.show()
+    }
     // ================= 显示：页面缩放 =================
 
     /**

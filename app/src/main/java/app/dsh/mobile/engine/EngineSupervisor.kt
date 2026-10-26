@@ -567,6 +567,13 @@ class EngineSupervisor(private val ctx: Context) {
                 _installProgress.value = null
                 step("runtime-install")
 
+                // v1.4.20：内置 SSH 插件与 runtime 解耦。runtime 重装会删掉
+                // engine/lib，插件必须在这里补装（失败只降级 SSH，不阻断引擎）。
+                runCatching { HardsshInstaller(ctx).ensureInstalled() }
+                    .onSuccess { v -> if (v != null) Log.i(TAG, "bundled ssh plugin ready: $v") }
+                    .onFailure { Log.w(TAG, "bundled ssh plugin setup failed: ${it.message}") }
+                step("hardssh-install")
+
                 // 用户数据外置（v1.2.99）：sessions/workspaces 迁到公开目录（软链），
                 // profiles 保持私有（上游强制凭证 0600，共享存储给不了权限位）。
                 // 必须在 spawn 前完成 —— 引擎启动即读这些目录。
@@ -684,6 +691,9 @@ class EngineSupervisor(private val ctx: Context) {
                         _state.value =
                             if (safe) State.SafeMode(EngineConfig.DEFAULT_PORT, tokenUrl, notice)
                             else State.Healthy(EngineConfig.DEFAULT_PORT, tokenUrl, notice)
+                        // 新运行时首次 Healthy：确认安装成功，释放 engine.old 回滚备份。
+                        runCatching { RuntimeInstaller(ctx).markHealthy() }
+                            .onFailure { Log.w(TAG, "runtime markHealthy failed: ${it.message}") }
                         // 启动记录收尾：引擎已可用。WebView 首屏耗时会由 UI 层补记。
                         BootTrace.ready(ctx)
                         // ⚠️ v1.4.9：成功进入 Healthy/SafeMode 后**重置墙钟起点与插件
@@ -945,7 +955,7 @@ class EngineSupervisor(private val ctx: Context) {
         // v1.2.159：启动前自愈 engine/bin 的 Termux shebang（真机 37 个 wrapper 指向不存在的
         // 路径 → getprop/logcat/node 直接崩）。幂等，仅改第一行。
         runCatching { EngineConfig.healTermuxShebangs(ctx) }
-        // 内置 SSH 远程工作区（@tiphareth/dsh-hardssh）：插件随 runtime.zip 发布，
+        // 内置 SSH 远程工作区（@xiaopb/dsh-hardssh）：插件随 runtime.zip 发布，
         // 这里补 profile 模块链接并取回它自己的 patch 层。顺序必须保持：
         //   ① 插件层：禁用 fs-sandbox/subprocess、插入 hardssh 接缝行
         //   ② Android 适配层：重复钉住关键 host 行（后应用者生效）
