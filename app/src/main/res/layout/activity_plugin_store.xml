@@ -36,6 +36,20 @@
             android:textStyle="bold" />
     </LinearLayout>
 
+    <!-- v1.4.27：应急总开关生效期间的常驻提示。点一下直接恢复（不弹二次确认：
+         文案本身已经写清动作，且此时用户多半正被坏插件卡着，越少点击越好）。 -->
+    <TextView
+        android:id="@+id/tvKillBanner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="20dp"
+        android:paddingVertical="10dp"
+        android:text="@string/plugin_kill_banner"
+        android:textColor="@color/warning"
+        android:textSize="12sp"
+        android:background="?android:attr/selectableItemBackground"
+        android:visibility="gone" />
+
     <!-- v1.4.21：双标签（市场 / 已安装）+ 排序 + 检查更新。
          参考 DSHA 的插件中心形态。 -->
     <LinearLayout

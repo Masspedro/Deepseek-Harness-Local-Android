@@ -262,7 +262,8 @@ object PluginRecovery {
         runCatching { File(EngineConfig.dshHome(ctx), STATE_FILE).delete() }
     }
 
-    private fun isUserBundle(name: String): Boolean =
+    /** 第三方 bundle 判定 —— [PluginKillSwitch] 共用同一套口径，别在两处各写一份 */
+    internal fun isUserBundle(name: String): Boolean =
         !name.startsWith("@deepseek-ai/") &&
             name != "dsh-base" &&
             name != "dsh-web-app"

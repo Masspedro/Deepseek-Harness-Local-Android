@@ -612,6 +612,17 @@ class EngineSupervisor(private val ctx: Context) {
                 // 旧 marker 可能来自上一次被强杀的引擎；本次 fork 前先清掉，
                 // 否则一个 stale 的 degraded 结果会把正常插件误摘掉。
                 withContext(Dispatchers.IO) { PluginRecovery.prepareForBoot(ctx) }
+                // 插件应急总开关（v1.4.27）：引擎此刻必定没在跑，是唯一安全的
+                // manifest 改写点。按意图日志把 bundle 列表收敛到目标状态——
+                // 上一次动作被强杀在中间也能在这里补完（幂等）。
+                val killSwitch = withContext(Dispatchers.IO) { PluginKillSwitch.enforceBeforeBoot(ctx) }
+                if (killSwitch.changed) {
+                    Log.i(
+                        TAG,
+                        "kill-switch converged plugins: ${killSwitch.before} -> ${killSwitch.after} " +
+                            "bundles (phase=${killSwitch.phase?.wire})",
+                    )
+                }
                 val bootId = java.util.UUID.randomUUID().toString()
                 val proc = withContext(Dispatchers.IO) { spawnEngine(bootId) }
                 process = proc
@@ -721,6 +732,12 @@ class EngineSupervisor(private val ctx: Context) {
                         // 新运行时首次 Healthy：确认安装成功，释放 engine.old 回滚备份。
                         runCatching { RuntimeInstaller(ctx).markHealthy() }
                             .onFailure { Log.w(TAG, "runtime markHealthy failed: ${it.message}") }
+                        // 插件应急总开关（v1.4.27）：恢复动作已收敛且引擎真起来了，
+                        // 相位推进到 enabled。⚠️ SafeMode 不确认：那时 profiles 已被
+                        // 归档重建，bundles 根本没写回去，标成 enabled 会让用户失去重试。
+                        if (!safe) {
+                            withContext(Dispatchers.IO) { PluginKillSwitch.onHealthy(ctx) }
+                        }
                         // 启动记录收尾：引擎已可用。WebView 首屏耗时会由 UI 层补记。
                         BootTrace.ready(ctx)
                         // ⚠️ v1.4.9：成功进入 Healthy/SafeMode 后**重置墙钟起点与插件

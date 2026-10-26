@@ -220,6 +220,13 @@ object PluginCenter {
      * @param onDone (成功, 详情或错误信息) —— 在后台线程回调
      */
     fun install(ctx: Context, pkg: String, onDone: (Boolean, String) -> Unit) {
+        // v1.4.27：应急总开关生效期间拒绝安装。装进来也不会被加载 —— 下次启动的
+        // 收敛会把 bundles 再摘一遍，用户只会看到「装完没反应」这种更难查的现象。
+        if (PluginKillSwitch.isActive(ctx)) {
+            Log.w(TAG, "install $pkg refused: all third-party plugins are turned off")
+            onDone(false, "all third-party plugins are turned off; restore them first")
+            return
+        }
         installExecutor.execute({
             var ok = false
             var msg = "?"
