@@ -20,6 +20,8 @@ import android.webkit.WebViewClient
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import app.dsh.mobile.engine.BootTrace
 import app.dsh.mobile.engine.RepoConfig
 import app.dsh.mobile.engine.RuntimeInstaller
@@ -276,6 +278,7 @@ class MainActivity : ThemedActivity() {
         val oldScale = pageScale
         val oldMode = orientationMode
         readUiPrefs()
+        applyStatusBarImmersive()
         if (oldMode != orientationMode) {
             setDesktop(shouldUseDesktop())
             applyOrientation(orientationMode)
@@ -661,6 +664,7 @@ class MainActivity : ThemedActivity() {
         // 否则横屏后仍是竖屏那套 UA/视口。setDesktop 自身不 reload，reload 紧随其后。
         setDesktop(shouldUseDesktop())
         applyZoomControls(desktopMode)
+        applyStatusBarImmersive()
         webView.reload()
     }
 
@@ -1102,6 +1106,36 @@ class MainActivity : ThemedActivity() {
      */
     private fun applyOrientation(mode: OrientationMode) {
         requestedOrientation = OrientationPrefs.toActivityInfo(mode)
+        applyStatusBarImmersive()
+    }
+
+    /**
+     * 沉浸式状态栏：横屏（桌面渲染）时隐藏系统状态栏，竖屏恢复显示。
+     *
+     * 用 WindowInsetsControllerCompat 的 sticky 行为——从屏幕顶部下滑会临时
+     * 浮现状态栏，松手自动隐藏，不改动窗口 fitsSystemWindows，避免影响 WebView 布局。
+     * 必须在 onCreate / onResume / onConfigurationChanged / onWindowFocusChanged
+     * 四处重复应用：系统在转屏、 regained focus、弹软键盘时都会重置 insets 可见性。
+     */
+    private fun applyStatusBarImmersive() {
+        val w = window ?: return
+        runCatching {
+            val controller = WindowInsetsControllerCompat(w, w.decorView)
+            val landscape =
+                resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+            if (landscape) {
+                controller.hide(WindowInsetsCompat.Type.statusBars())
+                controller.systemBarsBehavior =
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            } else {
+                controller.show(WindowInsetsCompat.Type.statusBars())
+            }
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) applyStatusBarImmersive()
     }
 
     /** 启动阶段秒表：引擎启动本身耗时（真机可达十几秒），显示已用秒数避免被误判为卡死 */
