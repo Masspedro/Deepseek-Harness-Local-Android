@@ -1,6 +1,5 @@
 package app.dsh.mobile
 
-import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.os.Build
@@ -20,7 +19,7 @@ import java.io.File
  * 关于页（MIUI 风格）：应用标识卡 + 介绍/特性 + 开源地址（点击复制）。
  * v1.4.18：与设置页一致，跟随应用屏幕朝向偏好（不再固定竖屏）。
  */
-class AboutActivity : Activity() {
+class AboutActivity : ThemedActivity() {
 
     override fun attachBaseContext(newBase: android.content.Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))

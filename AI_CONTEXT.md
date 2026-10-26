@@ -2378,3 +2378,9 @@ URL: https://github.com/Soodok/Deepseek-Harness-Local-Android/releases/tag/v1.4.
 - 新增 `RuntimeDownloadConfig`：默认 `https://gh-proxy.org/`；设置 → 扩展 → 运行时下载代理可改前缀或留空直连。运行时 zip 与签名索引统一「代理优先、直连兜底」，已代理地址不二次包装；用户显式关闭代理时剔除 MANIFEST/索引里预置的镜像地址。
 - 首启 noruntime 下载同样读取该配置，不再依赖 MANIFEST 里的 `urls` 顺序先等直连超时。
 
+
+### 主题切换入口在 rebase 中丢失 → 修复（2026-10-26，分支 fix/theme-menu）
+- 现象：v1.4.24 第三次 rebase 对 `OnboardingActivity`/`SettingsActivity` 整文件取上游，`e7d85ec` 的接线（两处 `ThemePref.set`）被丢弃——`ThemePref.set` 全仓 0 调用点，偏好永远停在默认深色；引导页三卡"看得见点不动"，设置页外观行整行消失（`setting_theme` 成孤儿字符串）；上游把 `activity_settings.xml`（106 处）与 `activity_plugin_store.xml`（4 处）重写为硬编码深色，浅色下白底白字。
+- 修复：`AboutActivity`/`OnboardingActivity`/`SettingsActivity` 改继承 `ThemedActivity`（attachBaseContext 的 LocaleHelper.wrap 保留，主题在基类叠加）；引导页重绑三卡 + 选中态高亮，点击写偏好并 recreate（方向/权限选择经 onSaveInstanceState 保留）；设置页外观分区加回「外观主题」行（新 `ic_theme` 图标）+ 三选一对话框，选完 recreate，返回主界面由 `MainActivity.onResume` 的 appliedTheme 检测接力；两个布局硬编码色全部替换为 `@color/*`（昼/夜 26 个色名已对齐）。
+- 新探针 `scripts/probes/_test_theme_menu.py`（28 项）：`ThemePref.set` 必须有调用点、引导卡必须绑定、设置行必须接线、两个布局禁止出现 `#hex` 硬编码、三语五条文案齐全、values-night 覆盖全部昼间色名——防止下次整文件覆盖再静默丢掉入口。
+- MuMu（Android 12 x86_64）实测：浅色↔深色双向切换，设置页与本页 recreate、主界面返回时重建均正常，两主题截图逐行确认可读；pet/responsive/theme-menu 三组探针全绿。

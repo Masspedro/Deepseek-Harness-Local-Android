@@ -1,6 +1,5 @@
 package app.dsh.mobile
 
-import android.app.Activity
 import android.app.AlertDialog
 import android.Manifest
 import android.content.Intent
@@ -42,7 +41,7 @@ import app.dsh.mobile.pet.PetSettingsActivity
  * 权限切换与缩放均复用 MainActivity 的既有决策（Root 双警告、缩放 −/＋ 步进、
  * 无障碍跳系统设置），落库到同一组 SharedPreferences，MainActivity 在 onResume 重新读取生效。
  */
-class SettingsActivity : Activity() {
+class SettingsActivity : ThemedActivity() {
 
     /** 屏幕朝向偏好（v1.2.120 三态） */
     private var orientMode: OrientationMode = OrientationMode.PORTRAIT
@@ -173,6 +172,14 @@ class SettingsActivity : Activity() {
         findViewById<LinearLayout>(R.id.rowScale).setOnClickListener {
             showScaleDialog()
         }
+
+        // —— 显示：外观主题（深色/浅色/跟随系统）——
+        // 与引导页写同一份偏好（ThemePref）；改动后本页 recreate 立即生效，
+        // 返回主界面时 MainActivity.onResume 检测到偏好变化会自行重建。
+        findViewById<LinearLayout>(R.id.rowTheme)?.setOnClickListener {
+            showThemeDialog()
+        }
+        findViewById<TextView>(R.id.valTheme)?.text = getString(ThemePref.get(this).labelRes)
 
         // —— 显示：配色方案（v1.4.23）——
         // v1.4.22 把 DSHA 靛蓝写死了，宝宝反馈"跟主题不搭"。配色不再拍板，
@@ -1198,6 +1205,29 @@ class SettingsActivity : Activity() {
     // ───────────────────────────────────────────────────────────────────
     // v1.4.23：配色方案 / 布局样式 / 快捷栏样式
     // ───────────────────────────────────────────────────────────────────
+
+    /**
+     * 外观主题：深色 / 浅色 / 跟随系统。
+     *
+     * 落库到 `ThemePref`（SharedPreferences `dsh_ui.theme_mode`），与引导页共用。
+     * 选完必须 `recreate()`：`ThemeManager.wrap()` 在 `attachBaseContext` 阶段
+     * 改 `uiMode`，只有重建 Activity 才会重新取 values / values-night 资源。
+     * 主界面不用管——`MainActivity.onResume` 会比对 `appliedTheme` 并自行重建。
+     */
+    private fun showThemeDialog() {
+        val modes = ThemeMode.entries
+        val labels = modes.map { getString(it.labelRes) }.toTypedArray()
+        val checked = modes.indexOf(ThemePref.get(this))
+        android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.setting_theme)
+            .setSingleChoiceItems(labels, checked) { d, which ->
+                ThemePref.set(this, modes[which])
+                d.dismiss()
+                recreate()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
 
     /** 配色方案选择：5 种强调色，默认项目原本的天蓝 */
     private fun showAccentDialog() {

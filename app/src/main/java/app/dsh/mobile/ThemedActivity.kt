@@ -7,10 +7,10 @@ import android.os.Bundle
 import android.view.View
 
 /** 原生壳主题：深色（默认）/ 浅色 / 跟随系统。WebView 由 dsh 自己管理，不在这里处理。 */
-enum class ThemeMode(val key: String) {
-    DARK("dark"),
-    LIGHT("light"),
-    SYSTEM("system");
+enum class ThemeMode(val key: String, val labelRes: Int) {
+    DARK("dark", R.string.theme_dark),
+    LIGHT("light", R.string.theme_light),
+    SYSTEM("system", R.string.theme_system);
 
     companion object {
         fun fromKey(key: String?): ThemeMode =
