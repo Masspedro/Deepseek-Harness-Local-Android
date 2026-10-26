@@ -1,5 +1,36 @@
 # AI_CONTEXT
 
+## v1.4.26 待发（2026-10-26，issue #49：运行时换装事务化）
+- **问题**（PR #48 审查 P1-2）：换装在逐条 `engine/<x> → engine.old` 期间被强杀
+  （低内存 / OEM 清后台 / 用户强杀）没有任何持久化证据 —— `.pending-health` 在换装
+  **开始前**删除、**全部完成后**才写，下次启动 `recoverPendingHealth()` 直接 return，
+  `engine/` 停在新旧混合态。
+- **纠正 issue 的一个前提**：issue 称「混合态会被 `complete=false` 探针抓到并重装
+  自愈」，实测不成立。`isRootCompleteAt()` 只查锚点文件与 node 的 ELF 架构，
+  新 `bin/` 配旧 `lib/` 完全通得过 —— 后果不是重下 100MB，而是拿错配运行时启动
+  （`CANNOT LINK EXECUTABLE` 或随机崩溃），比体验问题严重一档。
+- **issue 未提的第二个后果**：解压阶段被杀的残留永不回收。`engine.staging`
+  （~580MB）与 `cacheDir/runtime.zip`（~124MB）只在 `install()` 内删除；下次启动
+  `engine/` 完整 → 走复用直接返回 → 这两个目录永久留在盘上。
+- **方案**：新增 `filesDir/.runtime-swap` 意图日志（`tmp → fsync → rename` 原子写），
+  在动 `engine/` **之前**落盘；两阶段 `swap → committed`。恢复**只看日志、不看完整性
+  探针**：`swap` 相位精确回滚（幂等，回滚本身被中断可重入），`committed` 相位前滚
+  （按日志补写版本戳，含 sha256，不白扔已换好的运行时）。回滚规则两条：
+  `planned - old` 删除；`old` 里「备份有才还原」（不做「备份缺失就删 root」的推断）。
+- **附带修复**：换名失败即抛，去掉 `copyRecursively` 回退（三目录同在 `filesDir`，
+  rename 本就原子，退回拷贝正是窗口被拉长的根源）；`EngineSupervisor.stop()` 改为
+  返回「是否真停干净」，About 页停不干净则中止换装（旧实现 `runCatching` 静默吞掉，
+  换完删 `engine.old` 时那个还在跑的进程必崩）；About 页 builtAt 防降级；下载源强制
+  https（用户自定义代理前缀除外）；自检新增 `install.residue`。
+- **文档**：`docs/RUNTIME_SWAP.md`（状态机 / 恢复决策表 / 断点复现步骤）。其中一条
+  务必记住：**SafeMode 也会调 `markHealthy()`，这是有意的** —— 引擎 HTTP 通即说明
+  运行时可用，插件故障归 ProfileGuardian 管，别当成 bug 改掉。
+- **验证**：`compileDebugKotlin`、`assembleDebug -Ppackage=noruntime` 通过，
+  `scripts/check-i18n.py` 全过。**mid-swap 强杀的设备实测尚未做**（当时无设备在线），
+  留了仅 debuggable 包生效的 `files/.debug-swap-abort` 断点，用法见文档第 7 节。
+- **未做**：`engine.old.prev` 双备份（连续换装会吞掉上一轮回滚目标，成本高于收益）；
+  P2 剩余两项（`dsh-tool` 本地回退源去重告警、PKCS12 报错文案需先定位抛点）。
+
 ## v1.4.25 后续（2026-10-26，CI 偶发失败已处置）
 - **现象**：推 AI_CONTEXT 那次 main 的 android-build 红了，唯一失败 job 是
   `build-apk (x86_64, full)`；同一份代码的 v1.4.25 tag 构建四 lane 全绿。
