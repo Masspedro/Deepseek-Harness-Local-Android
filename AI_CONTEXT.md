@@ -11,6 +11,35 @@
   * 提交前看 `git diff --numstat`：**删除行数应远小于新增**，若大量删除要停下来复核。
 - **不确定就先查再问**，不要凭印象重写已工作的代码。
 
+## v1.4.31 已发布（2026-10-28，PR #63 收编 + issue 清理）
+
+### 收编 PR #63（@XiaoPb，38 提交，本地合并）
+- **PetPackDownloadService**（前台服务 dataSync）+ **PetPackDownloadBus**：
+  资源包下载走后台服务，进度通知栏；设置页仅订阅，退出/被杀不断任务
+- **PetPackDownloader**：可取消；暂存 cacheDir → filesDir（防系统回收），
+  旧残件迁移续传；校验失败删残件；线路回调供 UI 标注
+- **删除确认页**：包名 + 安装时间（PetPackSummary.installedAt），四语文案
+- **气泡重绘**：对齐 dsh-pet web 端（平涂 + CSS border 三角尾巴 0.7472em×0.3736em）
+- **启动遮罩**：步骤面板高度收敛 + 文本未变不重排；debug 包 --el splash_min_ms
+- **探针同步**：`_test_pet_overlay` 尾巴断言 0.54f → 0.3736f（跟着 web 设计走）
+
+### issue 处理（8 个 open → 2 个）
+- **#47 关闭**：v1.4.25 已修（APK 型扩展 apkUrl/apkSha256/apkPackage 从未解析，
+  Offline ASR 一直走 deb 路径 → "List is empty"）；用户升级即可
+- **#25 关闭**：v1.4.29 的「配置文件」入口即此功能（设置 → 数据 → 配置文件）
+- **#60**：回复排查结论 —— Sol 模型 reasoning.effort="none" 导致 compaction 返回空，
+  非 App bug；给了自查三步
+- **#26**：回复初步分析（会话视图非虚拟化，DOM 累积上万节点 → 全量重排）+
+  要 dumpsys/帧率统计信息；保留 open（需专项做视图虚拟化）
+- **#59 / #41 / #2**：回复路线图（#59 先做 numpy/pillow 轮子可行性小步验证；
+  #41 优先于 #2）；保留 open
+- **#49 保留**：runtime swap 恢复窗口（PR #51 的两阶段提交方案未合并，后续再评估）
+
+### 发版
+- tag `v1.4.31` → CI run `40554517518` 全绿 → **Release 已上架（12 资产，latest）**
+- 全量验证：i18n 全过；14 探针全绿；noruntime + arm64-full 构建通过；
+  模拟器冒烟（pid 稳定 / 0 FATAL）
+
 ## v1.4.30：插件中心搜索卡崩修复 + 灵动岛重做（2026-10-27 晚）
 
 ### 1. 紧急：社区插件搜索导致应用卡死重启（#58 补充上报）
