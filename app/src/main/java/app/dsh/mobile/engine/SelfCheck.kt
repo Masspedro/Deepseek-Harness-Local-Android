@@ -343,7 +343,7 @@ object SelfCheck {
             return listOf(Item("profile", "Plugin profile", Item.Status.WARN, "not created yet"))
         }
         return runCatching {
-            val obj = org.json.JSONObject(pj.readText())
+            var obj = org.json.JSONObject(pj.readText())
             val bundles = obj.optJSONObject("dsh")?.optJSONObject("profile")
                 ?.optJSONArray("bundles") ?: org.json.JSONArray()
             val names = (0 until bundles.length()).mapNotNull {
@@ -370,8 +370,32 @@ object SelfCheck {
                     )
                 }
             )
-        }.getOrElse {
-            listOf(Item("profile", "Plugin profile", Item.Status.FAIL, "unparseable: ${it.message}"))
+        }.getOrElse { first ->
+            // v1.4.26（issue #57）：Root 模式残留 uid 0 属主的 profile 文件在
+            // 自检里表现为 EACCES，而 fixHomeOwnership 只在引擎启动流程调用——
+            // 用户在设置页跑自检时永远报 FAIL。遇到读取失败先尝试特权修复
+            // 再重读一次；仍失败才如实报错（此时消息已包含真实原因）。
+            val retried = runCatching {
+                if (first.message?.contains("EACCES") == true ||
+                    first.message?.contains("Permission denied") == true
+                ) {
+                    Privilege.fixHomeOwnership(ctx)
+                    val obj = org.json.JSONObject(pj.readText())
+                    val bundles = obj.optJSONObject("dsh")?.optJSONObject("profile")
+                        ?.optJSONArray("bundles") ?: org.json.JSONArray()
+                    val names = (0 until bundles.length()).mapNotNull {
+                        bundles.optString(it).takeIf(String::isNotBlank)
+                    }
+                    Item("profile", "Plugin profile", Item.Status.OK,
+                        "${names.size} bundle(s) — ownership repaired")
+                } else null
+            }.getOrNull()
+            listOf(
+                retried ?: Item(
+                    "profile", "Plugin profile", Item.Status.FAIL,
+                    "unparseable: ${first.message}",
+                )
+            )
         }
     }
 
