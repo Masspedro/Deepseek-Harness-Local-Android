@@ -11,6 +11,7 @@ import android.provider.Settings
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -20,6 +21,7 @@ import android.widget.Toast
 import app.dsh.mobile.engine.BootTrace
 import app.dsh.mobile.engine.ChatRecovery
 import app.dsh.mobile.engine.ExtensionManager
+import app.dsh.mobile.engine.PluginKillSwitch
 import app.dsh.mobile.engine.PrivMode
 import app.dsh.mobile.engine.Privilege
 import app.dsh.mobile.engine.RuntimeDownloadConfig
@@ -378,6 +380,14 @@ class SettingsActivity : ThemedActivity() {
             }, "chat-recover-scan").start()
         }
 
+        // —— 维护：插件应急总开关（v1.4.27）——
+        // 插件把 WebUI 弄坏但引擎还活着时，自动自救层全部不触发（它们只认崩溃与
+        // 探针 degraded）。这里是唯一的逃生门：停用全部第三方插件，只留引擎自带。
+        findViewById<LinearLayout>(R.id.rowPluginKill).setOnClickListener {
+            confirmKillSwitch()
+        }
+        refreshPluginKill()
+
         // —— 其他：全面体检与修复（v1.4.4，用户要的「强检模式」）——
         // 与插件无关：插件坏了、配置乱了也能跑；结果逐条列出，异常项带具体数值。
         val selfCheckSub = findViewById<TextView>(R.id.txtSelfCheckSub)
@@ -619,12 +629,21 @@ class SettingsActivity : ThemedActivity() {
     }
 
     /**
-     * 平板/横屏响应式布局（v1.4.18）：
-     * - 宽窗（>= 840dp）：两栏 —— 左「显示 + 权限中心」，右「扩展 + 其他」；
-     * - 窄窗：单列，顺序不变（显示 → 权限中心 → 扩展 → 其他）。
+     * 平板/横屏响应式布局（v1.4.18，v1.4.27 改为按高度均衡分列）：
+     * - 宽窗（>= 840dp）：两栏，**按分区行数把 8 个分区就近对半分**；
+     * - 窄窗：单列，顺序不变（显示 → 权限中心 → 语音 → 扩展 → 数据 → 网络 → 维护 → 关于）。
      *
-     * 只改容器方向/权重，不重建页面。限宽交给 [MaxWidthLinearLayout]，
-     * 避免平板横屏下单列内容被拉成超宽行。
+     * ## 为什么不再写死「左显示+权限 / 右其余」
+     * 旧实现把列归属硬编码在 XML 里（columnPrimary 放前两个分区，其余全塞
+     * columnSecondary），行数一多就歪：v1.4.24 扩到 8 个分区后是左 12 行 / 右 18 行，
+     * 右边要滚很久、左边一屏未完就空了。而且每加一行设置项都会继续加剧。
+     *
+     * 现在：把 XML 里的原始阅读顺序读出来（先 primary 再 secondary），按行数找
+     * 一个**连续切分点**让两列高度最接近（保持"从上往下读"的语义，不做瀑布流乱序），
+     * 再重新挂到两列上。以后加行/加分区自动重新均衡，不用再手工调 XML。
+     *
+     * 只改容器方向/权重与子视图归属，不重建页面。限宽交给
+     * [MaxWidthLinearLayout]，避免平板横屏下单列内容被拉成超宽行。
      */
     private fun applyResponsiveLayout() {
         val wide = resources.configuration.screenWidthDp >= WIDE_LAYOUT_MIN_WIDTH_DP
@@ -634,6 +653,7 @@ class SettingsActivity : ThemedActivity() {
         findViewById<MaxWidthLinearLayout>(R.id.settingsContentWidth).maxWidthDp =
             if (wide) WIDE_CONTENT_MAX_WIDTH_DP else NARROW_CONTENT_MAX_WIDTH_DP
 
+        val sections = sections()
         if (wide) {
             columns.orientation = LinearLayout.HORIZONTAL
             primary.layoutParams = LinearLayout.LayoutParams(
@@ -642,6 +662,7 @@ class SettingsActivity : ThemedActivity() {
             secondary.layoutParams = LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
             )
+            distributeSections(sections, primary, secondary)
         } else {
             columns.orientation = LinearLayout.VERTICAL
             primary.layoutParams = LinearLayout.LayoutParams(
@@ -652,7 +673,87 @@ class SettingsActivity : ThemedActivity() {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             )
+            // 单列时必须把分区全部收回 primary，否则右列内容会跑到屏幕外
+            detachSections(sections)
+            sections.forEach { addSection(primary, it) }
         }
+    }
+
+    /**
+     * 一个「分区单元」：标题 + 卡片 + 行数权重。
+     *
+     * 权重用**卡片内的行数**而不是实测像素：两列等宽、行高一致，行数是最稳的
+     * 代理；实测像素要求先布局，而本方法在 onCreate 阶段就会被调用。
+     */
+    private class Section(val header: TextView?, val card: LinearLayout, val weight: Int)
+
+    /** XML 原始阅读顺序（先 columnPrimary 再 columnSecondary），只在首次调用时收集 */
+    private var cachedSections: List<Section>? = null
+
+    private fun sections(): List<Section> = cachedSections ?: run {
+        val out = ArrayList<Section>()
+        out += collectSections(findViewById(R.id.columnPrimary))
+        out += collectSections(findViewById(R.id.columnSecondary))
+        out.also { cachedSections = it }
+    }
+
+    /** 形如「标题 TextView + 卡片 LinearLayout」交替出现；别的节点忽略 */
+    private fun collectSections(column: LinearLayout): List<Section> {
+        val out = ArrayList<Section>()
+        var header: TextView? = null
+        for (i in 0 until column.childCount) {
+            when (val child = column.getChildAt(i)) {
+                is TextView -> header = child
+                is LinearLayout -> {
+                    val rows = (0 until child.childCount).count {
+                        child.getChildAt(it) is LinearLayout
+                    }
+                    out += Section(header, child, rows.coerceAtLeast(1))
+                    header = null
+                }
+            }
+        }
+        return out
+    }
+
+    /**
+     * 连续切分：找一个 k，让前 k 个分区与其余分区的行数差最小。
+     * 保持阅读顺序（不做「往短的那列随手塞」的瀑布流），分列结果可预测。
+     */
+    private fun distributeSections(
+        sections: List<Section>,
+        primary: LinearLayout,
+        secondary: LinearLayout,
+    ) {
+        if (sections.isEmpty()) return
+        val total = sections.sumOf { it.weight }
+        var best = 1
+        var bestDiff = Int.MAX_VALUE
+        var acc = 0
+        for (k in 1 until sections.size) {
+            acc += sections[k - 1].weight
+            val diff = kotlin.math.abs(total - 2 * acc)
+            if (diff < bestDiff) {
+                bestDiff = diff
+                best = k
+            }
+        }
+        detachSections(sections)
+        sections.forEachIndexed { index, section ->
+            addSection(if (index < best) primary else secondary, section)
+        }
+    }
+
+    private fun detachSections(sections: List<Section>) {
+        sections.forEach { section ->
+            (section.header?.parent as? ViewGroup)?.removeView(section.header)
+            (section.card.parent as? ViewGroup)?.removeView(section.card)
+        }
+    }
+
+    private fun addSection(column: LinearLayout, section: Section) {
+        section.header?.let { column.addView(it) }
+        column.addView(section.card)
     }
 
     override fun onDestroy() {
@@ -684,6 +785,7 @@ class SettingsActivity : ThemedActivity() {
         refreshMicRow()
         refreshExt()
         refreshPetRow()
+        refreshPluginKill()
         // 缩放副标题文案无需变；图标着色按打开时状态由静态 XML 决定
     }
 
@@ -713,6 +815,94 @@ class SettingsActivity : ThemedActivity() {
                 else -> getColor(R.color.text_secondary)
             },
         )
+    }
+
+    /**
+     * 插件应急总开关的状态刷新（v1.4.27）。
+     *
+     * 标题随状态变：正常时是「停用全部第三方插件」，停用后变成「恢复第三方插件」。
+     * 状态本身由意图日志决定（[PluginKillSwitch.status]），不是引擎上报 ——
+     * 这样即使引擎正在重启、甚至起不来，这一行也永远显示真实状态。
+     */
+    private fun refreshPluginKill() {
+        val title = findViewById<TextView>(R.id.valPluginKill) ?: return
+        val sub = findViewById<TextView>(R.id.txtPluginKillSub) ?: return
+        val st = runCatching { PluginKillSwitch.status(this) }.getOrNull() ?: return
+        if (st.active) {
+            title.text = getString(R.string.setting_plugin_kill_restore)
+            // v1.4.28：有单独恢复的白名单时显示进度，引导去插件中心逐个启用
+            sub.text = if (st.allow.isNotEmpty()) {
+                getString(
+                    R.string.setting_plugin_kill_restore_sub_partial,
+                    st.allow.size, st.disabled.size,
+                )
+            } else {
+                getString(R.string.setting_plugin_kill_restore_sub, st.disabled.size)
+            }
+            sub.setTextColor(getColor(R.color.warning))
+        } else {
+            title.text = getString(R.string.setting_plugin_kill)
+            sub.text = getString(R.string.setting_plugin_kill_sub, st.thirdParty.size)
+            sub.setTextColor(getColor(R.color.text_secondary))
+        }
+    }
+
+    /** 确认框：把将被停用/恢复的包名列出来，别让用户盲点 */
+    private fun confirmKillSwitch() {
+        val st = runCatching { PluginKillSwitch.status(this) }.getOrNull() ?: return
+        val restore = st.active
+        val list = if (restore) st.disabled else st.thirdParty
+        if (list.isEmpty()) {
+            Toast.makeText(this, getString(R.string.plugin_kill_none), Toast.LENGTH_SHORT).show()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(
+                if (restore) R.string.plugin_kill_restore_title
+                else R.string.plugin_kill_disable_title,
+            )
+            .setMessage(
+                getString(
+                    if (restore) R.string.plugin_kill_restore_body
+                    else R.string.plugin_kill_disable_body,
+                    list.size,
+                    summarizePackages(list),
+                ),
+            )
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(android.R.string.ok) { _, _ -> applyKillSwitch(restore) }
+            .show()
+    }
+
+    /** 包名列表：超过 8 个只列前 8 个 + 「等 N 个」，避免对话框撑满屏幕 */
+    private fun summarizePackages(list: List<String>): String {
+        val head = list.take(8).joinToString("\n") { "· $it" }
+        return if (list.size <= 8) head
+        else head + "\n" + getString(R.string.plugin_kill_more, list.size - 8)
+    }
+
+    /**
+     * 落意图 + 重启引擎。
+     *
+     * ⚠️ 这里**只写意图日志**，不直接改 `profiles/web/package.json` —— 引擎运行中
+     * 会把自己内存里的 profile 状态写回去，覆盖我们的改动；真正的数组改写由
+     * 监督器在下次 spawn 前完成（[PluginKillSwitch.enforceBeforeBoot]）。
+     */
+    private fun applyKillSwitch(restore: Boolean) {
+        val outcome =
+            if (restore) PluginKillSwitch.requestEnable(this)
+            else PluginKillSwitch.requestDisable(this, "settings")
+        if (!outcome.ok) {
+            Toast.makeText(
+                this,
+                getString(R.string.plugin_kill_failed, outcome.message),
+                Toast.LENGTH_LONG,
+            ).show()
+            return
+        }
+        Toast.makeText(this, getString(R.string.plugin_kill_restarting), Toast.LENGTH_SHORT).show()
+        (application as DshApp).supervisor.restart()
+        refreshPluginKill()
     }
 
     /** 扩展中心入口：显示已激活扩展数（>0 变绿提示已并入引擎） */
