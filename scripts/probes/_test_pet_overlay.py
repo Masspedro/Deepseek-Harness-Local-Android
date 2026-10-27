@@ -186,7 +186,9 @@ check("renderer: crossfade no longer needs a full-size layer", "canvas.saveLayer
 bubble = read(os.path.join(PET, "PetBubbleDrawable.kt"))
 check("bubble drawable: single continuous outline", "buildOutline" in bubble and "out.close()" in bubble)
 check("bubble drawable: soft shadow needs software layer", "setShadowLayer" in bubble)
-check("bubble drawable: tail is proportional to the font", "tailH = (em * 0.54f)" in bubble)
+# v1.4.31：气泡对齐 dsh-pet 网页端（.dsh-pet-bubble）—— 尾巴是 CSS border 三角，
+# 宽 0.75em / 高 0.37em（精确值 0.7472 / 0.3736），随字号缩放的性质不变。
+check("bubble drawable: tail is proportional to the font", "tailH = (em * 0.3736f)" in bubble)
 
 # ---------------------------------------------------------------- physics/attribution
 physics = read(os.path.join(PET, "PetPhysics.kt"))
