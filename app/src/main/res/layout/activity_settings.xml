@@ -1315,7 +1315,7 @@
                         android:padding="8dp"
                         android:src="@drawable/ic_restore"
                         android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="#FF66BB6A" />
+                        android:tint="@color/success" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -1328,7 +1328,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/setting_import_data"
-                            android:textColor="#FFE8ECF2"
+                            android:textColor="@color/text_primary"
                             android:textSize="15sp" />
 
                         <TextView
@@ -1336,7 +1336,55 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/setting_import_data_sub"
-                            android:textColor="#FF8A94A3"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12sp"
+                            android:layout_marginTop="2dp" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_chevron" />
+                </LinearLayout>
+
+                <!-- v1.4.29（issue #25）：配置文件入口 —— 列出常用配置供直接编辑 -->
+                <LinearLayout
+                    android:id="@+id/rowConfigFiles"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="14dp"
+                    android:background="?android:attr/selectableItemBackground">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:padding="8dp"
+                        android:src="@drawable/ic_log"
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:tint="@color/text_secondary" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:layout_marginStart="14dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_config_files"
+                            android:textColor="@color/text_primary"
+                            android:textSize="15sp" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_config_files_sub"
+                            android:textColor="@color/text_secondary"
                             android:textSize="12sp"
                             android:layout_marginTop="2dp" />
                     </LinearLayout>

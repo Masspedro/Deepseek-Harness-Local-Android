@@ -320,6 +320,13 @@ class SettingsActivity : ThemedActivity() {
             }
         }
 
+        // —— 其他：配置文件（v1.4.29，issue #25）——
+        // 用户原话「无法打开配置文件」：FileEditorActivity 一直存在，但只有 AI 桥能拉起，
+        // 用户自己没有入口。这里列出常用配置，点哪个开哪个。
+        findViewById<LinearLayout>(R.id.rowConfigFiles).setOnClickListener {
+            showConfigFilePicker()
+        }
+
         // —— 其他：数据导入（v1.4.29，issue #31 第二步）——
         // 合并式恢复：只写目标不存在的文件，不覆盖现有数据。
         importSub = findViewById(R.id.txtImportSub)
@@ -554,6 +561,49 @@ class SettingsActivity : ThemedActivity() {
 
     /** 导出行的副标题（进度 / 结果都写在这里，与「对话恢复」行同一交互） */
     private var exportSub: TextView? = null
+    /**
+     * 常用配置文件选择器（v1.4.29，issue #25）。
+     *
+     * 只列「改坏了能恢复 / 有意义」的文件 —— 全部在应用私有目录内，
+     * FileEditorActivity 的路径检查天然放行：
+     *  · AGENTS.md        用户给 AI 的长期指令（自定义指令页也写这个）
+     *  · 工作区注册表      workspace.json（列表里看不到会话时排查）
+     *  · 插件 profile      profiles/web/package.json（加错插件起不来时手改）
+     */
+    private fun showConfigFilePicker() {
+        val home = app.dsh.mobile.engine.EngineConfig.dshHome(this)
+        val candidates: List<Triple<String, java.io.File, String>> = listOf(
+            Triple("AGENTS.md", java.io.File(home, "AGENTS.md"), "Instructions given to the AI"),
+            Triple("workspace.json", java.io.File(home, "storages/workspace.json"), "Workspace registry"),
+            Triple("profile package.json", java.io.File(home, "profiles/web/package.json"), "Installed plugin list"),
+        ).filter { it.second.isFile }
+
+        if (candidates.isEmpty()) {
+            android.widget.Toast.makeText(this, R.string.config_files_none, android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        val labels = candidates.map { it.first + "\n" + it.third }.toTypedArray()
+        android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.setting_config_files)
+            .setItems(labels) { d, which ->
+                d.dismiss()
+                val f = candidates[which].second
+                runCatching {
+                    startActivity(
+                        android.content.Intent(this, FileEditorActivity::class.java)
+                            .putExtra(FileEditorActivity.EXTRA_PATH, f.absolutePath),
+                    )
+                }.onFailure {
+                    android.widget.Toast.makeText(
+                        this, getString(R.string.config_files_failed, it.message ?: "?"),
+                        android.widget.Toast.LENGTH_LONG,
+                    ).show()
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
     /** 导入行的副标题（v1.4.29） */
     private var importSub: TextView? = null
     @Volatile private var importing = false
