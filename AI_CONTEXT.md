@@ -1,5 +1,19 @@
 # AI_CONTEXT
 
+## v1.4.26 已发布（2026-10-27，tag run 40428431602，CI 7 分钟全绿）
+- **12 资产**（8 APK full/noruntime × 双架构 × debug/release + 2 runtime zip + 签名索引）。
+- **内容**：#57 自检 EACCES 自愈（SelfCheck 遇 EACCES 先 fixHomeOwnership 再重试）+
+  PR #55 插件应急总开关（XiaoPb：意图日志 + spawn 前收敛 + 白名单逐个恢复 +
+  冷启动 .force 标志，555 行）+ 承接 v1.4.25 全部（#47 真因 / PTY 终端 / 换装事务化）。
+- **PR #55 合并验证**：merge-tree 显示与 main 仅 AI_CONTEXT 冲突（双方文档追加，
+  双侧保留解决）；编译 / i18n / 三个探针全过；git push 成功（本次未走 API 通道，
+  PR#55 head 原始 SHA 在 merge commit 父链 → GitHub 自动标 merged）。
+- **模拟器状况**：dsh36 实例反复崩溃/offline（ emulator-5554 包列表清空、
+  emulator-5582 崩溃消失），装机统一测试未能完整跑完——本轮发版依据是
+  CI 三门禁 + 探针 + 各 PR 作者的实测（#55 有 MuMu Android 12 x86_64 实测 18 条）。
+  **下次性能测试时补一轮装机冒烟**。
+- **push 状态判定已改 exit code**（v1.4.25 事故教训落实）。
+
 <<<<<<< HEAD
 =======
 ## v1.4.27 待发（2026-10-27，插件应急总开关 + 设置页横屏分列均衡）
