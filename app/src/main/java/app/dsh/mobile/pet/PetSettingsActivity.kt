@@ -247,24 +247,6 @@ class PetSettingsActivity : ThemedActivity() {
 
         if (plugin.bridgeInstalled) {
             card().also { c ->
-                // 桥端随机词句开关（v0.3.5 插件的 selfPublishRandomLines）：
-                // 开 = 桥自发布 dsh-pet 同款随机台词；关 = 措辞交给台词库（ws_* 六档）。
-                // 写 profile patch（cordis.patch.yml），配合下面的「重启引擎」生效。
-                c.addView(
-                    switchRowFor(
-                        title = getString(R.string.pet_bridge_self_publish),
-                        subtitle = getString(R.string.pet_bridge_self_publish_sub),
-                        checked = PetBridgeConfig.selfPublishEnabled(this),
-                    ) { checked ->
-                        val ok = PetBridgeConfig.setSelfPublish(this, checked)
-                        if (ok) {
-                            toast(getString(R.string.pet_bridge_config_saved))
-                        } else {
-                            toast(getString(R.string.pet_bridge_config_failed))
-                        }
-                    },
-                )
-                c.addView(divider())
                 c.addView(
                     row(
                         getString(R.string.pet_plugin_restart),

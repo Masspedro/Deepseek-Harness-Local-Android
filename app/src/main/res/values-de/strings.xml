@@ -847,10 +847,6 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="pet_lines_cat_ws_waiting">Arbeitsstatus · Wartet auf dich</string>
     <string name="pet_lines_cat_ws_success">Arbeitsstatus · Erfolgreich</string>
     <string name="pet_lines_cat_ws_error">Arbeitsstatus · Fehler</string>
-    <string name="pet_bridge_self_publish">Zufallssätze der Brücke</string>
-    <string name="pet_bridge_self_publish_sub">Ein: die Brücke sendet dsh-pet-Zufallssätze; aus: das Sprüchebuch entscheidet. Wird nach Engine-Neustart wirksam</string>
-    <string name="pet_bridge_config_saved">Gespeichert. Tippe auf „Engine neu starten“, um es anzuwenden</string>
-    <string name="pet_bridge_config_failed">Konfiguration konnte nicht geschrieben werden; bitte die Patch-Datei in den dsh-Einstellungen bearbeiten</string>
     <string name="about_runtime">Runtime</string>
     <string name="runtime_setup_title">Runtime erforderlich</string>
     <string name="runtime_setup_message">Dieses Paket enthält keine Node.js-Laufzeit. Jetzt %1$s herunterladen (WLAN empfohlen)? Spätere App-Updates laden sie nicht erneut.</string>

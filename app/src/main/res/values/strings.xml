@@ -841,10 +841,6 @@ You can still continue without updating, but the interface will not display.</st
     <string name="pet_lines_cat_ws_waiting">Work status · Waiting for you</string>
     <string name="pet_lines_cat_ws_success">Work status · Success</string>
     <string name="pet_lines_cat_ws_error">Work status · Error</string>
-    <string name="pet_bridge_self_publish">Bridge random lines</string>
-    <string name="pet_bridge_self_publish_sub">Bridge publishes dsh-pet-style random lines; off = the line library decides. Takes effect after engine restart</string>
-    <string name="pet_bridge_config_saved">Saved. Tap \"Restart engine\" to apply</string>
-    <string name="pet_bridge_config_failed">Failed to write the bridge config; edit the profile patch file instead</string>
     <string name="about_runtime">Runtime</string>
     <string name="runtime_setup_title">Runtime required</string>
     <string name="runtime_setup_message">This package does not include the Node.js runtime. Download %1$s now (Wi-Fi recommended)? Future app updates will not download it again.</string>
