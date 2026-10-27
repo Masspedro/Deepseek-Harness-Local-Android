@@ -79,7 +79,47 @@ v1.4.28 只修了「反复切分类」这条路径（本地过滤 + 分类缓存
 - issue #58 → **已关闭**（附根因分析与实测数据）
 - main 已推送：`c69b8e8`（本地领先 50 个提交全部落地）
 
-### 4. 产物
+### 4. 发布路径与产物（重要：本地不能签索引）
+
+**关键约束**：`runtime-index.json` 的 detached EC 签名私钥**只在 CI secrets**
+（`RELEASE_KEYSTORE_BASE64`），本地没有。而 `RuntimeIndexClient.verifySignature()`
+验签失败会**直接拒绝，不降级**（`SecurityException`）。所以：
+
+- ✅ 正确路径：**推 tag `v1.4.30`** → CI `publish-release` job 构建 + 签索引 + 发 Release
+- ❌ 不要在本地签索引后手工上传（签不出来，App 会拒）
+
+**已执行**：tag `v1.4.30` 已推到远端（指向 `28e66bb`，即远端 main 的实际 SHA），
+CI run `40543382625` 已触发 in_progress。
+
+**本地同时构建了 8 个 APK 做前置验证**（这些只用于验证，不直接上传）：
+
+| 文件 | 大小 |
+| --- | --- |
+| `dsh-android-v1.4.30-arm64-v8a-release.apk` | 149.5 MB |
+| `dsh-android-v1.4.30-arm64-v8a-release-noruntime.apk` | 22.5 MB |
+| `dsh-android-v1.4.30-arm64-v8a-debug.apk` | 150.8 MB |
+| `dsh-android-v1.4.30-arm64-v8a-debug-noruntime.apk` | 23.7 MB |
+| `dsh-android-v1.4.30-x86_64-release.apk` | 149.1 MB |
+| `dsh-android-v1.4.30-x86_64-release-noruntime.apk` | 23.0 MB |
+| `dsh-android-v1.4.30-x86_64-debug.apk` | 150.4 MB |
+| `dsh-android-v1.4.30-x86_64-debug-noruntime.apk` | 24.3 MB |
+
+签名 `CN=DSH Mobile, OU=DSH, O=Soodok`；ABI 各自单一。
+
+### 4.1 构建踩坑：APK 多出 37MB 的「空洞」
+
+第一次构建出 197MB（发布版应约 150MB）。查出来是 **`assets/tools/lan-web-proxy.mjs`
+之前有 37.1MB 的 header 间隙** —— 增量构建残留的旧条目被删后，zipalign 没有压掉
+那段空洞。修法：`rm -rf app/build/outputs/apk app/build/intermediates/apk
+app/build/generated/runtimeAssets` 后重建 → **158MB**（正常）。
+
+**另外**：`_runtime_bak/rt-arm64-zodded.zip` 是**去重前**的中间产物（175MB）。
+正式流程在 `build-runtime.sh` 里它之后还有两步：
+`dedupe-runtime.py`（SONAME 别名去重，省 ~37MB）+ 写 `BUILD.json`。
+本地手工补这两步后 → 130.3MB，与发布版的 127.6MB 一致。
+`dist/v1.4.30/runtime-arm64-v8a.zip` 就是这么来的。
+
+### 4.2 产物
 
 - `dist/v1.4.30/DSH-Mobile-1.4.30-arm64-v8a-signed.apk`（197MB）
 - SHA256 `72a1e4af68c7da2c8cc9c3d8677930b5c5d54b4bf976cc6cc35e11b0060ebe5b`
