@@ -3,7 +3,6 @@ package app.dsh.mobile.pet
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import app.dsh.mobile.LocaleHelper
 import app.dsh.mobile.R
 
 /**
@@ -11,6 +10,12 @@ import app.dsh.mobile.R
  *
  * 动画播放本身不再由这里负责 —— 交给 [PetAnimChain]，避免两套定时器互相打架：
  * 这里只声明"现在是什么工作状态"，链决定播哪一段、播完后怎么轮换/恢复。
+ *
+ * 气泡文案（protocol 3+）：
+ *  - `text` 有值（dsh-pet 任务详情，或桥端自发布的随机台词）→ 直接显示；
+ *  - `text` 为空（桥端 selfPublishRandomLines=false 或老版本插件）→ 回落到
+ *    台词库（[PetLines]）的 ws_* 六档——用户在桌宠设置 → 台词库里改措辞即可，
+ *    内置台词与 dsh-pet web workStatusTexts 同源。
  *
  * 时序规则（实测 dsh-pet-bridge 的行为）：
  *  - user/pre 连续到达时，以最新为准；
@@ -27,9 +32,6 @@ class PetActionController(
 ) {
     private val appCtx = context.applicationContext
     private val handler = Handler(Looper.getMainLooper())
-
-    private var localeCode = LocaleHelper.get(appCtx)
-    private var localeCtx: Context = LocaleHelper.wrap(appCtx)
 
     private var turnActive = false
     private var current: PetView.Face = PetView.Face.IDLE
@@ -57,16 +59,16 @@ class PetActionController(
             "post" -> ack(event)
             "stop" -> {
                 turnActive = false
-                scheduleStop()
+                scheduleStop(event)
             }
             "error" -> {
                 turnActive = false
-                error()
+                error(event)
             }
             "waiting" -> {
                 face(PetView.Face.EXPLORING)
                 work(PetAnimChain.WorkSlot.WAITING)
-                bubble(event.text ?: pick(TIER_WAITING))
+                bubble(event.text ?: pick(LINE_WAITING))
             }
         }
     }
@@ -99,39 +101,31 @@ class PetActionController(
         bubble(null)
     }
 
-    /** protocol 3：桥侧带 text（dsh-pet 任务详情）时直显，与浏览器宠物同款内容。 */
+    /** protocol 3：桥侧带 text（任务详情/桥端随机台词）时直显，否则用台词库 ws_thinking。 */
     private fun thinking(event: PetEvent? = null) {
         face(PetView.Face.THINKING)
         work(PetAnimChain.WorkSlot.THINKING)
-        bubble(event?.text ?: pick(TIER_THINKING))
+        bubble(event?.text ?: pick(LINE_THINKING))
     }
 
     private fun working(event: PetEvent) {
-        // protocol 3：text 优先（dsh-pet 聚合的 todo 任务详情）
-        if (!event.text.isNullOrBlank()) {
-            face(PetView.Face.WORKING)
-            work(PetAnimChain.WorkSlot.WORKING)
-            bubble(event.text)
-            return
-        }
-        // 回落文案对齐 dsh-pet web 的 workStatusTexts（六档随机句，不带工具细节）
         face(PetView.Face.WORKING)
         work(PetAnimChain.WorkSlot.WORKING)
-        bubble(pick(TIER_WORKING))
+        bubble(event.text ?: pick(LINE_WORKING))
     }
 
     /** 「一步完成」：短暂切到整理的档位，之后自行回到工作 / 空闲。 */
     private fun ack(event: PetEvent? = null) {
         face(PetView.Face.ACK)
         work(PetAnimChain.WorkSlot.RESULT)
-        bubble(event?.text ?: pick(TIER_RESULT))
+        bubble(event?.text ?: pick(LINE_RESULT))
         cancelPendingAck()
         val r = Runnable {
             pendingAck = null
             if (turnActive) {
                 face(PetView.Face.WORKING)
                 work(PetAnimChain.WorkSlot.WORKING)
-                bubble(pick(TIER_WORKING))
+                bubble(pick(LINE_WORKING))
             } else {
                 idle()
             }
@@ -140,21 +134,21 @@ class PetActionController(
         handler.postDelayed(r, ACK_HOLD_MS)
     }
 
-    private fun scheduleStop() {
+    private fun scheduleStop(event: PetEvent?) {
         cancelPendingStop()
         val r = Runnable {
             pendingStop = null
-            celebrate()
+            celebrate(event)
         }
         pendingStop = r
         handler.postDelayed(r, STOP_GRACE_MS)
     }
 
-    private fun celebrate() {
+    private fun celebrate(event: PetEvent? = null) {
         face(PetView.Face.CELEBRATE)
         // 终态：链会播一遍庆祝动画后自动收回随机链
         work(PetAnimChain.WorkSlot.SUCCESS)
-        bubble(pick(TIER_SUCCESS))
+        bubble(event?.text ?: pick(LINE_SUCCESS))
         cancelPendingStop()
         val r = Runnable {
             pendingStop = null
@@ -164,10 +158,10 @@ class PetActionController(
         handler.postDelayed(r, CELEBRATE_HOLD_MS)
     }
 
-    private fun error() {
+    private fun error(event: PetEvent? = null) {
         face(PetView.Face.ERROR)
         work(PetAnimChain.WorkSlot.ERROR)
-        bubble(pick(TIER_ERROR))
+        bubble(event?.text ?: pick(LINE_ERROR))
         cancelPendingStop()
         val r = Runnable {
             pendingStop = null
@@ -192,19 +186,12 @@ class PetActionController(
         onBubble(text)
     }
 
-    private fun str(id: Int): String = refreshLocale().getString(id)
-
-    private fun refreshLocale(): Context {
-        val code = LocaleHelper.get(appCtx)
-        if (code != localeCode) {
-            localeCode = code
-            localeCtx = LocaleHelper.wrap(appCtx)
-        }
-        return localeCtx
+    /** 从台词库 [PetLines] 的工作状态档位随机抽一句；空池（理论不出现）返回 null。 */
+    private fun pick(categoryId: String): String? {
+        val pool = PetLines.lines(appCtx, categoryId)
+        if (pool.isEmpty()) return null
+        return pool[Random.nextInt(pool.size)]
     }
-
-    /** 从 dsh-pet 六档文案池随机抽一句（与 dsh-pet web 的 workStatusTexts 同源同行为）。 */
-    private fun pick(pool: List<String>): String = pool[Random.nextInt(pool.size)]
 
     private fun cancelPendingStop() {
         pendingStop?.let { handler.removeCallbacks(it) }
@@ -222,15 +209,16 @@ class PetActionController(
         private const val CELEBRATE_HOLD_MS = 2_000L
         private const val ERROR_HOLD_MS = 2_500L
 
-        // dsh-pet web assets/config.jsonc 的 workStatusTexts 原文（六档，随机抽句）。
-        // 档位与 /bubble kind 对应：user→0 thinking、pre→1 working、post→2 result、
-        // waiting→3、stop→4 success、error→5。dsh-pet 未提供其他语言，此处直用原文。
-        private val TIER_THINKING = listOf("正在认真想下一步呢", "让我整理一下思路~", "正在梳理接下来要做什么")
-        private val TIER_WORKING = listOf("正在处理任务呢", "这一步正在进行中哦", "正在继续干活呢，别打扰我~")
-        private val TIER_RESULT = listOf("这一步处理好啦，接着看下一步", "搞定一步，继续看看哦~")
-        private val TIER_WAITING = listOf("需要你确认一下呢", "这里要等你看一下哦", "轮到你来决定啦，等你~")
-        private val TIER_SUCCESS = listOf("这一轮搞定啦，真棒！", "任务完成咯，可以摸鱼啦~")
-        private val TIER_ERROR = listOf("这一步好像没跑通呢", "刚才的操作遇到点问题哦", "这里卡了一下，再等等你呢")
+        // 台词库里的工作状态档位分类 id（PetLines.CATEGORIES 的 ws_*），
+        // 与 /bubble kind 一一对应：user→thinking、pre→working、post→result、
+        // waiting→waiting、stop→success、error→error。内置台词 =
+        // dsh-pet web assets/config.jsonc workStatusTexts 原文；用户改台词库即换措辞。
+        private const val LINE_THINKING = "ws_thinking"
+        private const val LINE_WORKING = "ws_working"
+        private const val LINE_RESULT = "ws_result"
+        private const val LINE_WAITING = "ws_waiting"
+        private const val LINE_SUCCESS = "ws_success"
+        private const val LINE_ERROR = "ws_error"
 
         private val Random = java.util.Random()
     }
