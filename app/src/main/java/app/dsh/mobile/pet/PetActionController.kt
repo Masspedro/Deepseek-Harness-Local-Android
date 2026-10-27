@@ -66,7 +66,7 @@ class PetActionController(
             "waiting" -> {
                 face(PetView.Face.EXPLORING)
                 work(PetAnimChain.WorkSlot.WAITING)
-                bubble(event.text ?: str(R.string.pet_bubble_waiting))
+                bubble(event.text ?: pick(TIER_WAITING))
             }
         }
     }
@@ -103,7 +103,7 @@ class PetActionController(
     private fun thinking(event: PetEvent? = null) {
         face(PetView.Face.THINKING)
         work(PetAnimChain.WorkSlot.THINKING)
-        bubble(event?.text ?: str(R.string.pet_bubble_thinking))
+        bubble(event?.text ?: pick(TIER_THINKING))
     }
 
     private fun working(event: PetEvent) {
@@ -114,35 +114,24 @@ class PetActionController(
             bubble(event.text)
             return
         }
-        val tool = event.toolName.orEmpty()
-        if (isExplore(tool)) {
-            face(PetView.Face.EXPLORING)
-            work(PetAnimChain.WorkSlot.WAITING)
-            bubble(toolBubble(tool, event.toolInputValue, R.string.pet_bubble_searching))
-        } else {
-            face(PetView.Face.WORKING)
-            work(PetAnimChain.WorkSlot.WORKING)
-            val res = when {
-                isEdit(tool) -> R.string.pet_bubble_editing
-                isCommand(tool) -> R.string.pet_bubble_running
-                else -> R.string.pet_bubble_working
-            }
-            bubble(toolBubble(tool, event.toolInputValue, res))
-        }
+        // 回落文案对齐 dsh-pet web 的 workStatusTexts（六档随机句，不带工具细节）
+        face(PetView.Face.WORKING)
+        work(PetAnimChain.WorkSlot.WORKING)
+        bubble(pick(TIER_WORKING))
     }
 
     /** 「一步完成」：短暂切到整理的档位，之后自行回到工作 / 空闲。 */
     private fun ack(event: PetEvent? = null) {
         face(PetView.Face.ACK)
         work(PetAnimChain.WorkSlot.RESULT)
-        bubble(event?.text ?: str(R.string.pet_bubble_step_done))
+        bubble(event?.text ?: pick(TIER_RESULT))
         cancelPendingAck()
         val r = Runnable {
             pendingAck = null
             if (turnActive) {
                 face(PetView.Face.WORKING)
                 work(PetAnimChain.WorkSlot.WORKING)
-                bubble(str(R.string.pet_bubble_working))
+                bubble(pick(TIER_WORKING))
             } else {
                 idle()
             }
@@ -165,7 +154,7 @@ class PetActionController(
         face(PetView.Face.CELEBRATE)
         // 终态：链会播一遍庆祝动画后自动收回随机链
         work(PetAnimChain.WorkSlot.SUCCESS)
-        bubble(str(R.string.pet_bubble_done))
+        bubble(pick(TIER_SUCCESS))
         cancelPendingStop()
         val r = Runnable {
             pendingStop = null
@@ -178,7 +167,7 @@ class PetActionController(
     private fun error() {
         face(PetView.Face.ERROR)
         work(PetAnimChain.WorkSlot.ERROR)
-        bubble(str(R.string.pet_bubble_error))
+        bubble(pick(TIER_ERROR))
         cancelPendingStop()
         val r = Runnable {
             pendingStop = null
@@ -205,21 +194,6 @@ class PetActionController(
 
     private fun str(id: Int): String = refreshLocale().getString(id)
 
-    private fun str(id: Int, arg: String): String = refreshLocale().getString(id, arg)
-
-    private fun toolBubble(tool: String, value: String?, resId: Int): String {
-        if (value.isNullOrBlank()) return str(R.string.pet_bubble_working)
-        val prefix = when {
-            tool.startsWith("read") || tool.startsWith("list") || tool.startsWith("glob") ->
-                R.string.pet_bubble_reading
-            tool.startsWith("grep") || tool.startsWith("search") -> R.string.pet_bubble_searching
-            isEdit(tool) -> R.string.pet_bubble_editing
-            isCommand(tool) -> R.string.pet_bubble_running
-            else -> resId
-        }
-        return str(prefix, value)
-    }
-
     private fun refreshLocale(): Context {
         val code = LocaleHelper.get(appCtx)
         if (code != localeCode) {
@@ -229,16 +203,8 @@ class PetActionController(
         return localeCtx
     }
 
-    private fun isExplore(tool: String): Boolean =
-        tool.startsWith("read") || tool.startsWith("grep") || tool.startsWith("search") ||
-            tool.startsWith("glob") || tool.startsWith("list")
-
-    private fun isEdit(tool: String): Boolean =
-        tool.startsWith("write") || tool.startsWith("edit") || tool.startsWith("insert") ||
-            tool.startsWith("apply_patch")
-
-    private fun isCommand(tool: String): Boolean =
-        tool.startsWith("bash") || tool.startsWith("shell") || tool.startsWith("exec")
+    /** 从 dsh-pet 六档文案池随机抽一句（与 dsh-pet web 的 workStatusTexts 同源同行为）。 */
+    private fun pick(pool: List<String>): String = pool[Random.nextInt(pool.size)]
 
     private fun cancelPendingStop() {
         pendingStop?.let { handler.removeCallbacks(it) }
@@ -255,5 +221,17 @@ class PetActionController(
         private const val STOP_GRACE_MS = 1_500L
         private const val CELEBRATE_HOLD_MS = 2_000L
         private const val ERROR_HOLD_MS = 2_500L
+
+        // dsh-pet web assets/config.jsonc 的 workStatusTexts 原文（六档，随机抽句）。
+        // 档位与 /bubble kind 对应：user→0 thinking、pre→1 working、post→2 result、
+        // waiting→3、stop→4 success、error→5。dsh-pet 未提供其他语言，此处直用原文。
+        private val TIER_THINKING = listOf("正在认真想下一步呢", "让我整理一下思路~", "正在梳理接下来要做什么")
+        private val TIER_WORKING = listOf("正在处理任务呢", "这一步正在进行中哦", "正在继续干活呢，别打扰我~")
+        private val TIER_RESULT = listOf("这一步处理好啦，接着看下一步", "搞定一步，继续看看哦~")
+        private val TIER_WAITING = listOf("需要你确认一下呢", "这里要等你看一下哦", "轮到你来决定啦，等你~")
+        private val TIER_SUCCESS = listOf("这一轮搞定啦，真棒！", "任务完成咯，可以摸鱼啦~")
+        private val TIER_ERROR = listOf("这一步好像没跑通呢", "刚才的操作遇到点问题哦", "这里卡了一下，再等等你呢")
+
+        private val Random = java.util.Random()
     }
 }
