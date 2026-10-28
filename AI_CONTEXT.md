@@ -11,6 +11,58 @@
   * 提交前看 `git diff --numstat`：**删除行数应远小于新增**，若大量删除要停下来复核。
 - **不确定就先查再问**，不要凭印象重写已工作的代码。
 
+## v1.4.32 已发布（2026-10-28，PR #64 + git 流程规范化）
+
+### 1. PR #64 收编（@XiaoPb，5 提交）
+- 气泡回落文案对齐 dsh-pet web `workStatusTexts`（六档随机抽句，`text` 透传）
+- 工作状态台词进台词库（`PetLines.ws_*` 六档，编辑器/导入导出覆盖）
+- 移除 App 端「桥端随机词句」开关（改由 dsh-pet-bridge v0.3.6 自绘分区承担）
+- CI 预装 `cmake;3.22.1` + 修 `sdkmanager` 全路径（runner PATH 问题）
+- 探针同步：`step_done` → `"post" -> ack`（守卫意图不变）
+
+### 2. **重要：推送通道不再重写 SHA**（本次核心改动）
+
+**问题**：旧 `push-via-api.py` 逐 blob 上传 + `base_tree` 重建树 + 只传 author
+（漏 committer），每个提交在远端都被重新创建、SHA 全变。后果（XiaoPb 在 PR #64
+里直接指出）：
+- 下游 fork 每次同步都发现历史被改写，只能 force-push；
+- 本地与远端永久分叉（`git status` 恒 ahead/behind）；
+- GitHub 上的提交号与本地对不上，追溯困难。
+
+**修复**：按 git 对象身份原样上传
+- 复用提交的**原始 tree SHA**（内容相同则 SHA 相同，不重建）
+- 带完整 `author` **和 `committer`**（旧实现漏 committer 是 SHA 变化的第二因）
+- 父提交沿用原始 SHA，必要时先 fetch 补齐祖先对象
+- **实测 6/6 + 1/1 提交 SHA 全部保持**，推完 `rev-list --left-right --count` = `0 0`
+
+**同时加的安全机制**：
+- fetch 直连失败自动切 gh-proxy 前缀代理（实测 gh-proxy 支持 fetch 的 GET，
+  **不支持** receive-pack 的 POST —— 所以 push 仍只能走 API 通道）
+- **分叉检测**：本地与远端分叉时拒绝推送并给出处理办法，**绝不 force 覆盖**
+  （2026-10-27 覆盖事故的根因就是没有这道闸）
+- `--rebase-remote` 可选自动 rebase
+
+### 3. 流程规范落地
+- **`docs/git-workflow.md`**：合并原则（`--no-ff` 保留线路、不 squash）、
+  推送方式优先级、fetch/push 通道差异表、日常操作步骤、验证清单、
+  探针维护约定（断言表达意图而非实现细节）、历史事故与教训
+- **`scripts/git-hygiene.py`**：推送前自检 —— 工作区脏 / 远端有新提交 /
+  rebase-merge 中间态 / 对象库 CRLF 污染 / probes 误加。
+  `--ci` 模式供流水线用（不联网）
+- **`i18n-check.yml` 增加两步**：「回归探针」（跳过已知的 corepack_hardlink）
+  与「git 卫生」。都不需要 Android SDK，几秒跑完，PR 阶段就能拦住回归
+
+### 4. issue 状态（本轮后）
+已关闭：#58 #62(PR) #61(PR) #63(PR) #64(PR) #47 #25
+保留 open：#60（Sol effort=none，非 App bug，已给自查步骤）#26（长会话 DOM
+累积，需专项做视图虚拟化）#59（Python 轮子，已回路线图）#41（Profile 管理）
+#2（语音唤醒，排在 #41 后）#49（swap 恢复窗口）
+
+### 5. 验证与发版
+- i18n 全过；14 探针全绿；`assembleDebug(x86_64)` 通过；模拟器冒烟 pid 稳定、0 FATAL
+- tag `v1.4.32` → CI run `40621327073` 全绿 → **Release 12 资产，latest**
+- 推送后 `git-hygiene` 确认本地与远端一致（`6873b070`）
+
 ## v1.4.31 已发布（2026-10-28，PR #63 收编 + issue 清理）
 
 ### 收编 PR #63（@XiaoPb，38 提交，本地合并）
