@@ -21,6 +21,9 @@ class DshApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // 让插件兼容性检查能读到内置引擎版本（issue #66：判定插件要求的引擎
+        // 版本是否高于我们内置的版本）。用 applicationContext，不泄漏 Activity。
+        app.dsh.mobile.engine.NativePluginCheck.attachContext(this)
         // ⚠️ v1.2.110：全局崩溃捕获 —— 用户反馈「进程异常退出」（1.2.97 升级后 ×2 人，
         // Android 16 未复现，疑为 Android 17 兼容问题）。没有现场日志无法定位，
         // 现在任何 Java 崩溃都会落盘 `filesDir/crash-last.txt`（时间、线程、堆栈），
