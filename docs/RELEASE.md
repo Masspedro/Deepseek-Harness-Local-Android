@@ -7,6 +7,12 @@
 > 当前仓库**尚未用这把新 key 发布过任何版本**——如果还能找到旧的 `dsh-release.keystore`
 >（证书 `CN=DSH Mobile`，SHA-256 `d28ca4f5…92c8`），应优先改用旧 key，避免老用户被迫卸载。
 
+> **运行时来源（v1.4.27 起）**：`runtime.zip` 不再每次 CI 现场编译，改由
+> `runtime-build` 工作流构建并发布到滚动 prerelease tag `runtime`；`android-build`
+> 只负责取用（prerelease → releases/latest → 本地兜底）与统一校验。发布产物形态
+> 不变（full APK 仍内嵌 runtime.zip，正式 Release 仍附 2 个 runtime zip + index + sig）。
+> 详见 [CI_RUNTIME_PIPELINE.md](CI_RUNTIME_PIPELINE.md)。
+
 ---
 
 ## 1. 本机签名材料（绝不入库）

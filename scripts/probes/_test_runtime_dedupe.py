@@ -14,11 +14,20 @@
 选 zodded 而非 trimmed：trimmed 删掉 .d.ts 与 src，仓库里 773 处 exports
 指向它们（运行时虽不加载，但用户插件做 tsc 校验会缺文件）。
 
-## 本测试保证
+## 本测试保证（职责切分）
+- 第 1/4 节与 3b 的 gradle 静态项：只依赖源码，**无论有无产物都跑**（适合在
+  i18n-check 这种轻量 check 里跑，几秒、无 SDK）。
+- 第 2 节（去重内容）、3b 的 PTC 内容项、第 3 节（顶层 zod 版本）：必须打开真实
+  runtime.zip，属于**产物质量**。CI 干净检出下三处源都不存在（assets 不入库、
+  _rel / _runtime_bak 是发布 / 本地产物），把这种必然出现的正常态判成失败是错的。
+  因此无产物时整体 SKIP（不计入失败），改由 runtime-build 的发布门禁承担
+  （见 runtime-build.yml 的「校验运行时命令闭包 + 补丁门禁 + 去重内容」）。
+  本机有 _runtime_bak/ 或 _rel/ 时仍全量校验，不丢本地守卫。
+
 1. 构建脚本会自动选去重包，且缓存判断基于**内容**而非时间戳
 2. 去重失败的兜底路径存在
-3. 当前 assets 里的 runtime 确实没有嵌套 zod
-4. 顶层 zod 版本与去重前解析到的版本一致（不能顺手升级依赖）
+3. 有产物时，runtime 确实没有嵌套 zod、锚点齐全、corepack 完好（无产物则 SKIP）
+4. 有产物时，顶层 zod 版本与去重前解析到的版本一致（无产物则 SKIP）
 """
 from __future__ import annotations
 
@@ -34,6 +43,7 @@ DEDUPE = os.path.join(ROOT, "scripts/dedupe-zod.py")
 
 ok = 0
 fail = 0
+skip = 0
 
 
 def check(name: str, cond: bool, detail: str = "") -> None:
@@ -44,6 +54,12 @@ def check(name: str, cond: bool, detail: str = "") -> None:
     else:
         fail += 1
         print(f"  \u2717 {name}" + (f"  -- {detail}" if detail else ""))
+
+
+def skip_check(name: str, reason: str = "") -> None:
+    global skip
+    skip += 1
+    print(f"  [skip] {name}" + (f"  -- {reason}" if reason else ""))
 
 
 print("=== 1. 构建脚本接入去重 ===")
@@ -65,11 +81,16 @@ check("去重/PTC 缺失时有硬门禁（不发坏包）",
 check("用 ZipFile 检查（Kotlin DSL 需 import）", "import java.util.zip.ZipFile" in g)
 check("去重脚本存在", os.path.isfile(DEDUPE))
 
-print("\n=== 2. 当前 assets runtime 已去重 ===")
-# v1.4.27：PR #48 后 assets/runtime.zip 不再入库——运行时由
-# build.gradle.kts 的 runtimeAssetsDir（build/generated/runtimeAssets）注入，
-# 源 zip 放在 _runtime_bak/。这里改为校验「要么 assets 有，要么 _runtime_bak 有」。
-# v1.4.33：优先用「发布用」的去重包（_rel/*-dedup.zip，已含全部补丁）。
+print("\n=== 2. runtime 去重内容（仅本环境有产物时校验）===")
+# 本节要「打开真实 runtime.zip 看内容」，属于产物质量，本不该在 i18n-check
+# 这种轻量 check 里跑——CI 干净检出下三处源都不存在（assets 不入库、_rel /
+# _runtime_bak 是发布 / 本地产物），把这种必然出现的正常态判成失败是错的。
+# 因此无产物时整体 SKIP（不计入失败），产物质量改由 runtime-build 的发布门禁
+# 承担（见 runtime-build.yml 的「校验运行时命令闭包 + 补丁门禁 + 去重内容」）。
+# 本机有 _runtime_bak/ 或 _rel/ 时仍全量校验，不丢本地守卫。
+# v1.4.27：PR #48 后 assets/runtime.zip 不再入库——运行时由 build.gradle.kts
+# 的 runtimeAssetsDir（build/generated/runtimeAssets）注入，源 zip 放在
+# _runtime_bak/。v1.4.33：优先用发布用去重包（_rel/*-dedup.zip，已含全部补丁）。
 # _runtime_bak/rt-*-zodded.zip 是去重**前**的中间产物，PTC 补丁可能没打全，
 # 拿它做断言会得出「补丁缺失」的假阳性（issue #65 排查时踩过）。
 _candidates = [
@@ -78,45 +99,59 @@ _candidates = [
     os.path.join(ROOT, "_runtime_bak", "rt-x86_64-zodded.zip"),
 ]
 _alt = next((p for p in _candidates if os.path.isfile(p)), None)
-check("runtime 源存在（_rel / assets / _runtime_bak）", _alt is not None,
-      "三处都没有：先跑 scripts/build-runtime.sh 或 prepareRuntimeAssets")
-if _alt and not os.path.isfile(RUNTIME):
-    RUNTIME = _alt
-if os.path.isfile(RUNTIME):
-    z = zipfile.ZipFile(RUNTIME)
-    names = [n for n in z.namelist() if not n.endswith("/")]
-    nested = [n for n in names
-              if "/node_modules/zod/" in n and not n.startswith("lib/node_modules/zod/")]
-    print(f"  文件数={len(names)}  嵌套 zod 条目={len(nested)}")
-    check("无嵌套 zod 副本", not nested,
-          f"发现 {len(nested)} 个，启动会慢 2-3 倍")
-    check("文件数已降到去重后量级", len(names) < 20000,
-          f"当前 {len(names)}，去重前约 45000")
-    check("顶层 zod 仍在", "lib/node_modules/zod/package.json" in names)
-    # 关键完整性锚点
-    anchors = [
-        "lib/node_modules/@deepseek-ai/dsh/lib/bin.js",
-        "lib/node_modules/@deepseek-ai/cordis/lib/index.js",
-        "lib/node_modules/@deepseek-ai/dsh-base/cordis.patch.yml",
-        "lib/node_modules/@deepseek-ai/dsh-web-app/cordis.patch.yml",
-        "lib/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js",
-        "lib/libreadline.so.8",
-        "lib/libz.so.1",
-        "bin/node",
-        "bin/bash",
-        "bin/rg",
-    ]
-    missing = [a for a in anchors if a not in names]
-    check("10 个完整性锚点全在", not missing, str(missing))
-    # corepack 不能被去重/裁剪破坏
-    try:
-        cp = z.read("lib/node_modules/corepack/dist/corepack.js")
-        check("corepack.js 仍是 JS 入口", b"/system/bin/sh" not in cp[:40])
-    except KeyError:
-        check("corepack.js 存在", False, "MISSING")
+if _alt is None:
+    skip_check("runtime 源存在（_rel / assets / _runtime_bak）",
+               "本环境无产物，去重内容由 runtime-build 发布门禁校验")
+else:
+    if not os.path.isfile(RUNTIME):
+        RUNTIME = _alt
+    if os.path.isfile(RUNTIME):
+        z = zipfile.ZipFile(RUNTIME)
+        names = [n for n in z.namelist() if not n.endswith("/")]
+        nested = [n for n in names
+                  if "/node_modules/zod/" in n and not n.startswith("lib/node_modules/zod/")]
+        print(f"  文件数={len(names)}  嵌套 zod 条目={len(nested)}")
+        check("无嵌套 zod 副本", not nested,
+              f"发现 {len(nested)} 个，启动会慢 2-3 倍")
+        check("文件数已降到去重后量级", len(names) < 20000,
+              f"当前 {len(names)}，去重前约 45000")
+        check("顶层 zod 仍在", "lib/node_modules/zod/package.json" in names)
+        # 关键完整性锚点
+        anchors = [
+            "lib/node_modules/@deepseek-ai/dsh/lib/bin.js",
+            "lib/node_modules/@deepseek-ai/cordis/lib/index.js",
+            "lib/node_modules/@deepseek-ai/dsh-base/cordis.patch.yml",
+            "lib/node_modules/@deepseek-ai/dsh-web-app/cordis.patch.yml",
+            "lib/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js",
+            "lib/libreadline.so.8",
+            "lib/libz.so.1",
+            "bin/node",
+            "bin/bash",
+            "bin/rg",
+        ]
+        missing = [a for a in anchors if a not in names]
+        check("10 个完整性锚点全在", not missing, str(missing))
+        # corepack 不能被去重/裁剪破坏
+        try:
+            cp = z.read("lib/node_modules/corepack/dist/corepack.js")
+            check("corepack.js 仍是 JS 入口", b"/system/bin/sh" not in cp[:40])
+        except KeyError:
+            check("corepack.js 存在", False, "MISSING")
 
 print("=== 3b. PTC 补丁必须在（v1.4.13 血教训）===")
 g2 = open(GRADLE, encoding="utf-8").read()
+# —— 以下 gradle 静态项只依赖源码、不依赖产物，无论有无 runtime 都跑 ——
+# 它们检查「构建脚本有没有把校验接线接好」，属于契约，不打开包也能验。
+check("构建期校验 bootstrap 兜底",
+      "bootstrap path fallback" in g2,
+      "产物有补丁但构建校验没覆盖 → 换运行时静默丢失")
+check("构建期强制校验 PTC 补丁",
+      "ptc" in g2.lower() and ("lacks the PTC patch" in g2 or "GradleException" in g2),
+      "补丁只存在产物里、没进构建流程 → 换包就静默丢失")
+check("缺失时中止构建（不发坏包）",
+      "throw GradleException" in g2 or "中止构建" in g2 or "lacks the PTC" in g2)
+# 以下 PTC 内容项必须打开真实 runtime.zip，无产物时 SKIP（由 runtime-build
+# 发布门禁覆盖，见 runtime-build.yml 的「校验 PTC 补丁与 WebView polyfill」）。
 if os.path.isfile(RUNTIME):
     PTC = "lib/node_modules/@deepseek-ai/dsh-ptc-runtime-node/lib/index.js"
     try:
@@ -138,24 +173,17 @@ if os.path.isfile(RUNTIME):
           "缺它 → run_code 报 bootstrap unavailable 而文件明明存在")
     check("兜底只对绝对路径生效", "isAbsolute?.(path)" in ptc,
           "相对路径兜底会让 worker 按自己的 cwd 解析，执行错文件")
-    check("构建期校验 bootstrap 兜底",
-          "bootstrap path fallback" in g2,
-          "产物有补丁但构建校验没覆盖 → 换运行时静默丢失")
-    # v1.4.27：PR #48 后门禁移入 build-runtime.sh（+ build.gradle.kts 校验产物），
-    # 语义不变：缺补丁绝不发坏包。
-    check("构建期强制校验 PTC 补丁",
-          "ptc" in g2.lower() and ("lacks the PTC patch" in g2 or "GradleException" in g2),
-          "补丁只存在产物里、没进构建流程 → 换包就静默丢失")
-    check("缺失时中止构建（不发坏包）",
-          "throw GradleException" in g2 or "中止构建" in g2 or "lacks the PTC" in g2)
     # v1.4.14（issue #35 + 全量审计）：扩展工具链变量也必须放行，
     # 否则 PTC 里 git/python/perl/ruby/imagemagick/go/rust 全部静默失效。
     for v in ["OPENSSL_CONF", "SSL_CERT_FILE", "PYTHONHOME", "GIT_EXEC_PATH",
               "PERL5LIB", "RUBYLIB", "MAGICK_CONFIGURE_PATH", "GOTMPDIR",
               "CPATH", "LIBRARY_PATH", "RUSTFLAGS", "CURL_CA_BUNDLE"]:
         check(f"白名单含 {v}", f'"{v}"' in ptc, "缺它 → 对应扩展在 PTC 里不可用")
+else:
+    skip_check("PTC 补丁内容（运行时文件 / 白名单 / bootstrap 兜底 / 扩展工具链）",
+               "本环境无产物，由 runtime-build 发布门禁校验")
 
-print("\n=== 3. 顶层 zod 版本未被擅自升级 ===")
+print("\n=== 3. 顶层 zod 版本未被擅自升级（有产物时校验）===")
 if os.path.isfile(RUNTIME):
     try:
         import json
@@ -165,6 +193,8 @@ if os.path.isfile(RUNTIME):
         check("顶层 zod 为 4.4.3（与去重前各包解析到的一致）", v == "4.4.3", v)
     except Exception as e:
         check("可读取顶层 zod 版本", False, str(e))
+else:
+    skip_check("顶层 zod 版本校验", "本环境无产物，由 runtime-build 发布门禁校验")
 
 print("\n=== 4. 去重脚本幂等性声明 ===")
 d = open(DEDUPE, encoding="utf-8").read()
@@ -172,5 +202,5 @@ check("脚本声明幂等", "幂等" in d)
 check("脚本不升级依赖版本", "做性能优化不该顺手改依赖版本" in d)
 
 print("\n" + "-" * 44)
-print(f"通过 {ok} / 失败 {fail}")
+print(f"通过 {ok} / 失败 {fail} / 跳过 {skip}")
 sys.exit(1 if fail else 0)

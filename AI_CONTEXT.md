@@ -1,5 +1,16 @@
 # AI_CONTEXT
 
+## DSH Mobile 宣传视频已验收与文档补齐（2026-10-28）
+
+- 当前进度：`docs/promo/video/remotion/` 工程版本 1.1.0；七镜头、双 composition、44 秒、60fps。用户明确验收视频质量，要求只补文档与 Studio 验证，**不得修改动画源码或重新渲染**。
+- 已验证成片：先前两个 `npm run render:*` 均退出 0；ffprobe 为竖屏 1080×1920 / 横屏 1920×1080、60/1 fps、2640 帧、44.000000 秒。文件分别为 7,941,044 / 7,787,099 bytes。本轮 SHA-256 与补文档前一致，完整值见 `docs/promo/video/CHECKLIST.md`。
+- 已补齐：`docs/promo/video/CHECKLIST.md` 逐项列出所有上屏数字的 MATERIALS 章节与行号，三条红线自查、素材限制、取舍、Studio 证据和成片哈希；`PLAN.md` 从旧 42 秒草案校准为已交付的 44 秒分镜。
+- Studio 验证：工程目录执行 `npx remotion studio src/Root.tsx --no-open --port 3020`，输出 Server ready、Built in 2120ms；再执行 `npx remotion studio --no-open --port 3020` 返回 Already running。首页及两个 composition 路由均 HTTP 200。通过工程已有 Remotion 浏览器驱动和本机 Chrome 实际打开两个预览，元数据正确、播放/暂停生效、时间轴推进到约 84 帧、3.4 s 计数落点出现、字体 loaded、页面错误 0；未执行新的 render。
+- 关键口径：3.4 s 是一加 15T 用户实测，录屏单独标模拟器与 7×；三体积口径保留较小竞品，简单包 +128 MB，解压按大到小排第 4；bionic 非唯一；覆盖 10 / 抽查 3–5 为下界；目录 3540 不代表全部插件兼容。
+- 当前阻塞：本轮文档和 Studio 验证无阻塞。既有成片保持原样，无新发布/上传操作。
+- 下一步首要任务：本轮清单已清零，保留已验收产物；后续如需发布，由用户明确指定平台与范围后处理，不因文档补齐重做视频。
+- 关键路径：`docs/promo/video/CHECKLIST.md`、`docs/promo/video/PLAN.md`、`docs/promo/video/remotion/src/data.ts`、`docs/promo/video/remotion/out/dsh-mobile-portrait.mp4`、`docs/promo/video/remotion/out/dsh-mobile-landscape.mp4`。Studio 地址 `http://localhost:3020/DSHMobilePortrait`、`http://localhost:3020/DSHMobileLandscape`。
+
 ## ⚠️ 工作纪律提醒（宝宝 2026-10-27 明确要求，优先级最高）
 - **动手前先核实「是否已经做过」**：很多 issue 只是没关闭，功能其实早就实现了。
   本次 14 个 open issue 里 **7 个是历史已修复**（#19 #29 #21 #40 #33 #12 #10），
