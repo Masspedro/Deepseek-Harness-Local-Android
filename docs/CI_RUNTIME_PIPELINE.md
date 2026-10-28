@@ -176,7 +176,39 @@ sha256 只能证明「zip 与 meta 同源」，不能证明「这个包是按当
 - **去重内容**（无嵌套 zod、10 锚点、corepack 完好、文件数 < 20000）——
   `runtime-build` 发布前由「校验运行时去重内容」步骤验证（承接探针第 2 节）
 
-### 5.2 回归探针的职责切分（_test_runtime_dedupe.py）
+### 5.2 取货机制修复的构建耗时收益（实测）
+
+v1.4.36 之后把 `fetch-runtime` 的取货从 `gh release download`（CDN）改成 `gh api`
+（见 5 节与 commit `1ed1553`），根治了「prerelease 识别失败 → 掉 tier3 本地编译」的
+降级。下面是同一仓库、同一 `android-build.yml` 在修复**前 / 后**两次 push 的真实耗时
+（关键路径上的 `fetch-runtime` 是瓶颈）：
+
+| 阶段 | 修复前（tier3 本地编译兜底） | 修复后（tier1 预构建下载） | 节省 |
+|---|---|---|---|
+| fetch-runtime (aarch64) | **2m 56s** | **26s** | **2m 30s** |
+| fetch-runtime (x86_64)  | 2m 12s | 24s | 1m 48s |
+| build-apk（4 个 matrix，并行） | 5m54s / 5m34s / 5m40s / 4m24s | 5m50s / 5m04s / 7m53s / 5m16s | 基本不变（run-to-run 抖动） |
+| publish-edge | 13s | 25s | — |
+| Build monitor | 3s | 5s | — |
+
+> 两个 `fetch-runtime` 是 matrix 并行，不互相叠加；瓶颈取较慢的 aarch64 那条。
+> 所以**单次 CI 墙钟时间约减少 2m30s**，与「每次 CI 构建省 ~2 分钟」一致——前提是没有
+> 改 runtime 脚本（改了会触发 `runtime-build` 重建，那次另算，见第 4 节）。
+
+**修复前**（fetch-runtime 走 tier3，每条 ABI 现场编译 ~2-3 分钟）：
+
+![优化前：fetch-runtime 走 tier3 本地编译，aarch64 2m56s / x86_64 2m12s](../img/fetch-runtime-before-tier3-localbuild.png)
+
+**修复后**（fetch-runtime 命中 tier1 prerelease 下载，每条 ABI 约 25s）：
+
+![优化后：fetch-runtime 命中 tier1 预构建下载，aarch64 26s / x86_64 24s](../img/fetch-runtime-after-tier1-download.png)
+
+之所以能省下这两分钟：tier3 本地编译要 `apt` 收集 Termux 闭包 + 打补丁 + 打包
+127MB×2，而 tier1 只是下载已经发布好的 `runtime-<abi>.zip`（~133MB）。下载走
+`api.github.com` 比现场编译快一个量级，且 sha256 + 脚本指纹都在发布侧验过，
+不会牺牲「同一 commit 两次构建一致」这条不变式。
+
+### 5.3 回归探针的职责切分（_test_runtime_dedupe.py）
 
 `_test_runtime_dedupe.py` 原本把「源码契约」和「产物质量」揉在一个文件里。
 i18n-check 是一个**轻量、无 Android SDK、几秒跑完**的门禁，其设计前提就是
