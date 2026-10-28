@@ -11,6 +11,68 @@
   * 提交前看 `git diff --numstat`：**删除行数应远小于新增**，若大量删除要停下来复核。
 - **不确定就先查再问**，不要凭印象重写已工作的代码。
 
+## v1.4.33 / v1.4.34 已发布（2026-10-28，两个 PTC/root 修复）
+
+### v1.4.33：PTC bootstrap 路径映射（用户报错，无 issue 号）
+
+**报错**：`code run failed (worker-exit): PTC runtime bootstrap is unavailable in
+the subprocess execution world: <engine>/lib/node_modules/@deepseek-ai/
+dsh-ptc-runtime-node/lib/process.js` —— 而文件**确实存在**。
+
+**根因**（用户自己也独立确诊了，结论一致）：`scriptBootstrapArgs()` 里
+
+```js
+const mapped = (path) => {
+    const result = fs.processPathFromHostPath(path);
+    if (result === void 0) throw new Error(`... unavailable ...`);
+    return result;
+};
+```
+
+`fs` 是 `ctx.fs`。`FileSystem` 基类的 `processPathFromHostPath()` 是**空实现**
+（无条件 undefined），只有 `dsh-fs-local` 覆盖成
+`isAbsolute(hostPath) ? resolve(hostPath) : undefined`。挂载到 `ctx.fs` 的
+provider 若没走到那个覆盖版本，映射表里没有 engine 目录这一条 → 返回 undefined
+→ 每次 run_code 都抛。文件、权限、SELinux、node 本体、库路径全部无罪。
+
+**修法**（`patch-ptc-runtime-android.py` 第三处补丁）：映射返回 undefined **且**
+路径是绝对路径 → 原样透传；相对路径仍抛错（否则 worker 按自己 cwd 解析会执行错文件）。
+Android 上引擎/fs provider/worker 同一挂载命名空间，绝对路径就是进程路径。
+
+**关键配套（踩过坑）**：打完补丁必须重算 `BUILD.json`。`RuntimeInstaller` 用
+`BUILD.json.version` 判是否重解压，版本号派生自内容 sha —— 不重算的话新补丁
+**永远进不到设备上**，表现为「明明修好了、装完还是老报错」。脚本现已自动 restamp。
+
+**三处门禁同步**：`build-runtime.sh`（CI 运行时流水线）、`app/build.gradle.kts`
+（APK 打包前）、`_test_runtime_dedupe.py`（+3 断言，并改为优先读 `_rel/*-dedup.zip`
+发布用包，避免读到去重前中间产物得出假阳性）。
+
+**端到端验证**：设备重装后运行时版本更新为 `2026.10.28-eb83a614`，补丁命中，
+`process.js` 存在且路径解析正常。
+
+### v1.4.34：root 模式 pnpm 锁属主（issue #65）
+
+**现象**：`DSH_ANDROID_PRIV_MODE=root` 时插件安装/卸载全失败，**每次重启引擎复发**：
+`ERR_PNPM_STORE_DIR_OPEN_OPERATION_LOCK: lock directory must be a real directory
+owned by the current user: .../.cache/pnpm-store-operation-locks-0`
+
+**根因**：pnpm 锁目录按 uid 分后缀（`pnpm-*-locks-<uid>`），root 引擎用 `-0`。
+`Privilege.fixHomeOwnership()` 每次启动对整棵 `dsh-home` 递归
+`chown -R <appUid>:<appUid>`，把 root 那套也改了 → root 的 pnpm 拒绝使用。
+用户实测「手动改回属主能撑到下次启动」正是这个原因。
+
+**修法**：递归 chown 之后，把 `.cache` 下 pnpm 锁/交换目录按**目录名数字后缀**
+还原属主（`-0` → `0:0`，`-10324` → `10324:10324`），非数字后缀跳过。
+原有自愈保留（engine 补 `u+rwX`、`restorecon`）。
+
+**护栏**：`_test_root_pnpm_locks.py`（10 项），其中专门锁**顺序**：必须
+「先整树 chown 再还原」（反了会被覆盖，等于没修）。
+
+### 发版
+- v1.4.33：tag → CI `40626947939` 全绿 → 发布运行时下载验证含补丁
+- v1.4.34：tag → CI `40628898147` 全绿 → 12 资产，latest
+- 探针 15 项全绿；i18n 全过
+
 ## v1.4.32 已发布（2026-10-28，PR #64 + git 流程规范化）
 
 ### 1. PR #64 收编（@XiaoPb，5 提交）
