@@ -98,22 +98,76 @@
 > （都是官方 dsh 引擎 + 自己的运行时）。所以对比**不要放在功能清单上**，
 > 那会显得刻意。真正站得住的差异只有两项：**冷启动速度** 与 **架构路线**。
 
-### A. 路线差异（客观可从 APK 结构验证）
+### A. 安装包体积 vs 首次总下载量（**两个口径必须分开画**）
 
-| 产品 | 载体 | APK 体积 | 路线 | 额外层 |
+> ⚠️ **这是本片最容易翻车的地方，务必看清。**
+>
+> 我们的「简单包」只有 24 MB，但**首次启动还要再下载 128 MB 运行时**，
+> 所以**首次总下载量约 152 MB，与完整包（149 MB）几乎一样**。
+> 把 24 MB 拿去和别人比是不公平的 —— 那只是「安装那一刻的下载量」，
+> 不是用户真正付出的流量。**两个口径必须分两组柱子画。**
+
+#### 口径一：安装包体积（用户点下载时的大小）
+
+| 产品 | APK | 需二次下载 | 首次总下载 |
+|---|---|---|---|
+| dphmoblie 0.3.5（proot + Ubuntu） | **392 MB** | 否（内嵌） | 392 MB |
+| DSHA 0.2.1-rc.2（proot） | **279 MB** | 否（内嵌） | 279 MB |
+| woaiys3 1.20.0（bionic） | 155 MB | 否（内嵌） | 155 MB |
+| **DSH Mobile 完整包** | **149 MB** | **否** | **149 MB** |
+| guzhou079 1.42.13（bionic） | 118 MB | 否（内嵌） | 118 MB |
+| DSHBox 1.5.0（Termux 快照） | 112 MB | 否（内嵌） | 112 MB |
+| dsh-phone-root 0.2.11 | 41 MB | **是（需另装 Termux App）** | 41 MB + Termux |
+| **DSH Mobile 简单包** | **24 MB** | **是（首启下载 128 MB）** | **≈152 MB** |
+
+#### 口径二：首次可用总下载量（用户真正付出的流量）
+
+按上表最后一列排：
+
+- dphmoblie **392 MB**
+- DSHA **279 MB**
+- **DSH Mobile（任一包）≈150 MB**
+- woaiys3 155 MB
+- guzhou079 118 MB
+- DSHBox 112 MB
+- dsh-phone-root 41 MB + Termux App（体积视 Termux 版本）
+
+**诚实结论**：
+- 我们**不是下载量最小的**（DSHBox 112 MB、guzhou079 118 MB 都更小）
+- 我们与 woaiys3 基本持平（149 vs 155）
+- 我们的优势是**与 proot 类方案相比体积小一半以上**（149 vs 279/392），
+  且**不需要第二次下载**（简单包除外）
+
+#### 口径三：解压后占用（安装完成后磁盘占用）
+
+| 产品 | 解压后 | 备注 |
+|---|---|---|
+| **DSH Mobile** | **404 MB** | 运行时（14572 文件）|
+| guzhou079 | 370 MB | payload 解压 |
+| DSHA | 440 MB | runtime 解压 |
+| woaiys3 | 462 MB | payload 解压 |
+| dphmoblie | **1297 MB** | **含完整 Ubuntu 发行版（glibc）** |
+| DSHBox | 未知 | zstd 压缩，未解压验证 |
+
+> dphmoblie 的 1.3 GB 是「完整发行版」的直接代价 —— 这是三个口径里差距最大的一项，
+> 也是「只装 dsh 真正需要的东西」这个设计选择最直观的变现。
+
+### A2. 路线差异（可从 APK 结构验证，与体积独立）
+
+| 产品 | 载体 | 路线 | 额外层 | 含 glibc |
 |---|---|---|---|---|
-| DSH Mobile（本作） | 自建 bionic 运行时 | 149 MB | **bionic 直跑** | **无** |
-| guzhou079 v1.42.13 | `payload.zip` | 118 MB | bionic 直跑 | 无 |
-| woaiys3 v1.20.0 | `payload.zip` | 155 MB | bionic 直跑 | 无 |
-| DSHA v0.2.1-rc.2 | `dsh-runtime.bin` | 279 MB | proot + rootfs | proot 用户态翻译 + glibc |
-| DSHBox v1.5.0 | `dsh/*.tar.zst` | 112 MB | Termux 快照 | 解压 rootfs + 路径重定位 |
-| dphmoblie v0.3.5 | `runtime/rootfs.bundle` | **392 MB** | proot + Ubuntu | proot + glibc + 完整发行版 |
-| dsh-phone-root v0.2.11 | `termux.apk` | 41 MB | 引导装 Termux | 需二次安装 App |
+| **DSH Mobile** | 自建 bionic 运行时 | **bionic 直跑** | **无** | 否 |
+| guzhou079 | payload.zip | bionic 直跑 | 无 | 否 |
+| woaiys3 | payload.zip | bionic 直跑 | 无 | 否 |
+| DSHA | dsh-runtime.bin (gz+tar) | proot + rootfs | proot 用户态翻译 | 否 |
+| dphmoblie | rootfs.bundle (gz) | proot + Ubuntu | proot + glibc + 发行版 | **是** |
+| DSHBox | tar.zst | Termux 快照 | 解压 + 路径重定位 | 未知 |
+| dsh-phone-root | termux.apk | 引导装 Termux | 需二次安装 App | 未知 |
 
 **可上屏的结论**：
-- 同类 bionic 路线（我们 / guzhou079 / woaiys3）**体积相当**（118–155 MB），不构成优势，别比
-- 与 proot/快照路线相比：**少一层用户态翻译**，这是启动快的结构性原因
-- dphmoblie 392 MB vs 我们 149 MB —— 这是「完整发行版 vs 只装需要的」的直接体现
+- 同类 bionic 路线有三家（我们 / guzhou079 / woaiys3），**功能能力基本相同**，别比功能
+- 与 proot/发行版路线相比：**少一层用户态翻译、少一半以上体积**
+- dphmoblie 1297 MB vs 我们 404 MB —— 「完整发行版 vs 只装需要的」
 
 ### B. 冷启动（本作实测，竞品暂无同条件数据）
 
