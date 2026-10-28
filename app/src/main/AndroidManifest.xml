@@ -85,6 +85,13 @@
             </intent-filter>
         </activity>
 
+        <!-- Explicit PackageInstaller callback: forward user confirmation and terminal results. -->
+        <activity
+            android:name=".ExtensionApkInstallActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <activity
             android:name=".OnboardingActivity"
             android:exported="true"
