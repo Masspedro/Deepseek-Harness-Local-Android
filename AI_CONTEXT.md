@@ -11,6 +11,63 @@
   * 提交前看 `git diff --numstat`：**删除行数应远小于新增**，若大量删除要停下来复核。
 - **不确定就先查再问**，不要凭印象重写已工作的代码。
 
+## v1.4.35 / v1.4.36 已发布（2026-10-28 晚）
+
+### v1.4.35：pnpm 锁树整棵跳过 chown（#67，v1.4.34 修复不完整）
+
+**我 v1.4.34 漏了什么**：那版做法是「递归 chown 全树，再把锁**目录本身**改回原属主」，
+但 `chown "$n:$n" "$d"` **没有 `-R`** —— 目录改回去了，目录里的锁文件仍是 app uid。
+pnpm 于是换了一句错误继续拒绝：从「lock directory must be a real directory owned by
+the current user」变成「lock must be a **regular file** owned by the current user」。
+用户 luoyi0914 用 `ls -ldn`（看目录）vs `ls -ln`（看文件）的对比指出了这点。
+
+**这次的修法**：不再「改了再还原」，而是**根本不碰**。这些锁目录是 pnpm 按运行身份
+自己管理的运行时状态，不属于 App 数据：
+
+```sh
+find <home> <engine>   -path '<home>/.cache/pnpm-store-operation-locks-*' -o   -path '<home>/.cache/pnpm-dir-locks-*' -o   -path '<home>/.cache/pnpm-modules-swaps-*' -prune -o   -exec chown <uid>:<uid> {} +
+```
+
+三个落地细节（都踩过）：
+- **不用分组括号** —— toybox find 的括号转义与 GNU 不一致
+- **`-path` 参数整体走 `shellQuote`** —— 否则通配符在引号外被 shell 提前展开
+- **`-exec ... {} +`** —— dsh-home 几万文件，逐文件 fork 太慢
+
+**本地实测**：造假目录树跑生成的 find 命令，锁目录两棵整棵未出现，
+`.cache` / `sessions/` / `engine/bin/node` 全部命中。
+
+**探针教训**：`_test_root_pnpm_locks.py` 增加一条「旧方案不得存在」
+（`chown "$n:$n"` 不能出现）——「只改目录不改文件」这个坑不留断言很容易踩回去。
+
+### v1.4.36：区分「插件不兼容」与「内置引擎过旧」（#66）
+
+**问题**：npm 上 `@deepseek-ai/dsh` 有两条线 —— `latest` = 0.2.1-rc.2（我们内置）、
+`next` = 0.2.1-rc.4（插件作者照它写 `engines.dsh`）。声明 `>=0.2.1-rc.3` 的插件
+装不上，UI 只说「不兼容」，用户以为是插件坏了。
+
+**改动**：
+- `NativePluginCheck` 读 `engines.dsh` 取版本下限，与内置版本比较
+- 要求更高 → 新状态 `Result.EngineTooOld(required, bundled)`，
+  **单独成态不进 Risk**（Risk 语义是「插件有问题」，这个是「我们引擎旧了」）
+- **semver 按预发布规则比**：`0.2.1-rc.2 < 0.2.1-rc.4 < 0.2.1`；
+  预发布段按点切分、数字段按数值比（字典序会把 `rc.10` 判成小于 `rc.9`）
+- 读不到内置版本时**不判定**（宁可漏报，误报会把能用的标成不可用）
+- UI 用 warning 色（不是 danger），安装前弹窗写明「要求 X / 内置 Y / 插件本身没问题」
+- `DshApp.onCreate` 注入 applicationContext（`NativePluginCheck` 是纯静态 object）
+
+**探针**：`_test_plugin_engine_compat.py`（18 项），含 8 个 semver 用例 +
+6 个范围解析用例，专门覆盖 `rc.10 vs rc.9` 字典序陷阱与 `*`/`latest` 必须返回 None。
+
+**根因未解**：这只是让用户知道真实原因。真正的解法是把内置引擎升到 rc.4 线 ——
+14 个补丁锚点要重新验证，是独立一轮工作。已在 #66 里给出分阶段计划
+（先出补丁适配评估报告附在 issue 里，再决定是否进小版本）。
+
+### issue 状态（本轮后：open 7 个）
+- 关闭：#65（root pnpm 锁）、#66（回复计划，保留 open 跟踪）、#67（v1.4.35 修完）
+- 保留 open：#66（等引擎升级）、#60（Sol effort=none，非 App bug）、#26（长会话
+  DOM 累积，需专项做视图虚拟化）、#59（Python 轮子，已回路线图）、#41（Profile）、
+  #2（语音唤醒）、#49（swap 恢复窗口）
+
 ## v1.4.33 / v1.4.34 已发布（2026-10-28，两个 PTC/root 修复）
 
 ### v1.4.33：PTC bootstrap 路径映射（用户报错，无 issue 号）
