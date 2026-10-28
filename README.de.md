@@ -82,6 +82,44 @@ Architektur: proot + glibc würde dort nicht einmal das rootfs unterbringen.
 
 ## ✨ Was es auf einem Smartphone kann
 
+**Ein echtes PTY, in nativem C geschrieben**
+Web-Terminals wirken einfach, sind hier aber die härteste Schicht. Upstream
+`dsh-subprocess-local` scheitert zweimal an Android: Der Process-Inspector akzeptiert
+nur `linux` / `darwin` / `win32` und wirft `terminal inspection is unsupported on
+platform android` (Termux-node meldet `process.platform === "android"`, nicht
+`linux`), und `node-pty` hat keine Android-Builds, weshalb der Collector einen Stub
+einsetzt, der beim ersten Aufruf wirft. Wir patchen den Inspector so, dass `android`
+als linux gilt, und schrieben **581 Zeilen C** (`dsh_pty.c` + `dsh_pty_exec.c`,
+`posix_spawn` + `openpty`); node-pty ist ein Shim auf diesen nativen Helfer. Ergebnis:
+ein **echtes bash-Terminal** — `top`, `vim` und andere tty-Programme laufen.
+
+**14 Android-Anpassungspatches — eine Desktop-Engine aufs Telefon biegen**
+Der unsichtbarste und aufwändigste Teil. Upstream setzt einen Linux-Desktop voraus,
+und jede dieser Annahmen ist auf Android ein Absturz: die PTY-Plattformprüfung;
+PTC-Worker, die `LD_LIBRARY_PATH` leeren (Android hat kein ldconfig, bionic-node
+findet `libz.so.1` nicht) plus Bootstrap-Pfad-Fallback; 14 moderne Web-APIs, die
+alten WebViews fehlen; Dateisystem-Pfad- und Rechte-Semantik; `openPath`, das
+`xdg-open` / `open` / `start` aufruft; Attachment-URI-Behandlung; bash, das bei
+installiertem Termux `/data/data/com.termux/...` liest; `bin/curl` ohne
+`LD_LIBRARY_PATH`; und die Toolchain-Variablen, ohne die Python / Perl / Git /
+ImageMagick / Rust in PTC stillschweigend ausfallen. Jeder Patch ist **fail-fast**:
+Verschiebt ein Upstream-Refactoring einen Anker, **bricht der Build ab** statt zu
+warnen — ein fehlender Patch heißt eine kaputte Funktion für Nutzer.
+
+**Runtime-Wechsel mit Two-Phase-Commit**
+Ein Runtime-Wechsel darf weder „löschen dann entpacken" sein (hinterlässt ein
+Fenster, in dem nichts läuft) noch ein naives Umbenennen aller Top-Level-Einträge
+(jede Unterbrechung hinterlässt einen gemischten Alt/Neu-Baum — und die
+Vollständigkeitsprüfung erkennt das **nicht**: neues `bin/` mit altem `lib/` kommt
+durch, weil nur Ankerdateien und Node-Architektur geprüft werden). Seit v1.4.26
+entpacken wir nach `engine.staging`, prüfen es (Anker + Executable-Bit +
+**ELF-Architektur**), schreiben ein **`.runtime-swap`-Intent-Journal**, benennen
+Einträge einzeln um, behalten `engine.old` bis die Engine erstmals Healthy erreicht,
+und erkennen beim nächsten Start einen halbfertigen Wechsel und stellen wieder her.
+Das ist Two-Phase-Commit auf einem Dateisystem; vom OEM gekillt zu werden ist auf
+Android normal — ohne das ist jedes Runtime-Update ein Glücksspiel.
+Siehe [docs/RUNTIME_SWAP.md](docs/RUNTIME_SWAP.md).
+
 **Vollständige Ausführung von Agent-Aufgaben**
 Gib dem Agenten Aufgaben: Dateien lesen und schreiben, Shell-Befehle ausführen, Volltextsuche, Projekte verwalten — bionic bash / ripgrep / pnpm / curl sind mit geprüftem ELF-Abhängigkeitsabschluss im APK enthalten. Echte Ausführungskraft, keine reine Chat-Hülle.
 

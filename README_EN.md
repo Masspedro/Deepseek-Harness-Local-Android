@@ -85,6 +85,43 @@ proot + glibc would not even fit its rootfs in that much RAM.
 
 ## ✨ What It Can Do on a Phone
 
+**A real PTY, written in native C**
+Web terminals look simple but are the hardest layer here. Upstream
+`dsh-subprocess-local` fails twice on Android: its process inspector accepts only
+`linux` / `darwin` / `win32` and throws `terminal inspection is unsupported on
+platform android` (Termux-built node reports `process.platform === "android"`, not
+`linux`), and `node-pty` has no Android prebuilt so the collector substitutes a
+stub that throws on first call. We patch the inspector to treat `android` as linux
+and wrote **581 lines of C** (`dsh_pty.c` + `dsh_pty_exec.c`, `posix_spawn` +
+`openpty`), with node-pty replaced by a shim forwarding to that native helper. The
+result is a **real bash terminal** — `top`, `vim`, and other tty-requiring programs
+work.
+
+**14 Android adaptation patches — bending a desktop engine onto a phone**
+The least visible and most laborious part. Upstream assumes a Linux desktop, and
+every such assumption is a crash on Android: the PTY platform check; PTC workers
+clearing `LD_LIBRARY_PATH` (Android has no ldconfig, so bionic node cannot find
+`libz.so.1`) plus a bootstrap path-mapping fallback; 14 modern Web APIs missing
+from old WebViews; filesystem path/permission semantics; `openPath` calling
+`xdg-open` / `open` / `start`; attachment URI handling; bash reading
+`/data/data/com.termux/...` when Termux is installed; `bin/curl` missing
+`LD_LIBRARY_PATH`; and the extension-toolchain variables that silently disable
+Python / Perl / Git / ImageMagick / Rust inside PTC. Every patch is **fail-fast**:
+if upstream refactoring moves an anchor, the build **aborts** rather than warning —
+a missing patch means a feature is broken for users.
+
+**Runtime swap with two-phase commit**
+Replacing the runtime cannot be "delete then unpack" (leaves a window where nothing
+works) nor a naive rename-every-top-level-entry (any interruption leaves a mixed
+old/new tree — and completeness checks do **not** catch it: a new `bin/` with an old
+`lib/` passes, because they only verify anchor files and node architecture). Since
+v1.4.26 we unpack to `engine.staging`, verify it (anchors + executable bit + **ELF
+architecture**), write a **`.runtime-swap` intent journal**, rename entries
+one-by-one, keep `engine.old` until the engine first reaches Healthy, and on next
+launch detect a half-finished swap and recover. This is two-phase commit applied to
+a filesystem; having your background process killed by an OEM is normal on Android,
+so without it runtime updates are a gamble. See [docs/RUNTIME_SWAP.md](docs/RUNTIME_SWAP.md).
+
 **Run the full Agent engine on your phone**
 The official dsh engine (pinned to `0.2.1-rc.2`) runs in the Android app sandbox with its bionic Node.js runtime and toolchain bundled in the APK. No Root, Termux, PC, or proot/Ubuntu container is required. The Agent can work with files, run shell commands, search text, and manage projects; its engine endpoint listens on `127.0.0.1`.
 
