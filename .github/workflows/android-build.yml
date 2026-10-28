@@ -125,15 +125,27 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq apt dpkg-dev zip unzip
 
+      - name: 计算本地 runtime 脚本指纹
+        id: fp
+        run: echo "sha=$(python3 scripts/runtime-inputs-sha.py .)" >> "$GITHUB_OUTPUT"
+
       - name: 获取运行时（${{ matrix.abi }}）
         env:
           GH_TOKEN: ${{ github.token }}
+          FP: ${{ steps.fp.outputs.sha }}
+          REF_TYPE: ${{ github.ref_type }}
         run: |
           chmod +x scripts/fetch-runtime.sh scripts/build-runtime.sh scripts/collect-termux-runtime.sh
-          ./scripts/fetch-runtime.sh \
-            --abi ${{ matrix.abi }} \
-            --out runtime.zip \
-            --meta runtime-meta.json
+          # 把加载到手的包与「当前仓库的运行时脚本」对一下指纹：不一致说明 prerelease
+          # 还是旧补丁产物，此时应当先重建运行时，而不是拿旧包去撞打包门禁。
+          ARGS=(--abi "${{ matrix.abi }}" --out runtime.zip --meta runtime-meta.json
+                --expect-sha "$FP")
+          # tag 构建＝正式发布：必须内嵌按本 tag 脚本构建的运行时，禁止降级。
+          # 否则同一个 tag 在不同时间构建会得到不同的 runtime，发布不可复现。
+          if [ "$REF_TYPE" = "tag" ]; then
+            ARGS+=(--strict)
+          fi
+          ./scripts/fetch-runtime.sh "${ARGS[@]}"
           echo "--- runtime-meta ---"
           cat runtime-meta.json
 

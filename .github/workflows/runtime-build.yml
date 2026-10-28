@@ -244,7 +244,7 @@ jobs:
           ./scripts/build-runtime.sh --abi ${{ matrix.abi }} --out runtime.zip
           cp runtime.json runtime-meta.json
 
-      - name: 校验运行时命令闭包（${{ matrix.abi }}）
+      - name: 校验运行时命令闭包 + 补丁门禁（${{ matrix.abi }}）
         run: |
           rm -rf runtime-check && mkdir runtime-check
           unzip -q runtime.zip -d runtime-check
@@ -272,6 +272,37 @@ jobs:
             exit 1
           fi
           echo "bash/rg/SONAME/wrapper runtime closure OK（hardssh 已解耦）"
+
+      # ---------------------------------------------------------------------
+      # v1.4.36：把 app/build.gradle.kts 的两道打包门禁前移到发布之前。
+      #
+      # 之前这里只验命令闭包，PTC 补丁 / WebView polyfill 只在 APK 打包时才验。
+      # 后果：patch 脚本回归 → runtime-build 全绿发布 → 所有 android-build 在
+      # prepareRuntimeAssets 挂掉，而且要先吞掉 128MB 下载 + 解包才看到错误。
+      # 现在坏包在源头就被挡住，滚动 tag 里不会再出现「打包必挂」的运行时。
+      # 断言必须与 build.gradle.kts 的 ptcOk / polyOk 保持逐字一致。
+      # ---------------------------------------------------------------------
+      - name: 校验 PTC 补丁与 WebView polyfill（${{ matrix.abi }}）
+        run: |
+          set -euo pipefail
+          PTC=runtime-check/lib/node_modules/@deepseek-ai/dsh-ptc-runtime-node/lib/index.js
+          test -f "$PTC" || { echo "::error::PTC runtime 产物缺失：$PTC"; exit 1; }
+          for m in '"LD_LIBRARY_PATH"' \
+                   'Inject the runtime library path unconditionally' \
+                   'OPENSSL_CONF' \
+                   'SSL_CERT_FILE' \
+                   '"MAGICK_CONFIGURE_PATH"' \
+                   '[dsh-android] bootstrap path fallback'; do
+            grep -qF "$m" "$PTC" \
+              || { echo "::error::PTC 补丁标记缺失：$m（scripts/patch-ptc-runtime-android.py 回归？）"; exit 1; }
+          done
+          POLY=runtime-check/lib/node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html
+          test -f "$POLY" || { echo "::error::web frontend 产物缺失：$POLY"; exit 1; }
+          for m in 'legacy-webview polyfill v4' 'throwIfAborted' 'AbortSignal.any' 'Promise.withResolvers'; do
+            grep -qF "$m" "$POLY" \
+              || { echo "::error::WebView polyfill v4 标记缺失：$m"; exit 1; }
+          done
+          echo "PTC patch（含 bootstrap path fallback）+ WebView polyfill v4 OK"
 
       - uses: actions/upload-artifact@v4
         with:

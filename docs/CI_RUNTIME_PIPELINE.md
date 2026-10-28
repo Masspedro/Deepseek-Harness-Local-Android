@@ -119,8 +119,10 @@ sequenceDiagram
 ```mermaid
 flowchart TD
     F[fetch-runtime job<br/>每个 ABI 一次] --> T1{① prerelease tag runtime<br/>有 zip + meta？}
-    T1 -->|有且 sha256 校验通过| OK[使用]
-    T1 -->|无 release / 资产不全 / sha 不符| T2{② releases/latest 正式发布<br/>带 runtime-abi.zip？}
+    T1 -->|有，且 sha256 + 脚本指纹均校验通过| OK[使用]
+    T1 -->|无 release / 资产不全 / sha 不符 / 指纹不符| S{是不是 tag 构建<br/>--strict？}
+    S -->|是| FAIL[硬失败：先重建运行时]
+    S -->|否| T2{② releases/latest 正式发布<br/>带 runtime-abi.zip？}
     T2 -->|有| M[用 BUILD.json 重建 meta<br/>校验通过] --> OK
     T2 -->|无| T3[③ 本地兜底构建<br/>build-runtime.sh]
     T3 --> OK
@@ -130,12 +132,26 @@ flowchart TD
 
 | 级别 | 来源 | meta 来源 | 典型场景 |
 |---|---|---|---|
-| ① | `releases/download/runtime/runtime-<abi>.zip` | 同 release 的 `runtime-meta-<abi>.json`，**校验 sha256 一致** | 日常 CI（99% 命中） |
+| ① | `releases/download/runtime/runtime-<abi>.zip` | 同 release 的 `runtime-meta-<abi>.json`，**校验 sha256 一致 + 脚本指纹一致** | 日常 CI（99% 命中） |
 | ② | `releases/latest`（正式 v 版）里的 `runtime-<abi>.zip` | 无 meta 资产 → 从 zip 内 `BUILD.json` + 文件哈希重建（`make-runtime-meta.py`） | 尚未跑过 runtime-build 的仓库 / runtime release 被误删 |
 | ③ | 本地 `build-runtime.sh` | 脚本自带写出 | 新 fork bootstrap、前两级同时失效 |
 
 注意 `gh release download`（不带 tag）取的是 **最新正式 release**，prerelease
 （preview / edge / runtime）天然被排除，不会误取滚动包。
+
+### 5.1 新鲜度：`--expect-sha` 与 `--strict`
+
+sha256 只能证明「zip 与 meta 同源」，不能证明「这个包是按当前脚本构建的」。
+改了 `patch-*.py` 而 prerelease 还是旧产物时，① 级会静默命中，一路走到
+`prepareRuntimeAssets` 才报 `runtime lacks the PTC patch` —— 文案指向补丁，
+实际问题在取货。所以：
+
+- **`--expect-sha <64hex>`**：比对包内 `runtime-inputs.json` 的 `scriptsSha256`
+  与当前仓库指纹（`runtime-inputs-sha.py`，由 workflow 算好传入）。不一致 → 降级并告警。
+- **`--strict`**：仅 tag 构建传。① 级拿不到「与本 tag 脚本一致」的产物时**直接失败**，
+  禁止降级到 ②③ —— ② 会随 `releases/latest` 漂移、③ 现场编译结果不稳定，都会让
+  同一个 tag 在不同时间构建出不同 runtime，正式发布就不可复现了。
+  失败信息里直接写了处置动作：`runtime-build` → Run workflow（勾 force）→ 重跑。
 
 三级产物都要过同一段闭包校验，安全网没有因为“复用”而变薄：
 
@@ -143,6 +159,9 @@ flowchart TD
 - SONAME 精确文件名（`libreadline.so.8` 等 6 个，Android linker 按 NEEDED 逐字查找）
 - `@vscode/ripgrep-android-<arch>` 存在，且不混入宿主 Linux ripgrep
 - runtime 内**不得**出现 `@xiaopb/dsh-hardssh`（v1.4.20 已解耦到 APK 内置目录）
+- PTC 补丁 6 个标记（含 `[dsh-android] bootstrap path fallback`）与 WebView
+  polyfill v4 的 4 个标记 —— `runtime-build` 发布前与 `build.gradle.kts` 打包前
+  各验一遍，坏包不会进滚动 tag
 
 ---
 
@@ -204,6 +223,8 @@ prerelease / latest / 兜底构建。
 | `fetch-runtime` step 报 `tier 1/2 不可用` 但最终成功 | 正常降级 | 看 Step Summary 的 `source:` 行；若长期落到 tier 2/3，说明 runtime release 缺失，dispatch 一次 runtime-build |
 | CI 变慢回到 5-10 分钟 | 落到了 tier 3 兜底构建 | 同上：检查 `runtime` release 是否存在、资产是否被误删 |
 | tag 包里 runtime 还是旧的 | runtime 脚本改动后未重建，且指纹未生效（release 里没有 `runtime-inputs.json` 的旧包） | 手动 dispatch + `force=true` 重建后再重跑 tag 构建 |
+| tag 构建报 `tier 1 未提供与当前脚本一致的 runtime（strict 档禁止降级）` | tag 构建要求 runtime 与本 tag 脚本指纹一致，prerelease 落后了 | 按提示先 dispatch `runtime-build`（勾 force）发布，再重跑 tag 构建。**不要**改成降级 —— 那会让同一个 tag 内嵌不同 runtime |
+| `fetch-runtime` 日志出现 `指纹不一致 — 现役 xxx vs 本地 yyy` | 改了 runtime 脚本但滚动 tag 还是旧产物 | 预期降级行为（非 tag 构建）；确认没意外取到旧包即可，正式发版前仍需重建 |
 | `runtime-build` decide 报 `dsh 版本变化` 每次触发 | staging 的 `dsh_version` 与 release 的 `engineVersion` 不一致（如 staging 用了非默认版本） | 属预期：会重建一次，之后比对一致即跳过 |
 | `publish` 报 `fail_on_unmatched_files` | 构建产物没齐（某个 ABI 失败） | 看 `build` job 哪个矩阵腿红，修正后重跑；`fail-fast: false` 保证另一腿仍产出 |
 | 新 fork 首次 CI 就红在 runtime | 无 `runtime` release、`releases/latest` 也没有 runtime 资产 | 兜底构建本应接管；若仍失败看 `build-runtime.sh` 的 apt 报错（Termux 索引包名漂移） |
@@ -221,3 +242,6 @@ prerelease / latest / 兜底构建。
 4. **runtime 内不得含 `@xiaopb/dsh-hardssh`** —— 已解耦到 APK 内置目录，注入逻辑
    卷土重来会导致云端运行时重装丢插件。
 5. **三级来源都必须过同一套闭包校验**，不允许“因为复用了就跳过校验”。
+6. **tag 构建必须与 runtime 脚本指纹对齐**（`--strict`），禁止降级到
+   `releases/latest` 或现场编译 —— 否则同一个 tag 在不同时间构建会内嵌不同的
+   runtime，正式发布不可复现，正是本方案要消除的问题。
