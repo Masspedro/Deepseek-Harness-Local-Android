@@ -605,9 +605,33 @@ object Privilege {
             // app 自己的 node 进程（新 uid）**读不了插件** → 引擎日志
             // `android-fast-mode: failed to import` / EACCES → 插件功能全哑。
             // 实测症状：AI 找不到 fast_mode 工具、局域网代理进程起不来。
+            // ⚠️ v1.4.34（issue #65）：root 模式下**不能**把 `.cache` 下的 pnpm
+            // 锁目录 chown 回 app uid。
+            //
+            // 现象：以 root 运行时（DSH_ANDROID_PRIV_MODE=root），pnpm 把操作锁建在
+            // `$HOME/.cache/pnpm-store-operation-locks-<uid>` 这类**按 uid 分后缀**的
+            // 目录里。本函数原本对整棵 dsh-home 递归 chown，会连 `...-locks-0`（root
+            // 那一套）一起改成 app uid；随后 root 身份的 pnpm 判定「锁目录必须是当前
+            // 用户拥有的真实目录」不成立，于是安装/卸载全部失败：
+            //   ERR_PNPM_STORE_DIR_OPEN_OPERATION_LOCK: lock directory must be a real
+            //   directory owned by the current user
+            // 用户每次重启引擎都会复发（因为启动即 chown）。
+            //
+            // 修法：先 chown 整棵树，再把 `.cache` 下所有 pnpm 锁目录的属主**还原成
+            // 各自的数字后缀**（`-0` → root，`-<appUid>` → app）。这样两种身份都拿到
+            // 自己那份，互不干扰。
             val cmd = buildString {
                 append("chown -R ").append(uid).append(":").append(uid).append(' ')
                 append(homeQ).append(' ').append(engineQ).append(" 2>/dev/null; ")
+                // 还原 pnpm 按 uid 分后缀的锁目录属主（issue #65）
+                append("for d in ").append(homeQ)
+                append("/.cache/pnpm-*-locks-* ").append(homeQ)
+                append("/.cache/pnpm-*-swaps-*; do ")
+                append("[ -d \"\$d\" ] || continue; ")
+                append("n=\${d##*-}; ")
+                append("case \"\$n\" in ''|*[!0-9]*) continue;; esac; ")
+                append("chown \"\$n:\$n\" \"\$d\" 2>/dev/null; ")
+                append("done; ")
                 append("chmod -R u+rwX ").append(engineQ).append(" 2>/dev/null; ")
                 // SELinux 标签重置：restorecon 不在所有设备上都可用（toybox 差异），失败无妨
                 append("restorecon -R ").append(homeQ).append(" 2>/dev/null; ")
