@@ -7,7 +7,8 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * 桌宠台词库：内置 320 句（assets/pet/lines-default.txt），按情境分 11 个分类。
+ * 桌宠台词库：内置台词（assets/pet/lines-default.txt），按情境分类。
+ * 11 个情境分类 + 6 个桥接工作状态档位（ws_*，与 dsh-pet workStatusTexts 六档同源）。
  *
  * 存储规则：
  *  - 内置台词编在 assets 的 lines-default.txt（`[分类id]` 分节，一行一句），永不修改；
@@ -32,6 +33,14 @@ object PetLines {
         Category("idle_long", R.string.pet_lines_cat_idle_long),
         Category("random", R.string.pet_lines_cat_random),
         Category("working", R.string.pet_lines_cat_working),
+        // 桥接工作状态六档（PetActionController 消费；内置 = dsh-pet workStatusTexts 原文）。
+        // 桥侧 selfPublishRandomLines 关闭时，措辞完全由这里决定，用户改台词库即可换文案。
+        Category("ws_thinking", R.string.pet_lines_cat_ws_thinking),
+        Category("ws_working", R.string.pet_lines_cat_ws_working),
+        Category("ws_result", R.string.pet_lines_cat_ws_result),
+        Category("ws_waiting", R.string.pet_lines_cat_ws_waiting),
+        Category("ws_success", R.string.pet_lines_cat_ws_success),
+        Category("ws_error", R.string.pet_lines_cat_ws_error),
     )
 
     private const val ASSET_DEFAULT = "pet/lines-default.txt"

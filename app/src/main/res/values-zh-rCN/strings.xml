@@ -834,6 +834,12 @@
     <string name="pet_lines_cat_idle_long">久置发呆</string>
     <string name="pet_lines_cat_random">瞎聊乱弹</string>
     <string name="pet_lines_cat_working">工作陪聊</string>
+    <string name="pet_lines_cat_ws_thinking">工作状态 · 思考中</string>
+    <string name="pet_lines_cat_ws_working">工作状态 · 处理中</string>
+    <string name="pet_lines_cat_ws_result">工作状态 · 一步完成</string>
+    <string name="pet_lines_cat_ws_waiting">工作状态 · 等待确认</string>
+    <string name="pet_lines_cat_ws_success">工作状态 · 完成</string>
+    <string name="pet_lines_cat_ws_error">工作状态 · 出错</string>
     <string name="about_runtime">运行时</string>
     <string name="runtime_setup_title">需要下载运行时</string>
     <string name="runtime_setup_message">当前是 noruntime 简单包，不含 Node.js 运行时。现在下载 %1$s（建议 Wi-Fi）？之后 App 升级不会重复下载。</string>
