@@ -197,11 +197,11 @@ v1.4.36 之后把 `fetch-runtime` 的取货从 `gh release download`（CDN）改
 
 **修复前**（fetch-runtime 走 tier3，每条 ABI 现场编译 ~2-3 分钟）：
 
-![优化前：fetch-runtime 走 tier3 本地编译，aarch64 2m56s / x86_64 2m12s](../img/fetch-runtime-before-tier3-localbuild.png)
+![优化前：fetch-runtime 走 tier3 本地编译，aarch64 2m56s / x86_64 2m12s](img/fetch-runtime-before-tier3-localbuild.png)
 
 **修复后**（fetch-runtime 命中 tier1 prerelease 下载，每条 ABI 约 25s）：
 
-![优化后：fetch-runtime 命中 tier1 预构建下载，aarch64 26s / x86_64 24s](../img/fetch-runtime-after-tier1-download.png)
+![优化后：fetch-runtime 命中 tier1 预构建下载，aarch64 26s / x86_64 24s](img/fetch-runtime-after-tier1-download.png)
 
 之所以能省下这两分钟：tier3 本地编译要 `apt` 收集 Termux 闭包 + 打补丁 + 打包
 127MB×2，而 tier1 只是下载已经发布好的 `runtime-<abi>.zip`（~133MB）。下载走
