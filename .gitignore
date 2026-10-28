@@ -87,3 +87,7 @@ scripts/probes/*.bin
 !/scripts/probes/zstd-tail.js
 tasks/
 _bench/
+
+# 宣传视频素材（体积大，不入库；需要时按 docs/promo/video/MATERIALS.md 重新采集）
+docs/promo/video/assets/*.mp4
+docs/promo/video/assets/*.png
