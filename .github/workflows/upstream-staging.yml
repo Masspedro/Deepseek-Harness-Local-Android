@@ -12,6 +12,24 @@ permissions:
   contents: read
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # 把本次 staged 的 dsh 版本落成 artifact：runtime-build 的 workflow_run 路径
+  # 读它来判断 "dsh_version 变了没"，变了才自动重编运行时。
+  # （GITHUB_TOKEN 触发的 workflow_dispatch 不会产生新的 run，故用 artifact 传参。）
+  # ---------------------------------------------------------------------------
+  meta:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 记录 staged dsh 版本
+        env:
+          INPUT_DSH: ${{ inputs.dsh_version }}
+        run: printf '%s\n' "$INPUT_DSH" > dsh_version.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: upstream-dsh-version
+          path: dsh_version.txt
+          retention-days: 3
+
   collect:
     strategy:
       fail-fast: false
