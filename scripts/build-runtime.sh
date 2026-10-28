@@ -95,7 +95,10 @@ def text(name):
     return z.read(name).decode("utf-8", "replace") if name in z.namelist() else ""
 ptc = text("lib/node_modules/@deepseek-ai/dsh-ptc-runtime-node/lib/index.js")
 need = ['"LD_LIBRARY_PATH"', "Inject the runtime library path unconditionally",
-        "OPENSSL_CONF", "SSL_CERT_FILE", '"MAGICK_CONFIGURE_PATH"']
+        "OPENSSL_CONF", "SSL_CERT_FILE", '"MAGICK_CONFIGURE_PATH"',
+        # v1.4.33（issue #65）：bootstrap 路径映射兜底，缺它 run_code 必报
+        # "PTC runtime bootstrap is unavailable" 而文件其实存在。
+        "[dsh-android] bootstrap path fallback"]
 if any(n not in ptc for n in need):
     raise SystemExit("runtime lacks PTC patch; run collect/build-runtime again")
 poly = text("lib/node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html")

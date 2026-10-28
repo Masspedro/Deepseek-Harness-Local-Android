@@ -172,8 +172,8 @@ android {
         // 关键决策：targetSdk 28 —— sideload 分发，豁免 Android 10+ 的 W^X 限制，
         // 允许从 filesDir 直接 execve bionic 二进制（Termux 同款策略）。
         targetSdk = 28
-        versionCode = 282
-        versionName = "1.4.32"
+        versionCode = 283
+        versionName = "1.4.33"
 
         ndk {
             abiFilters += listOf(targetAbi)
@@ -345,7 +345,11 @@ val prepareRuntimeAssets by tasks.registering {
                 ptc.contains("Inject the runtime library path unconditionally") &&
                 ptc.contains("OPENSSL_CONF") &&
                 ptc.contains("SSL_CERT_FILE") &&
-                ptc.contains("\"MAGICK_CONFIGURE_PATH\"")
+                ptc.contains("\"MAGICK_CONFIGURE_PATH\"") &&
+                // v1.4.33（issue #65）：bootstrap 路径映射兜底。缺了它时
+                // processPathFromHostPath 返回 undefined → 每次 run_code 都报
+                // "PTC runtime bootstrap is unavailable"，而文件其实就在那儿。
+                ptc.contains("[dsh-android] bootstrap path fallback")
             if (!ptcOk) {
                 throw GradleException(
                     "runtime: ${src.name} lacks the PTC patch. Build it with scripts/build-runtime.sh; " +

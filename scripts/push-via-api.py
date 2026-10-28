@@ -199,9 +199,8 @@ class Uploader:
             raise SystemExit("错误：tree 嵌套过深，疑似异常")
         if self.has("trees", sha):
             return
-        raw = git_bytes("cat-file", "tree", sha)
         entries: list[dict] = []
-        for item in split_tree(raw):
+        for item in split_tree(sha):
             mode, typ, obj = item["mode"], item["type"], item["sha"]
             if typ == "blob" and obj not in self._known:
                 self.upload_blob(obj)
@@ -230,20 +229,27 @@ def sha_path_suffix(path: str) -> str:
     return ""
 
 
-def split_tree(raw: bytes):
-    """解析 `git cat-file tree` 的原始字节：`<mode> <type> <sha>\\t<path>\\0`。"""
-    i = 0
+def split_tree(sha: str):
+    """用 `git ls-tree` 解析树的条目。
+
+    不能用 `git cat-file tree`：它输出的是**二进制**格式
+    （`<mode> SP <name> NUL <20 字节 sha>`），没有 type 字段，SHA 也是原始字节。
+    文本形式必须走 `git ls-tree`，它给出 `<mode> SP <type> SP <sha> TAB <path>`。
+    """
+    listing = git_bytes("ls-tree", "-z", sha)
     out = []
-    while i < len(raw):
-        j = raw.index(b"\0", i)
-        rec = raw[i:j]
+    for rec in listing.split(b"\0"):
+        if not rec:
+            continue
         meta, _, path = rec.partition(b"\t")
-        mode, typ, sha = meta.decode().split()
+        parts = meta.decode().split()
+        if len(parts) != 3:
+            raise SystemExit(f"错误：无法解析 tree 条目 {meta!r}")
+        mode, typ, obj = parts
         out.append({
-            "mode": mode, "type": typ, "sha": sha,
+            "mode": mode, "type": typ, "sha": obj,
             "path": path.decode("utf-8", "surrogateescape"),
         })
-        i = j + 1
     return out
 
 
