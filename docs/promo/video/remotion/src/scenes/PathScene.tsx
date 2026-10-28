@@ -1,77 +1,163 @@
-import {useCurrentFrame, useVideoConfig} from 'remotion';
-import {Background, Caption, Eyebrow, Reveal, Title} from '../components/primitives';
-import {copy} from '../data';
-import {progress} from '../motion';
+/**
+ * 02 Path —— 0:04–0:10（360 帧）
+ *
+ * v2 重制：v1 在这一场同时铺了标题、副标题、4 条路线、每个节点的说明、
+ * 独立的本作直线图、共享路线圆点、脚注、免责说明 —— 6 个文字块抢注意力。
+ *
+ * v2 规矩：**主角是那张「长链 vs 直线」对照图**。
+ * 文字只留标题和四个方案名，其余全删。让图形自己说话。
+ */
+import {AbsoluteFill, Easing, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
 import {theme} from '../theme';
+import {type, card} from '../layout';
+import {Stage, Eyebrow, Headline, Body, ChapterBar} from '../ui';
 
-const Route = ({index, width}: {index: number; width: number}) => {
-  const frame = useCurrentFrame();
-  const route = copy.path.routes[index];
-  const active = progress(frame, 16 + index * 14, 55);
-  const x1 = 40;
-  const x2 = width - 40;
-  return <div style={{marginBottom: 25}}>
-    <div style={{color: theme.colors.secondary, fontSize: 26, marginBottom: 14}}>{route.name}</div>
-    <svg width={width} height="91" viewBox={`0 0 ${width} 91`}>
-      <path d={`M${x1} 21H${x2}`} fill="none" stroke={theme.colors.muted} strokeWidth="2" strokeOpacity="0.35" />
-      <path d={`M${x1} 21H${x2}`} fill="none" stroke={theme.colors.secondary} strokeWidth="2"
-        pathLength="1" strokeDasharray="1" strokeDashoffset={1 - active} />
-      {route.nodes.map((name, i) => {
-        const x = x1 + ((x2 - x1) * i) / (route.nodes.length - 1);
-        const show = progress(frame, 16 + index * 14 + i * 7, 18);
-        return <g key={name} opacity={0.32 + show * 0.68}>
-          <circle cx={x} cy="21" r="7" fill={theme.colors.secondary} />
-          <text x={x} y="66" textAnchor={i === 0 ? 'start' : i === route.nodes.length - 1 ? 'end' : 'middle'}
-            fontFamily={theme.fonts.mono} fontSize="22" fill={theme.colors.secondary}>{name}</text>
-        </g>;
-      })}
-    </svg>
-  </div>;
-};
+const easeOut = Easing.bezier(0.16, 1, 0.3, 1);
 
-const NativePath = ({width}: {width: number}) => {
-  const frame = useCurrentFrame();
-  const length = width - 80;
-  const p = progress(frame, 78, 50);
-  return <div>
-    <div style={{fontSize: 28, fontWeight: 700, color: theme.colors.text}}>{copy.path.native}</div>
-    <svg width={width} height="128" viewBox={`0 0 ${width} 128`}>
-      <path d={`M40 58H${width - 40}`} stroke={theme.colors.accent} strokeWidth="4" fill="none"
-        pathLength="1" strokeDasharray="1" strokeDashoffset={1 - p} />
-      <circle cx="40" cy="58" r="9" fill={theme.colors.accent} />
-      <circle cx={40 + length * p} cy="58" r="9" fill={theme.colors.accent} />
-      <text x="40" y="109" fill={theme.colors.text} fontSize="24" fontFamily={theme.fonts.sans}>{copy.path.nativeNodes[0]}</text>
-      <text x={width - 40} y="109" textAnchor="end" fill={theme.colors.accent} fontSize="24" fontFamily={theme.fonts.mono}>{copy.path.nativeNodes[1]}</text>
-      <text x={width / 2} y="36" textAnchor="middle" fill={theme.colors.accent} fontSize="23" fontFamily={theme.fonts.mono}>{copy.path.syscall}</text>
-    </svg>
-  </div>;
+type Route = {label: string; nodes: string[]; cost: string; ours?: boolean};
+
+const ROUTES: Route[] = [
+  {label: 'Termux', nodes: ['apt', '编译', '环境', 'Node'], cost: '分钟级'},
+  {label: 'proot', nodes: ['proot', 'glibc', '发行版', 'Node'], cost: '十几秒起'},
+  {label: '快照', nodes: ['解压', '重定位', 'Node'], cost: '数十秒'},
+  {label: '本作', nodes: [], cost: '3 秒级', ours: true},
+];
+
+const RouteRow = ({route, index, frame, fps}: {route: Route; index: number; frame: number; fps: number}) => {
+  const start = (0.8 + index * 0.3) * fps;
+  const lit = (offset: number) => {
+    const p = (frame - start - offset * 0.18 * fps) / (0.32 * fps);
+    return interpolate(p, [0, 1], [0, 1], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+      easing: easeOut,
+    });
+  };
+
+  const ours = route.ours;
+
+  return (
+    <div style={{marginBottom: ours ? 0 : 40}}>
+      <div style={{display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16}}>
+        <span
+          style={{
+            fontFamily: theme.fonts.chinese,
+            fontSize: ours ? type.subtitle : type.body,
+            fontWeight: ours ? 700 : 400,
+            color: ours ? theme.colors.text : theme.colors.secondary,
+            opacity: lit(0),
+          }}
+        >
+          {route.label}
+        </span>
+        <span
+          style={{
+            fontFamily: theme.fonts.chinese,
+            fontSize: type.caption,
+            fontWeight: ours ? 600 : 400,
+            color: ours ? theme.colors.success : theme.colors.muted,
+            opacity: lit(0.15),
+          }}
+        >
+          {route.cost}
+        </span>
+      </div>
+
+      <div style={{position: 'relative', height: ours ? 30 : 46, display: 'flex', alignItems: 'center'}}>
+        {ours ? (
+          <>
+            <div
+              style={{
+                height: 9,
+                width: '100%',
+                borderRadius: 5,
+                background: `linear-gradient(90deg, ${theme.colors.accent}, ${theme.colors.success})`,
+                scale: `${lit(0.05)} 1`,
+                transformOrigin: 'left center',
+                boxShadow: `0 0 28px ${theme.colors.accent}70`,
+              }}
+            />
+            <span
+              style={{
+                position: 'absolute',
+                right: 0,
+                top: -46,
+                fontFamily: theme.fonts.mono,
+                fontSize: type.eyebrow,
+                color: theme.colors.accent,
+                opacity: lit(0.4),
+              }}
+            >
+              execve()
+            </span>
+          </>
+        ) : (
+          <div style={{display: 'flex', alignItems: 'center', gap: 8, width: '100%'}}>
+            {route.nodes.map((n, i) => (
+              <div key={n} style={{display: 'flex', alignItems: 'center', gap: 8, flex: 1}}>
+                <div
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: 10,
+                    background: theme.colors.surfaceAlt,
+                    border: `1px solid ${theme.colors.divider}`,
+                    fontFamily: theme.fonts.chinese,
+                    fontSize: type.eyebrow,
+                    color: theme.colors.secondary,
+                    whiteSpace: 'nowrap',
+                    opacity: lit(i * 0.55),
+                  }}
+                >
+                  {n}
+                </div>
+                {i < route.nodes.length - 1 ? (
+                  <div
+                    style={{
+                      flex: 1,
+                      height: 2,
+                      background: theme.colors.muted,
+                      opacity: lit(i * 0.55 + 0.25) * 0.45,
+                    }}
+                  />
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 };
 
 export const PathScene = () => {
-  const {height, width} = useVideoConfig();
-  const portrait = height > width;
-  return <Background>
-    <Reveal direction="left" style={{position: 'absolute', left: 80, top: portrait ? 124 : 130}}>
-      <Eyebrow>{copy.path.eyebrow}</Eyebrow>
-      <Title size={portrait ? 92 : 100}>{copy.path.title[0]}<br />{copy.path.title[1]}</Title>
-      <Caption size={portrait ? 31 : 32} style={{marginTop: 24, maxWidth: portrait ? 850 : 560}}>{copy.path.sub}</Caption>
-    </Reveal>
-    <div style={{position: 'absolute', left: portrait ? 80 : 780, top: portrait ? 550 : 135,
-      width: portrait ? 920 : 1020}}>
-      {copy.path.routes.map((route, index) => <Route key={route.name} index={index} width={portrait ? 920 : 1020} />)}
-    </div>
-    <Reveal delay={76} style={{position: 'absolute', left: portrait ? 80 : 780,
-      top: portrait ? 1110 : 660, width: portrait ? 920 : 1020}}>
-      <NativePath width={portrait ? 920 : 1020} />
-    </Reveal>
-    <Reveal delay={118} style={{position: 'absolute', left: 80, right: 80, top: portrait ? 1375 : 897}}>
-      <div style={{display: 'flex', alignItems: 'center', gap: 14}}>
-        <div style={{display: 'flex', gap: 8}}>{[0, 1, 2].map((i) => <div key={i} style={{width: 9, height: 9,
-          borderRadius: 9, background: i === 0 ? theme.colors.accent : theme.colors.muted}} />)}</div>
-        <Caption size={portrait ? 30 : 28} style={{color: theme.colors.text}}>{copy.path.shared}</Caption>
-      </div>
-      <Caption size={25} style={{marginTop: 12}}>{copy.path.peers}</Caption>
-      <Caption size={22} style={{marginTop: 20}}>{copy.path.disclaimer}</Caption>
-    </Reveal>
-  </Background>;
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+
+  return (
+    <AbsoluteFill style={{background: theme.colors.bg}}>
+      <AbsoluteFill
+        style={{background: `radial-gradient(circle at 60% 74%, ${theme.colors.accent}1C 0%, transparent 46%)`}}
+      />
+      <Stage>
+        <Eyebrow delay={0.1}>Less Between You and the Engine</Eyebrow>
+        <Headline lines={['把路径，', '拉成直线。']} delay={0.16} size={84} />
+
+        <div style={{height: 56}} />
+
+        {/* ── 主角：四条路径对照 ── */}
+        <div style={{...card(), padding: '44px 40px'}}>
+          {ROUTES.map((r, i) => (
+            <RouteRow key={r.label} route={r} index={i} frame={frame} fps={fps} />
+          ))}
+        </div>
+
+        <div style={{height: 32}} />
+
+        <Body delay={2.5} color={theme.colors.muted} maxWidth="94%">
+          bionic 直跑不止我们一家 —— guzhou079、woaiys3 同在这条线上。
+        </Body>
+              <ChapterBar progress={frame / 360} />
+      </Stage>
+    </AbsoluteFill>
+  );
 };
