@@ -807,6 +807,64 @@ class PluginStoreActivity : ThemedActivity() {
                     btn.setTextColor(getColor(R.color.danger))
                     btn.isEnabled = true
                     btn.isClickable = true
+                    // v1.4.37（用户反馈「插件下不了」）：引擎因版本不兼容拒绝安装时，
+                    // 把真正原因完整弹出来，并提供「强制安装此版本」入口。
+                    // 旧实现只把错误截成 28 字符塞进按钮，用户根本看不到原因。
+                    offerEngineExemptionIfNeeded(pkg, btn, basePkg, msg)
+                }
+            }
+        }
+    }
+
+    /**
+     * 引擎兼容性拒绝 → 弹窗说明原因，并给「强制安装此版本」（写入 exact-version 豁免）。
+     *
+     * 只在 [PluginCenter.parseEngineRejection] 认出这是引擎拒绝时触发；
+     * 其它错误（网络、store 锁、原生模块编译失败）不弹这个窗，避免误导。
+     *
+     * **必须用户点确认**才执行 —— 引擎原文警告「may cause crashes or data loss」，
+     * App 不能替用户静默承担这个风险。
+     */
+    private fun offerEngineExemptionIfNeeded(
+        pkg: String,
+        btn: TextView,
+        basePkg: String,
+        msg: String,
+    ) {
+        val rejection = runCatching {
+            PluginCenter.parseEngineRejection(this, pkg, msg)
+        }.getOrNull() ?: return
+        val version = rejection.version ?: return
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.plugin_engine_old_title))
+            .setMessage(rejection.userMessage(this))
+            .setPositiveButton(getString(R.string.plugin_engine_old_force)) { _, _ ->
+                forceInstall(pkg, btn, basePkg, version)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /** 用户已确认风险 → 写 exact-version 豁免并重试安装。 */
+    private fun forceInstall(pkg: String, btn: TextView, basePkg: String, version: String) {
+        if (isFinishing || isDestroyed || !btn.isAttachedToWindow) return
+        btn.text = getString(R.string.plugin_installing)
+        btn.isEnabled = false
+        PluginCenter.forceInstallWithExemption(this, pkg, version) { ok, msg ->
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (ok) {
+                    btn.text = getString(R.string.plugin_installed)
+                    btn.setTextColor(getColor(R.color.success))
+                    btn.isEnabled = true
+                    btn.isClickable = true
+                    btn.setOnClickListener { confirmUninstall(basePkg, btn) }
+                    reload(verbose = true)
+                } else {
+                    btn.text = getString(R.string.plugin_failed, msg.take(28))
+                    btn.setTextColor(getColor(R.color.danger))
+                    btn.isEnabled = true
+                    btn.isClickable = true
                 }
             }
         }

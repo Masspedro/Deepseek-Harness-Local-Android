@@ -218,6 +218,13 @@
     <string name="plugin_check_updates">Updates prüfen</string>
     <string name="plugin_compat_pure">Reines JS</string>
     <string name="plugin_engine_too_old_body">Dieses Plugin benötigt dsh-Engine >= %1$s, diese App enthält aber %2$s. Das Plugin ist in Ordnung — die eingebaute Engine ist schlicht älter als vom Plugin vorausgesetzt. Nach einem App-Update mit neuerer Engine funktioniert es.</string>
+    <string name="plugin_engine_old_title">Plugin benoetigt neuere Engine</string>
+    <string name="plugin_engine_old_force">Diese Version erzwingen</string>
+    <string name="plugin_engine_old_why">Dieses Plugin benötigt eine neuere dsh-Engine (installiert: %1$s); die Engine hat die Installation deshalb abgelehnt.</string>
+    <string name="plugin_engine_old_req">Erforderlich: %1$s</string>
+    <string name="plugin_engine_old_note">Das Plugin ist in Ordnung, und es ist kein Netzwerkproblem - die eingebaute Engine ist aelter als vom Plugin vorausgesetzt. Warte auf ein App-Update oder waehle Diese Version erzwingen auf der Plugin-Seite.</string>
+    <string name="plugin_engine_old_no_version">Die eingebaute Engine-Version ist nicht lesbar; keine Ausnahme geschrieben.</string>
+    <string name="plugin_engine_old_exempt_failed">Ausnahme konnte nicht geschrieben werden: %1$s</string>
     <string name="plugin_compat_engine_old">Engine zu alt — dieses Plugin benötigt eine neuere eingebaute dsh-Engine</string>
     <string name="plugin_compat_native">Braucht nativen Code</string>
     <string name="plugin_compat_fork">Engine-Fork</string>

@@ -216,6 +216,13 @@
     <string name="plugin_check_updates">检查更新</string>
     <string name="plugin_compat_pure">纯 JS</string>
     <string name="plugin_engine_too_old_body">该插件要求 dsh 引擎 ≥ %1$s，而本应用内置的是 %2$s。插件本身没问题——是我们内置的引擎比它要求的旧。等应用更新到包含更新引擎的版本后即可使用。</string>
+    <string name="plugin_engine_old_title">插件需要更新的引擎</string>
+    <string name="plugin_engine_old_force">强制安装此版本</string>
+    <string name="plugin_engine_old_why">此插件要求更新版本的 dsh 引擎（内置 %1$s），所以引擎在安装前就拒绝了。</string>
+    <string name="plugin_engine_old_req">它要求：%1$s</string>
+    <string name="plugin_engine_old_note">这不是插件坏了，也不是网络问题 —— 是内置引擎版本落后。可以等应用升级内置引擎；或在插件详情里选择「强制安装此版本」。</string>
+    <string name="plugin_engine_old_no_version">无法读取内置引擎版本，无法写入豁免</string>
+    <string name="plugin_engine_old_exempt_failed">写入豁免失败：%1$s</string>
     <string name="plugin_compat_engine_old">内置引擎版本过低 —— 该插件要求更新的 dsh 引擎</string>
     <string name="plugin_compat_native">需要原生编译</string>
     <string name="plugin_compat_fork">引擎 fork</string>

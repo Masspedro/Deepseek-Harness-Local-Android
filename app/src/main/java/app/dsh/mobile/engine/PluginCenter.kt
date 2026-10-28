@@ -1,6 +1,7 @@
 package app.dsh.mobile.engine
 
 import android.content.Context
+import app.dsh.mobile.R
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
@@ -245,6 +246,42 @@ object PluginCenter {
                     msg = if (ok) r2.second
                     else "${r2.second} [pnpm store cache reset, still failing]"
                 }
+                // v1.4.37（用户截图 2）：`ERR_PNPM_IGNORED_BUILDS`。
+                // pnpm 10+ 默认**不执行**依赖的 install/postinstall 脚本（安全策略），
+                // 带原生模块的插件装完但二进制没编译，`build/` 不存在 → 插件加载失败。
+                // 用户的报错被截断成 `ERR_PNPM_IGNORED_BUIL`,看不出是哪种。
+                //
+                // 修法：在 profile 里写 `.npmrc` 声明 onlyBuiltDependencies 白名单，
+                // 再重试一次。白名单只放**本次安装的插件本身**（不是 `*`）——
+                // 放开通配等于对所有依赖执行任意脚本，那是供应链攻击面。
+                if (!ok && isIgnoredBuildsError(msg)) {
+                    val named = allowBuildFor(ctx, pkg)
+                    Log.w(TAG, "install $pkg: pnpm ignored builds; allowlisted=$named; retrying once")
+                    val r2 = runDshPluginCli(ctx, "add", pkg)
+                    ok = r2.first
+                    msg = if (ok) {
+                        r2.second + if (named) " [build scripts allowed]" else ""
+                    } else {
+                        "${r2.second} [pnpm still refuses build scripts; the native module likely cannot compile on Android]"
+                    }
+                }
+                // v1.4.37（用户反馈「插件下不了」）：引擎的插件管理器在安装前会做
+                // 兼容性预检，不通过就直接回滚并输出
+                // `dsh: installation rejected: <requirements>`。
+                // 旧实现把 stderr 截到 300 字符，用户只看到冒号后面空空的
+                // 「installation rejected:」——完全不知道原因。
+                //
+                // 这里不再自动放行（那可能让引擎崩溃或丢数据），而是：
+                //   ① 把真实原因解析出来（要求 vs 内置版本）
+                //   ② 明确告知用户「可以一键豁免」及其风险
+                //   ③ 需要用户显式确认才执行 allow-version
+                if (!ok) {
+                    val rejection = parseEngineRejection(ctx, pkg, msg)
+                    if (rejection != null) {
+                        msg = rejection.userMessage(ctx)
+                        Log.w(TAG, "install $pkg rejected by engine compat: $rejection")
+                    }
+                }
             } catch (e: Exception) {
                 msg = e.message ?: "install failed"
             }
@@ -289,13 +326,23 @@ object PluginCenter {
      * @param verb add / remove
      * @return (成功与否, 截断到 300 字符的 stdout 或 stderr)
      */
-    private fun runDshPluginCli(ctx: Context, verb: String, pkg: String): Pair<Boolean, String> {
+    private fun runDshPluginCli(
+        ctx: Context,
+        verb: String,
+        pkg: String,
+        extraArgs: List<String> = emptyList(),
+    ): Pair<Boolean, String> {
         val node = EngineConfig.nodeBin(ctx)
         val entry = EngineConfig.dshEntry(ctx)
         val env = EngineConfig.buildEnv(ctx, EngineConfig.DEFAULT_PORT)
         val pb = ProcessBuilder(
-            node.absolutePath, "--expose-internals", entry.absolutePath,
-            "plugin", "--profile", "web", verb, pkg,
+            buildList {
+                add(node.absolutePath)
+                add("--expose-internals")
+                add(entry.absolutePath)
+                addAll(listOf("plugin", "--profile", "web", verb, pkg))
+                addAll(extraArgs)
+            },
         )
         pb.environment().clear()
         env.forEach { kv ->
@@ -309,13 +356,199 @@ object PluginCenter {
             if (p.exitValue() == 0) {
                 true to String(out, Charsets.UTF_8).trim().take(300)
             } else {
-                false to String(err, Charsets.UTF_8).trim().take(300)
+                // v1.4.37：从 300 放宽到 1200 —— 引擎把「为什么拒绝」写在
+                // `installation rejected:` 之后，300 字符正好截在冒号处，
+                // 用户只看到一个空荡荡的错误（用户反馈「插件下不了」的现场）。
+                false to String(err, Charsets.UTF_8).trim().take(1200)
                     .ifEmpty { "exit=${p.exitValue()}" }
             }
         } else {
             p.destroy()
             false to "plugin $verb timed out (120s)"
         }
+    }
+
+    /**
+     * pnpm 拒绝执行依赖 build 脚本（v1.4.37，用户截图报 `ERR_PNPM_IGNORED_BUIL`）。
+     *
+     * pnpm 10 起默认把依赖的 install / postinstall 脚本列为「ignored builds」，
+     * 只打印警告不执行。带原生模块的插件（node-gyp / prebuild-install）因此
+     * 装完却没有编译产物，插件加载时报错或直接被引擎判为不可用。
+     *
+     * 错误文本各版本措辞不同，这里同时匹配错误码与警告措辞。
+     */
+    private fun isIgnoredBuildsError(msg: String): Boolean =
+        msg.contains("ERR_PNPM_IGNORED_BUILDS", ignoreCase = true) ||
+            msg.contains("ERR_PNPM_IGNORED_BUILD", ignoreCase = true) ||
+            (msg.contains("ignored build", ignoreCase = true) &&
+                msg.contains("onlyBuiltDependencies", ignoreCase = true)) ||
+            msg.contains("Ignored build scripts", ignoreCase = true)
+
+    /**
+     * 把 [pkg] 写进 profile 的 `.npmrc` `onlyBuiltDependencies` 白名单。
+     *
+     * ## 为什么只放这一个包，不用 `*`
+     * `onlyBuiltDependencies` 是「允许执行 install 脚本的包名清单」。写 `*` 等于
+     * 允许**所有**传递依赖执行任意 postinstall 脚本 —— 那是供应链攻击的经典入口。
+     * 用户点安装的是这一个插件，就只放它。
+     *
+     * ## 同时关掉 pnpm 的 ignored-builds 警告升级
+     * pnpm 在 `strict` 模式下会把 ignored builds 从警告升级为失败。我们显式给了
+     * 白名单，就不该再被这条策略拦住，所以把 `dangerouslyAllowAllBuilds` 保持关闭
+     * —— 只靠白名单，最小权限。
+     *
+     * @return 是否成功写入
+     */
+    private fun allowBuildFor(ctx: Context, pkg: String): Boolean = runCatching {
+        val dir = java.io.File(EngineConfig.dshHome(ctx), "profiles/web")
+        if (!dir.isDirectory) return@runCatching false
+        val npmrc = java.io.File(dir, ".npmrc")
+        val existing = if (npmrc.isFile) npmrc.readText() else ""
+        // 已有 onlyBuiltDependencies 就合并，不覆盖用户可能自己加的内容
+        val line = Regex("""(?m)^onlyBuiltDependencies\s*=.*$""")
+        val current = line.find(existing)?.value?.substringAfter('=')?.trim().orEmpty()
+        val items = current.split(',', ' ')
+            .map { it.trim().trim('"', '\'').trim() }
+            .filter { it.isNotEmpty() }
+            .toMutableSet()
+        if (pkg in items) return@runCatching true
+        items += pkg
+        val updated = if (line.containsMatchIn(existing)) {
+            line.replace(existing, "onlyBuiltDependencies=" + items.joinToString(","))
+        } else {
+            val nl = System.lineSeparator()
+            (existing.trimEnd() + nl + "onlyBuiltDependencies=" + items.joinToString(",") + nl)
+        }
+        npmrc.writeText(updated)
+        Log.i(TAG, "allowBuildFor: $pkg -> ${npmrc.absolutePath}")
+        true
+    }.getOrDefault(false)
+
+    /**
+     * 引擎的插件兼容性拒绝（v1.4.37，用户反馈「插件下不了」）。
+     *
+     * ## 现象
+     * 插件中心点安装后显示 `失败：dsh: installation rejected:` —— 冒号后面什么都没有。
+     * 用户完全不知道原因，只能反复重试。
+     *
+     * ## 根因
+     * 这不是 pnpm 的错误。引擎的 `dsh-plugin-manager` 在**安装前**做兼容性预检
+     * （`evaluatePluginCompatibility`）：插件 `engines.dsh` 要求的最低版本高于内置
+     * 引擎版本时不通过，直接回滚并输出
+     *
+     *     dsh: installation rejected: Plugin <pkg>@<ver> is incompatible with
+     *     dsh <runtime>: requirements {...}. ... To accept this risk explicitly,
+     *     grant the exact-version exemption for <pkg>@<ver> on dsh <runtime> with
+     *     `dsh plugin allow-version` ...
+     *
+     * 旧实现把 stderr 截断到 300 字符，正好截在冒号之后，把真正的原因（以及引擎
+     * 自己给出的解法）全丢了。
+     *
+     * ## 为什么不自动放行
+     * 引擎的警告原文是「Running it may cause crashes or data loss」，且它的官方
+     * API 强制要求 `acceptRisk: true` 显式确认。App 替用户静默接受这个风险不合适，
+     * 所以这里只负责**把原因说清楚**，并在用户明确同意后才执行 `allow-version`。
+     */
+    internal data class EngineRejection(
+        val pkg: String,
+        val version: String?,
+        val runtime: String?,
+        val requirements: String,
+    ) {
+        /**
+         * 给用户看的可读信息：原因 + 内置版本 + 可选做法。
+         *
+         * 全部文案走 `strings.xml`（i18n 门禁禁止 Kotlin 里写中文），
+         * 用 [ctx] 取已按应用语言包装过的资源。
+         */
+        fun userMessage(ctx: Context): String = buildString {
+            val nl = System.lineSeparator()
+            append(ctx.getString(R.string.plugin_engine_old_why, runtime ?: "?"))
+            if (requirements.isNotBlank()) {
+                append(nl).append(ctx.getString(R.string.plugin_engine_old_req, requirements))
+            }
+            append(nl).append(ctx.getString(R.string.plugin_engine_old_note))
+        }
+    }
+
+    /**
+     * 从安装失败的输出里解析引擎兼容性拒绝。
+     * @return null = 不是这类错误
+     */
+    internal fun parseEngineRejection(ctx: Context, pkg: String, msg: String): EngineRejection? {
+        if (!msg.contains("installation rejected", ignoreCase = true) &&
+            !msg.contains("incompatible with dsh", ignoreCase = true) &&
+            !msg.contains("compatibility", ignoreCase = true)
+        ) {
+            return null
+        }
+        // 引擎原文形如：Plugin <name>@<version> is incompatible with dsh <runtime>:
+        // requirements 后跟一个 JSON 对象，形如 dsh: 大于等于 0.2.1-rc.3
+        val pkgVer = Regex("""Plugin\s+(\S+?)@(\S+?)\s+is incompatible""")
+            .find(msg)?.let { it.groupValues[1] to it.groupValues[2] }
+        val runtime = Regex("""incompatible with dsh\s+([^\s:]+)""")
+            .find(msg)?.groupValues?.get(1)
+        val reqs = Regex("""requirements\s+(\{[^}]*\})""")
+            .find(msg)?.groupValues?.get(1).orEmpty()
+        val name = pkgVer?.first ?: pkg
+        val version = pkgVer?.second ?: runCatching {
+            // 退路：从本地已读到的 registry 版本推断（市场列表里的 version）
+            null
+        }.getOrNull()
+        val builtin = runtime ?: runCatching {
+            val pj = java.io.File(
+                EngineConfig.engineRoot(ctx), "lib/node_modules/@deepseek-ai/dsh/package.json",
+            )
+            JSONObject(pj.readText()).getString("version")
+        }.getOrNull()
+        return EngineRejection(name, version, builtin, reqs)
+    }
+
+    /**
+     * 为「引擎版本不够」的插件写入 exact-version 豁免，然后重试安装。
+     *
+     * 走引擎官方命令（不手写 compatibility.json）：
+     *   `dsh plugin --profile web allow-version <pkg>@<ver> --dsh-version <rt> --accept-risk`
+     *
+     * **必须由用户显式确认**：引擎文档与错误信息都写明运行不兼容插件
+     * 「may cause crashes or data loss」，它的 API 也强制 `acceptRisk: true`。
+     * 本方法只在该确认已经拿到后调用。
+     */
+    fun forceInstallWithExemption(
+        ctx: Context,
+        pkg: String,
+        version: String,
+        onDone: (Boolean, String) -> Unit,
+    ) {
+        installExecutor.execute({
+            try {
+                val runtime = runCatching {
+                    val pj = java.io.File(
+                        EngineConfig.engineRoot(ctx),
+                        "lib/node_modules/@deepseek-ai/dsh/package.json",
+                    )
+                    JSONObject(pj.readText()).getString("version")
+                }.getOrNull()
+                if (runtime == null) {
+                    onDone(false, ctx.getString(R.string.plugin_engine_old_no_version))
+                    return@execute
+                }
+                val r = runDshPluginCli(
+                    ctx, "allow-version", "$pkg@$version",
+                    extraArgs = listOf("--dsh-version", runtime, "--accept-risk"),
+                )
+                if (!r.first) {
+                    onDone(false, ctx.getString(R.string.plugin_engine_old_exempt_failed, r.second))
+                    return@execute
+                }
+                Log.i(TAG, "exemption granted for $pkg@$version on dsh $runtime")
+                // 豁免写好后重试安装
+                val again = runDshPluginCli(ctx, "add", pkg)
+                onDone(again.first, again.second)
+            } catch (e: Exception) {
+                onDone(false, e.message ?: "force install failed")
+            }
+        })
     }
 
     /**
