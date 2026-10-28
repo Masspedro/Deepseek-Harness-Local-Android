@@ -490,6 +490,8 @@ class PluginStoreActivity : ThemedActivity() {
             Compat.NEEDS_NATIVE -> getString(R.string.plugin_compat_native) to getColor(R.color.danger)
             Compat.ENGINE_FORK -> getString(R.string.plugin_compat_fork) to getColor(R.color.danger)
             Compat.UNKNOWN -> getString(R.string.plugin_compat_unknown) to getColor(R.color.text_secondary)
+            // issue #66：不是插件坏，是我们内置引擎落后于 npm next 线
+            Compat.ENGINE_TOO_OLD -> getString(R.string.plugin_compat_engine_old) to getColor(R.color.warning)
         }
         return TextView(this).apply {
             text = "⚠ $label"
@@ -642,6 +644,7 @@ class PluginStoreActivity : ThemedActivity() {
                                 Compat.NEEDS_NATIVE -> getString(R.string.plugin_compat_native)
                                 Compat.ENGINE_FORK -> getString(R.string.plugin_compat_fork)
                                 Compat.UNKNOWN -> getString(R.string.plugin_compat_unknown)
+                                Compat.ENGINE_TOO_OLD -> getString(R.string.plugin_compat_engine_old)
                             }
                         )
                         if (merged.compatReasons.isNotEmpty()) {
@@ -722,6 +725,18 @@ class PluginStoreActivity : ThemedActivity() {
                 btn.isEnabled = true
                 when (r) {
                     is app.dsh.mobile.engine.NativePluginCheck.Result.PureJs -> doInstall(pkg, btn, basePkg)
+                    // issue #66：引擎版本不够，装上也跑不起来。这里直接说清楚
+                    // 「不是插件坏了，是内置引擎旧了」，而不是让用户去猜。
+                    is app.dsh.mobile.engine.NativePluginCheck.Result.EngineTooOld -> {
+                        btn.text = getString(R.string.plugin_install)
+                        confirmInstall(
+                            pkg, btn, basePkg,
+                            title = getString(R.string.plugin_compat_engine_old),
+                            message = getString(
+                                R.string.plugin_engine_too_old_body, r.required, r.bundled,
+                            ),
+                        )
+                    }
                     is app.dsh.mobile.engine.NativePluginCheck.Result.Unknown -> {
                         btn.text = getString(R.string.plugin_install)
                         confirmInstall(

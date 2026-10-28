@@ -11,6 +11,189 @@
   * 提交前看 `git diff --numstat`：**删除行数应远小于新增**，若大量删除要停下来复核。
 - **不确定就先查再问**，不要凭印象重写已工作的代码。
 
+## v1.4.35 / v1.4.36 已发布（2026-10-28 晚）
+
+### v1.4.35：pnpm 锁树整棵跳过 chown（#67，v1.4.34 修复不完整）
+
+**我 v1.4.34 漏了什么**：那版做法是「递归 chown 全树，再把锁**目录本身**改回原属主」，
+但 `chown "$n:$n" "$d"` **没有 `-R`** —— 目录改回去了，目录里的锁文件仍是 app uid。
+pnpm 于是换了一句错误继续拒绝：从「lock directory must be a real directory owned by
+the current user」变成「lock must be a **regular file** owned by the current user」。
+用户 luoyi0914 用 `ls -ldn`（看目录）vs `ls -ln`（看文件）的对比指出了这点。
+
+**这次的修法**：不再「改了再还原」，而是**根本不碰**。这些锁目录是 pnpm 按运行身份
+自己管理的运行时状态，不属于 App 数据：
+
+```sh
+find <home> <engine>   -path '<home>/.cache/pnpm-store-operation-locks-*' -o   -path '<home>/.cache/pnpm-dir-locks-*' -o   -path '<home>/.cache/pnpm-modules-swaps-*' -prune -o   -exec chown <uid>:<uid> {} +
+```
+
+三个落地细节（都踩过）：
+- **不用分组括号** —— toybox find 的括号转义与 GNU 不一致
+- **`-path` 参数整体走 `shellQuote`** —— 否则通配符在引号外被 shell 提前展开
+- **`-exec ... {} +`** —— dsh-home 几万文件，逐文件 fork 太慢
+
+**本地实测**：造假目录树跑生成的 find 命令，锁目录两棵整棵未出现，
+`.cache` / `sessions/` / `engine/bin/node` 全部命中。
+
+**探针教训**：`_test_root_pnpm_locks.py` 增加一条「旧方案不得存在」
+（`chown "$n:$n"` 不能出现）——「只改目录不改文件」这个坑不留断言很容易踩回去。
+
+### v1.4.36：区分「插件不兼容」与「内置引擎过旧」（#66）
+
+**问题**：npm 上 `@deepseek-ai/dsh` 有两条线 —— `latest` = 0.2.1-rc.2（我们内置）、
+`next` = 0.2.1-rc.4（插件作者照它写 `engines.dsh`）。声明 `>=0.2.1-rc.3` 的插件
+装不上，UI 只说「不兼容」，用户以为是插件坏了。
+
+**改动**：
+- `NativePluginCheck` 读 `engines.dsh` 取版本下限，与内置版本比较
+- 要求更高 → 新状态 `Result.EngineTooOld(required, bundled)`，
+  **单独成态不进 Risk**（Risk 语义是「插件有问题」，这个是「我们引擎旧了」）
+- **semver 按预发布规则比**：`0.2.1-rc.2 < 0.2.1-rc.4 < 0.2.1`；
+  预发布段按点切分、数字段按数值比（字典序会把 `rc.10` 判成小于 `rc.9`）
+- 读不到内置版本时**不判定**（宁可漏报，误报会把能用的标成不可用）
+- UI 用 warning 色（不是 danger），安装前弹窗写明「要求 X / 内置 Y / 插件本身没问题」
+- `DshApp.onCreate` 注入 applicationContext（`NativePluginCheck` 是纯静态 object）
+
+**探针**：`_test_plugin_engine_compat.py`（18 项），含 8 个 semver 用例 +
+6 个范围解析用例，专门覆盖 `rc.10 vs rc.9` 字典序陷阱与 `*`/`latest` 必须返回 None。
+
+**根因未解**：这只是让用户知道真实原因。真正的解法是把内置引擎升到 rc.4 线 ——
+14 个补丁锚点要重新验证，是独立一轮工作。已在 #66 里给出分阶段计划
+（先出补丁适配评估报告附在 issue 里，再决定是否进小版本）。
+
+### issue 状态（本轮后：open 7 个）
+- 关闭：#65（root pnpm 锁）、#66（回复计划，保留 open 跟踪）、#67（v1.4.35 修完）
+- 保留 open：#66（等引擎升级）、#60（Sol effort=none，非 App bug）、#26（长会话
+  DOM 累积，需专项做视图虚拟化）、#59（Python 轮子，已回路线图）、#41（Profile）、
+  #2（语音唤醒）、#49（swap 恢复窗口）
+
+### 发版 CI 的一次平台故障（记录备查）
+
+v1.4.36 首次 CI：8 个 build job 全绿，`publish-release` 在最后一步失败 ——
+11 个资产里成功上传了 10 个，上传 `runtime-x86_64.zip`（127 MB）时 GitHub
+返回 HTML 错误页（`##[error]<!DOCTYPE html>`），整个 Release 因此未创建。
+
+**不是我们的代码问题**：同样流程在 v1.4.35 一次通过。判断为 GitHub 侧瞬时故障
+（大文件上传 503）。处理：`rerun-failed-jobs` 重跑，第二次一次通过，12 资产齐全。
+
+> 以后再遇到 `publish-release` 失败而所有 build 都绿，先看日志末尾是不是
+> HTML 错误页 —— 那是平台故障，直接重跑即可，别去改代码。
+
+## v1.4.33 / v1.4.34 已发布（2026-10-28，两个 PTC/root 修复）
+
+### v1.4.33：PTC bootstrap 路径映射（用户报错，无 issue 号）
+
+**报错**：`code run failed (worker-exit): PTC runtime bootstrap is unavailable in
+the subprocess execution world: <engine>/lib/node_modules/@deepseek-ai/
+dsh-ptc-runtime-node/lib/process.js` —— 而文件**确实存在**。
+
+**根因**（用户自己也独立确诊了，结论一致）：`scriptBootstrapArgs()` 里
+
+```js
+const mapped = (path) => {
+    const result = fs.processPathFromHostPath(path);
+    if (result === void 0) throw new Error(`... unavailable ...`);
+    return result;
+};
+```
+
+`fs` 是 `ctx.fs`。`FileSystem` 基类的 `processPathFromHostPath()` 是**空实现**
+（无条件 undefined），只有 `dsh-fs-local` 覆盖成
+`isAbsolute(hostPath) ? resolve(hostPath) : undefined`。挂载到 `ctx.fs` 的
+provider 若没走到那个覆盖版本，映射表里没有 engine 目录这一条 → 返回 undefined
+→ 每次 run_code 都抛。文件、权限、SELinux、node 本体、库路径全部无罪。
+
+**修法**（`patch-ptc-runtime-android.py` 第三处补丁）：映射返回 undefined **且**
+路径是绝对路径 → 原样透传；相对路径仍抛错（否则 worker 按自己 cwd 解析会执行错文件）。
+Android 上引擎/fs provider/worker 同一挂载命名空间，绝对路径就是进程路径。
+
+**关键配套（踩过坑）**：打完补丁必须重算 `BUILD.json`。`RuntimeInstaller` 用
+`BUILD.json.version` 判是否重解压，版本号派生自内容 sha —— 不重算的话新补丁
+**永远进不到设备上**，表现为「明明修好了、装完还是老报错」。脚本现已自动 restamp。
+
+**三处门禁同步**：`build-runtime.sh`（CI 运行时流水线）、`app/build.gradle.kts`
+（APK 打包前）、`_test_runtime_dedupe.py`（+3 断言，并改为优先读 `_rel/*-dedup.zip`
+发布用包，避免读到去重前中间产物得出假阳性）。
+
+**端到端验证**：设备重装后运行时版本更新为 `2026.10.28-eb83a614`，补丁命中，
+`process.js` 存在且路径解析正常。
+
+### v1.4.34：root 模式 pnpm 锁属主（issue #65）
+
+**现象**：`DSH_ANDROID_PRIV_MODE=root` 时插件安装/卸载全失败，**每次重启引擎复发**：
+`ERR_PNPM_STORE_DIR_OPEN_OPERATION_LOCK: lock directory must be a real directory
+owned by the current user: .../.cache/pnpm-store-operation-locks-0`
+
+**根因**：pnpm 锁目录按 uid 分后缀（`pnpm-*-locks-<uid>`），root 引擎用 `-0`。
+`Privilege.fixHomeOwnership()` 每次启动对整棵 `dsh-home` 递归
+`chown -R <appUid>:<appUid>`，把 root 那套也改了 → root 的 pnpm 拒绝使用。
+用户实测「手动改回属主能撑到下次启动」正是这个原因。
+
+**修法**：递归 chown 之后，把 `.cache` 下 pnpm 锁/交换目录按**目录名数字后缀**
+还原属主（`-0` → `0:0`，`-10324` → `10324:10324`），非数字后缀跳过。
+原有自愈保留（engine 补 `u+rwX`、`restorecon`）。
+
+**护栏**：`_test_root_pnpm_locks.py`（10 项），其中专门锁**顺序**：必须
+「先整树 chown 再还原」（反了会被覆盖，等于没修）。
+
+### 发版
+- v1.4.33：tag → CI `40626947939` 全绿 → 发布运行时下载验证含补丁
+- v1.4.34：tag → CI `40628898147` 全绿 → 12 资产，latest
+- 探针 15 项全绿；i18n 全过
+
+## v1.4.32 已发布（2026-10-28，PR #64 + git 流程规范化）
+
+### 1. PR #64 收编（@XiaoPb，5 提交）
+- 气泡回落文案对齐 dsh-pet web `workStatusTexts`（六档随机抽句，`text` 透传）
+- 工作状态台词进台词库（`PetLines.ws_*` 六档，编辑器/导入导出覆盖）
+- 移除 App 端「桥端随机词句」开关（改由 dsh-pet-bridge v0.3.6 自绘分区承担）
+- CI 预装 `cmake;3.22.1` + 修 `sdkmanager` 全路径（runner PATH 问题）
+- 探针同步：`step_done` → `"post" -> ack`（守卫意图不变）
+
+### 2. **重要：推送通道不再重写 SHA**（本次核心改动）
+
+**问题**：旧 `push-via-api.py` 逐 blob 上传 + `base_tree` 重建树 + 只传 author
+（漏 committer），每个提交在远端都被重新创建、SHA 全变。后果（XiaoPb 在 PR #64
+里直接指出）：
+- 下游 fork 每次同步都发现历史被改写，只能 force-push；
+- 本地与远端永久分叉（`git status` 恒 ahead/behind）；
+- GitHub 上的提交号与本地对不上，追溯困难。
+
+**修复**：按 git 对象身份原样上传
+- 复用提交的**原始 tree SHA**（内容相同则 SHA 相同，不重建）
+- 带完整 `author` **和 `committer`**（旧实现漏 committer 是 SHA 变化的第二因）
+- 父提交沿用原始 SHA，必要时先 fetch 补齐祖先对象
+- **实测 6/6 + 1/1 提交 SHA 全部保持**，推完 `rev-list --left-right --count` = `0 0`
+
+**同时加的安全机制**：
+- fetch 直连失败自动切 gh-proxy 前缀代理（实测 gh-proxy 支持 fetch 的 GET，
+  **不支持** receive-pack 的 POST —— 所以 push 仍只能走 API 通道）
+- **分叉检测**：本地与远端分叉时拒绝推送并给出处理办法，**绝不 force 覆盖**
+  （2026-10-27 覆盖事故的根因就是没有这道闸）
+- `--rebase-remote` 可选自动 rebase
+
+### 3. 流程规范落地
+- **`docs/git-workflow.md`**：合并原则（`--no-ff` 保留线路、不 squash）、
+  推送方式优先级、fetch/push 通道差异表、日常操作步骤、验证清单、
+  探针维护约定（断言表达意图而非实现细节）、历史事故与教训
+- **`scripts/git-hygiene.py`**：推送前自检 —— 工作区脏 / 远端有新提交 /
+  rebase-merge 中间态 / 对象库 CRLF 污染 / probes 误加。
+  `--ci` 模式供流水线用（不联网）
+- **`i18n-check.yml` 增加两步**：「回归探针」（跳过已知的 corepack_hardlink）
+  与「git 卫生」。都不需要 Android SDK，几秒跑完，PR 阶段就能拦住回归
+
+### 4. issue 状态（本轮后）
+已关闭：#58 #62(PR) #61(PR) #63(PR) #64(PR) #47 #25
+保留 open：#60（Sol effort=none，非 App bug，已给自查步骤）#26（长会话 DOM
+累积，需专项做视图虚拟化）#59（Python 轮子，已回路线图）#41（Profile 管理）
+#2（语音唤醒，排在 #41 后）#49（swap 恢复窗口）
+
+### 5. 验证与发版
+- i18n 全过；14 探针全绿；`assembleDebug(x86_64)` 通过；模拟器冒烟 pid 稳定、0 FATAL
+- tag `v1.4.32` → CI run `40621327073` 全绿 → **Release 12 资产，latest**
+- 推送后 `git-hygiene` 确认本地与远端一致（`6873b070`）
+
 ## v1.4.31 已发布（2026-10-28，PR #63 收编 + issue 清理）
 
 ### 收编 PR #63（@XiaoPb，38 提交，本地合并）

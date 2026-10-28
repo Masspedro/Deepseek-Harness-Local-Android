@@ -216,6 +216,8 @@
 <string name="plugin_sort_title">Sort</string>
     <string name="plugin_check_updates">Check updates</string>
     <string name="plugin_compat_pure">Pure JS</string>
+    <string name="plugin_engine_too_old_body">This plugin requires dsh engine >= %1$s, but this app bundles %2$s. The plugin is fine — our built-in engine is simply older than what the plugin targets. It will work after an app update that ships a newer engine.</string>
+    <string name="plugin_compat_engine_old">Engine too old — this plugin needs a newer built-in dsh engine</string>
     <string name="plugin_compat_native">Needs native code</string>
     <string name="plugin_compat_fork">Engine fork</string>
     <string name="plugin_compat_unknown">Unverified</string>

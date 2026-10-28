@@ -60,6 +60,20 @@ object PluginMarket {
 
         /** 查不到（离线 / git 源 / 未请求） */
         UNKNOWN,
+
+        /**
+         * 插件要求的 dsh 引擎版本比内置的新（issue #66）。
+         *
+         * 与上面三态的区别：**这不是插件的问题，也不是用户环境的问题**，
+         * 而是我们内置的引擎版本落后于 npm `next` 线。npm 上 `@deepseek-ai/dsh`
+         * 的 `latest` 停在 0.2.1-rc.2，而 `next` 已到 rc.4；插件作者照着 next 线
+         * 写 `engines.dsh`，于是「按 latest 内置引擎」的我们与「按 next 开发」的
+         * 插件生态错位。
+         *
+         * 单独列一态是为了给用户正确的预期：装不上不是插件坏了，升级 App
+         * 内置引擎后才能用。
+         */
+        ENGINE_TOO_OLD,
     }
 
     /**
@@ -229,6 +243,10 @@ object PluginMarket {
             is NativePluginCheck.Result.Unknown -> e.copy(
                 compat = Compat.UNKNOWN,
                 compatReasons = listOf(r.reason),
+            )
+            is NativePluginCheck.Result.EngineTooOld -> e.copy(
+                compat = Compat.ENGINE_TOO_OLD,
+                compatReasons = listOf("requires dsh >=${r.required} (bundled ${r.bundled})"),
             )
             null -> e
         }

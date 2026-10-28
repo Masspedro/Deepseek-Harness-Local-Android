@@ -53,6 +53,15 @@ object NativePluginCheck {
 
         /** 查不到（离线 / 非 registry 源如 git、本地路径），按未知处理 */
         data class Unknown(val reason: String) : Result
+
+        /**
+         * 插件要求的引擎版本高于内置版本（issue #66）。
+         *
+         * 单独成态而不是塞进 [Risk]：Risk 的语义是「插件自身有问题」，
+         * 而这个是「我们的引擎旧了」——给用户的预期完全不同（等升级 App，
+         * 而不是换插件）。
+         */
+        data class EngineTooOld(val required: String, val bundled: String) : Result
     }
 
     /**
@@ -73,6 +82,88 @@ object NativePluginCheck {
     /**
      * 从 manifest 判定。抽成独立函数便于单测（不依赖网络）。
      */
+    /**
+     * 从 `>=0.2.1-rc.3` / `^0.2.1` / `0.2.1-rc.4` 这类范围表达式里取出**下限**。
+     *
+     * 只处理常见前缀（`>=`、`>`、`^`、`~`、裸版本）。复杂范围（`||`、区间）
+     * 返回 null —— 宁可漏判也不误判：误判会把能用的插件标成不可用。
+     */
+    internal fun minVersionOf(range: String): String? {
+        val first = range.split("||").firstOrNull()?.trim().orEmpty()
+        if (first.isEmpty()) return null
+        val token = first.split(" ").firstOrNull()?.trim().orEmpty()
+        val stripped = token.trimStart('>', '=', '^', '~', ' ').trim()
+        // 用原始字符串（Kotlin """…"""）避免 \d 被当转义序列
+        val versionLike = Regex("""^\d+\.\d+\.\d+""")
+        return if (versionLike.containsMatchIn(stripped)) stripped else null
+    }
+
+    /**
+     * 语义化版本比较，**按 semver 的预发布规则**：
+     * `0.2.1-rc.2 < 0.2.1-rc.4 < 0.2.1`（预发布版小于同号正式版）。
+     *
+     * 朴素的字符串比较在这里是错的：`"rc.10" < "rc.9"` 按字典序成立，
+     * 但按版本语义应该是反的。所以预发布段要按点切分、数字段按数值比。
+     *
+     * @return 负数 = a 比 b 旧；0 = 相同；正数 = a 比 b 新
+     */
+    internal fun compareSemver(a: String, b: String): Int {
+        fun split(v: String): Pair<List<Int>, List<String>> {
+            val core = v.substringBefore('-')
+            val pre = v.substringAfter('-', "")
+            val nums = core.split('.').map { it.toIntOrNull() ?: 0 }
+            val pres = if (pre.isEmpty()) emptyList() else pre.split('.')
+            return nums to pres
+        }
+        val (an, ap) = split(a)
+        val (bn, bp) = split(b)
+        for (i in 0 until maxOf(an.size, bn.size)) {
+            val x = an.getOrElse(i) { 0 }
+            val y = bn.getOrElse(i) { 0 }
+            if (x != y) return x - y
+        }
+        // 主版本号相同：无预发布 > 有预发布（1.0.0 > 1.0.0-rc.1）
+        if (ap.isEmpty() && bp.isEmpty()) return 0
+        if (ap.isEmpty()) return 1
+        if (bp.isEmpty()) return -1
+        for (i in 0 until maxOf(ap.size, bp.size)) {
+            val x = ap.getOrNull(i) ?: return -1
+            val y = bp.getOrNull(i) ?: return 1
+            val xn = x.toIntOrNull(); val yn = y.toIntOrNull()
+            val cmp = if (xn != null && yn != null) xn - yn else x.compareTo(y)
+            if (cmp != 0) return cmp
+        }
+        return 0
+    }
+
+    /**
+     * 内置引擎版本（如 `0.2.1-rc.2`）；读不到返回 null（**不因此误判不兼容**）。
+     *
+     * 从 engine root 下 `@deepseek-ai/dsh/package.json` 读，与 `DataExport`
+     * 和 `SelfCheck` 用的是同一份事实来源 —— App 进程能直接读（同 uid）。
+     */
+    internal fun bundledEngineVersion(): String? = runCatching {
+        val ctx = appContextRef ?: return@runCatching null
+        val pkg = java.io.File(
+            app.dsh.mobile.engine.EngineConfig.engineRoot(ctx),
+            "lib/node_modules/@deepseek-ai/dsh/package.json",
+        )
+        if (!pkg.isFile) return@runCatching null
+        JSONObject(pkg.readText()).getString("version")
+    }.getOrNull()
+
+    /**
+     * App Context 弱引用。`NativePluginCheck` 是纯静态 object（没有 Context 参数），
+     * 而引擎版本必须从应用私有目录读。由 `DshApp.onCreate` 注入一次。
+     * 用 applicationContext 不会泄漏 Activity。
+     */
+    @Volatile
+    private var appContextRef: android.content.Context? = null
+
+    fun attachContext(ctx: android.content.Context) {
+        appContextRef = ctx.applicationContext
+    }
+
     internal fun analyse(name: String, manifest: JSONObject): Result {
         val reasons = mutableListOf<String>()
 
@@ -80,6 +171,21 @@ object NativePluginCheck {
         val osList = stringList(manifest.opt("os"))
         if (osList.isNotEmpty() && osList.none { it == "android" || it == "linux" }) {
             reasons += "declares os=${osList.joinToString(",")}"
+        }
+
+        // 1b) engines.dsh：插件声明的引擎版本下限高于内置引擎 → 装上也跑不起来。
+        // issue #66：npm 上 dsh 的 `latest` 停在 0.2.1-rc.2，而 `next` 已到 rc.4；
+        // 插件作者照 next 线写 engines，我们按 latest 内置 —— 生态错位。
+        // 这里只做「装之前能不能知道」这一层，真正的解法是升级内置引擎。
+        val engines = manifest.optJSONObject("engines")
+        val needRaw = engines?.optString("dsh", "").orEmpty().trim()
+        if (needRaw.isNotEmpty()) {
+            val need = minVersionOf(needRaw)
+            val have = bundledEngineVersion()
+            if (need != null && have != null && compareSemver(need, have) > 0) {
+                // 直接返回：引擎不够新时，插件自身再好也用不了，不必再分析别的
+                return Result.EngineTooOld(need, have)
+            }
         }
 
         // 2) 经典 build 钩子

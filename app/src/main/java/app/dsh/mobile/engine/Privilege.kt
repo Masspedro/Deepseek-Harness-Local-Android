@@ -605,9 +605,52 @@ object Privilege {
             // app 自己的 node 进程（新 uid）**读不了插件** → 引擎日志
             // `android-fast-mode: failed to import` / EACCES → 插件功能全哑。
             // 实测症状：AI 找不到 fast_mode 工具、局域网代理进程起不来。
+            // ⚠️ v1.4.34（issue #65）：root 模式下**不能**把 `.cache` 下的 pnpm
+            // 锁目录 chown 回 app uid。
+            //
+            // 现象：以 root 运行时（DSH_ANDROID_PRIV_MODE=root），pnpm 把操作锁建在
+            // `$HOME/.cache/pnpm-store-operation-locks-<uid>` 这类**按 uid 分后缀**的
+            // 目录里。本函数原本对整棵 dsh-home 递归 chown，会连 `...-locks-0`（root
+            // 那一套）一起改成 app uid；随后 root 身份的 pnpm 判定「锁目录必须是当前
+            // 用户拥有的真实目录」不成立，于是安装/卸载全部失败：
+            //   ERR_PNPM_STORE_DIR_OPEN_OPERATION_LOCK: lock directory must be a real
+            //   directory owned by the current user
+            // 用户每次重启引擎都会复发（因为启动即 chown）。
+            //
+            // 修法（v1.4.35，issue #65 + #67）：**chown 时直接排除整棵 pnpm 锁树**。
+            //
+            // v1.4.34 的做法是「先递归 chown 全树，再把锁目录本身改回原属主」，
+            // 漏了一点：`chown "$n:$n" "$d"` 没有 `-R`，目录里的锁文件仍是 app uid。
+            // 于是 pnpm 的报错从「lock directory must be a real directory owned by
+            // the current user」变成「lock must be a **regular file** owned by the
+            // current user」——问题没解决，只是换了一句话（issue #67）。
+            //
+            // 现在的做法更干净：这些锁目录**本来就不属于 App 数据**（是 pnpm 按运行
+            // 身份自己管理的运行时状态），递归遍历时整棵跳过。用 `-path ... -prune -o`
+            // 实现：命中锁树就不再下降，其余照常处理。
+            //
+            // 这样无论 root 还是 app uid 运行，各自那套锁都不被碰，天然正确。
+            val prunePatterns = listOf(
+                "/.cache/pnpm-store-operation-locks-*",
+                "/.cache/pnpm-dir-locks-*",
+                "/.cache/pnpm-modules-swaps-*",
+            )
+            // 不用分组括号：`-path A -o -path B -o -path C` 与 `-prune -o -exec`
+            // 的优先级天然正确（-o 左结合，-prune 只作用于紧邻的 -path），
+            // 也避免了在 shell 里转义括号带来的可移植性问题（toybox find 差异）。
+            val homePlain = home.absolutePath
+            val pruneExpr = buildString {
+                prunePatterns.forEachIndexed { i, pat ->
+                    if (i > 0) append(" -o ")
+                    append("-path ").append(shellQuote(homePlain + pat))
+                }
+                append(" -prune -o ")
+            }
             val cmd = buildString {
-                append("chown -R ").append(uid).append(":").append(uid).append(' ')
-                append(homeQ).append(' ').append(engineQ).append(" 2>/dev/null; ")
+                append("find ").append(homeQ).append(' ').append(engineQ).append(' ')
+                append(pruneExpr)
+                append("-exec chown ").append(uid).append(':').append(uid)
+                append(" {} + 2>/dev/null; ")
                 append("chmod -R u+rwX ").append(engineQ).append(" 2>/dev/null; ")
                 // SELinux 标签重置：restorecon 不在所有设备上都可用（toybox 差异），失败无妨
                 append("restorecon -R ").append(homeQ).append(" 2>/dev/null; ")

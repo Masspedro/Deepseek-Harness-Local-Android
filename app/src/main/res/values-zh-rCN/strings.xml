@@ -215,6 +215,8 @@
 <string name="plugin_sort_title">排序</string>
     <string name="plugin_check_updates">检查更新</string>
     <string name="plugin_compat_pure">纯 JS</string>
+    <string name="plugin_engine_too_old_body">该插件要求 dsh 引擎 ≥ %1$s，而本应用内置的是 %2$s。插件本身没问题——是我们内置的引擎比它要求的旧。等应用更新到包含更新引擎的版本后即可使用。</string>
+    <string name="plugin_compat_engine_old">内置引擎版本过低 —— 该插件要求更新的 dsh 引擎</string>
     <string name="plugin_compat_native">需要原生编译</string>
     <string name="plugin_compat_fork">引擎 fork</string>
     <string name="plugin_compat_unknown">未验证</string>

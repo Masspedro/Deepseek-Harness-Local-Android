@@ -79,8 +79,15 @@ scripts/probes/*.bin
 !/scripts/probes/test_pick.py
 !/scripts/probes/_test_responsive_native_ui.py
 !/scripts/probes/_test_plugin_render_paging.py
+!/scripts/probes/_test_runtime_dedupe.py
+!/scripts/probes/_test_root_pnpm_locks.py
+!/scripts/probes/_test_plugin_engine_compat.py
 !/scripts/probes/_test_webview_polyfill_v4.py
 !/scripts/probes/_test_webview_polyfill_v4.mjs
 !/scripts/probes/zstd-tail.js
 tasks/
 _bench/
+
+# 宣传视频素材（体积大，不入库；需要时按 docs/promo/video/MATERIALS.md 重新采集）
+docs/promo/video/assets/*.mp4
+docs/promo/video/assets/*.png

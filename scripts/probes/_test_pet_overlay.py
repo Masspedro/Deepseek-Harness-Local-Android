@@ -132,7 +132,9 @@ for slug in ("a055", "a052", "a054", "a056", "a057", "a053"):
 check("controller: ack hold", "ACK_HOLD_MS" in controller)
 check("controller: stop grace", "STOP_GRACE_MS" in controller)
 check("controller: engine watchdog", "onTick" in controller and "engineRunning" in controller)
-check("controller: no fabricated post filename", "step_done" in controller)
+# v1.4.31：协议事件名直接是 "post"（PR #64 重构，删除 step_done 中间标识与 locale 死代码）。
+# 守卫意图不变：post 只走通用 ack 确认，不允许拿事件里的工具名/文件名拼「已读 xxx」。
+check("controller: no fabricated post filename", '"post" -> ack' in controller)
 
 # ---------------------------------------------------------------- service
 svc = read(os.path.join(PET, "PetOverlayService.kt"))

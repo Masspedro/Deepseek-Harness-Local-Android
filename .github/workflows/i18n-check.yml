@@ -38,6 +38,39 @@ jobs:
       - name: Run i18n checks
         run: python3 scripts/check-i18n.py
 
+      # ── 回归探针（v1.4.32）─────────────────────────────────────────────
+      # 这些探针是「行为契约的守卫」，每个都对应一次真实事故（见
+      # docs/git-workflow.md）。纯文本分析，不需要 Android SDK，几秒跑完，
+      # 放在这个轻量 workflow 里门禁每个 PR —— 比等主构建挂掉反馈快得多。
+      #
+      # _test_corepack_hardlink.py 例外：它读 app/src/main/assets/runtime.zip，
+      # 而该文件已按 PR #48 架构移到构建产物目录（不在仓库里）。探针待更新，
+      # 这里显式跳过，避免长期红着掩盖真正的回归。
+      - name: Run regression probes
+        run: |
+          set -uo pipefail
+          fail=0
+          for f in scripts/probes/_test_*.py; do
+            case "$f" in
+              *corepack_hardlink*) echo "SKIP  $f (pending update, see comments)"; continue;;
+            esac
+            if out=$(python3 "$f" 2>&1); then
+              echo "PASS  $f"
+            else
+              echo "FAIL  $f"
+              echo "$out" | tail -25
+              fail=1
+            fi
+          done
+          exit $fail
+
+      # ── git 卫生（v1.4.32）───────────────────────────────────────────
+      # 挡住三类历史事故：工作区脏着推、远端有新提交却直接推（会覆盖别人）、
+      # 对象库里混入 CRLF（CI 上 shell 脚本变成 bad interpreter）。
+      # --ci 模式不做网络操作、不因「工作区脏」报警（CI 检出本身就是干净的）。
+      - name: git hygiene
+        run: python3 scripts/git-hygiene.py --ci
+
       - name: Upload full report on failure
         if: failure()
         run: python3 scripts/check-i18n.py 2>&1 | tee i18n-report.txt || true
