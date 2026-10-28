@@ -24,6 +24,8 @@
 # 不可复现 —— 那正是本次改造要消除的问题，不能在滚动通道里复发。
 #
 # 任一级命中并通过校验即返回；三级全失败才算失败。输出会写进 Step Summary。
+# 取货统一走 gh api（api.github.com），不使用 gh release download：后者在本仓库的
+# android-build runner 上对 prerelease 标签整体失败，而 decide 用 gh api 能成功。
 # 需要：Linux + gh CLI（GH_TOKEN）+ python3 + unzip/sha256sum。
 #
 # 用法: fetch-runtime.sh --abi arm64-v8a|x86_64 --out runtime.zip --meta runtime-meta.json \
@@ -94,6 +96,20 @@ verify_pair() {
   return 0
 }
 
+# 用 gh api 下载 release 资产（与 runtime-build 的 decide 同一机制，走 api.github.com，
+# 而非 release-asset CDN）。gh release download 在本仓库的 android-build runner 上对
+# prerelease 标签整体失败（decide 用 gh api 能成功，证明 api 路径可用），故统一走 api。
+# $1 = release 标识：latest | tags/<tag>   $2 = 资产名   $3 = 输出文件
+api_asset() {
+  local rel="$1" name="$2" out="$3" url
+  url="$(gh api "repos/${REPO}/releases/${rel}" \
+        --jq ".assets[] | select(.name==\"${name}\") | .url" 2>/dev/null || true)"
+  [ -n "$url" ] || return 1
+  gh api "$url" -H "Accept: application/octet-stream" > "$out" 2>/dev/null || return 1
+  [ -s "$out" ] || return 1
+  return 0
+}
+
 # ① 级产物的新鲜度：scriptsSha256 是否等于当前仓库的脚本指纹。
 # 未指定 --expect-sha 时不做判断（兼容旧调用方与本地手测）。
 tier1_fresh() {
@@ -124,14 +140,10 @@ echo "strict: $STRICT"
 
 # ---- ① 滚动 prerelease tag "runtime" ----
 echo "-- tier 1: prerelease tag runtime"
-if gh release download runtime --repo "$REPO" \
-     --pattern "runtime-${ABI}.zip" \
-     --pattern "runtime-meta-${ABI}.json" \
-     --output-dir "$WORK" --clobber 2>/dev/null; then
+if api_asset "tags/runtime" "runtime-${ABI}.zip" "$WORK/runtime-${ABI}.zip" \
+   && api_asset "tags/runtime" "runtime-meta-${ABI}.json" "$WORK/runtime-meta-${ABI}.json"; then
   # runtime-inputs.json 是新鲜度判据，老 release 可能没有 → 单独取，缺失不算致命
-  gh release download runtime --repo "$REPO" \
-    --pattern "runtime-inputs.json" \
-    --output-dir "$WORK" --clobber 2>/dev/null || true
+  api_asset "tags/runtime" "runtime-inputs.json" "$WORK/runtime-inputs.json" || true
 
   if [ -f "$WORK/runtime-${ABI}.zip" ] && [ -f "$WORK/runtime-meta-${ABI}.json" ]; then
     mv "$WORK/runtime-${ABI}.zip" "$OUT"
@@ -169,18 +181,39 @@ fi
 
 # ---- ② releases/latest（正式发布自带 runtime zip）----
 echo "-- tier 2: releases/latest"
-if gh release download --repo "$REPO" \
-     --pattern "runtime-${ABI}.zip" \
-     --output-dir "$WORK" --clobber 2>/dev/null \
+if api_asset "latest" "runtime-${ABI}.zip" "$WORK/runtime-${ABI}.zip" \
    && [ -f "$WORK/runtime-${ABI}.zip" ]; then
   mv "$WORK/runtime-${ABI}.zip" "$OUT"
   python3 "$SCRIPT_DIR/make-runtime-meta.py" "$OUT" "$META"
   if verify_pair "$OUT" "$META"; then
-    source_note "releases/latest（meta 由 zip 内 BUILD.json 重建）"
-    echo "done (tier 2)"
-    exit 0
+    # 新鲜度（仅指定 --expect-sha 时生效）：stable 发布若含 runtime-inputs.json 且与
+    # 当前脚本不符，不允许静默用旧包 —— strict 档硬失败，非 strict 降级到 tier3 本地
+    # 重建（重建产物与当前脚本一致，比用旧包更正确）。
+    if [ -n "$EXPECT_SHA" ]; then
+      api_asset "latest" "runtime-inputs.json" "$WORK/runtime-inputs.json" || true
+      if [ -f "$WORK/runtime-inputs.json" ]; then
+        got="$(python3 -c \
+          'import json,sys;print(json.load(open(sys.argv[1])).get("scriptsSha256",""))' \
+          "$WORK/runtime-inputs.json" 2>/dev/null || true)"
+        if [ -n "$got" ] && [ "$got" != "$EXPECT_SHA" ]; then
+          if [ "$STRICT" = "1" ]; then
+            rm -f "$OUT" "$META"
+            strict_fail "tag/正式构建要求 runtime 与当前脚本指纹一致，但 releases/latest 是别的版本。
+下一步：Actions → runtime-build → Run workflow（勾 force）发布新运行时，成功后再重跑本构建。"
+          fi
+          echo "warn: tier 2 指纹不一致（${got:-none} vs ${EXPECT_SHA:0:12}…），降级到 tier 3 本地重建" >&2
+          rm -f "$OUT" "$META"
+        fi
+      fi
+    fi
+    if [ -f "$OUT" ]; then
+      source_note "releases/latest（meta 由 zip 内 BUILD.json 重建${EXPECT_SHA:+，指纹已校验}）"
+      echo "done (tier 2)"
+      exit 0
+    fi
+  else
+    echo "warn: tier 2 重建 meta 校验失败，降级到 tier 3" >&2
   fi
-  echo "warn: tier 2 重建 meta 校验失败，降级到 tier 3" >&2
 else
   echo "warn: tier 2 无 runtime-${ABI}.zip，降级到 tier 3" >&2
 fi

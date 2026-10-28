@@ -136,8 +136,14 @@ flowchart TD
 | ② | `releases/latest`（正式 v 版）里的 `runtime-<abi>.zip` | 无 meta 资产 → 从 zip 内 `BUILD.json` + 文件哈希重建（`make-runtime-meta.py`） | 尚未跑过 runtime-build 的仓库 / runtime release 被误删 |
 | ③ | 本地 `build-runtime.sh` | 脚本自带写出 | 新 fork bootstrap、前两级同时失效 |
 
-注意 `gh release download`（不带 tag）取的是 **最新正式 release**，prerelease
-（preview / edge / runtime）天然被排除，不会误取滚动包。
+三级取货**统一走 `gh api`（api.github.com）下载资产**，不使用 `gh release download`：
+后者在本仓库的 **android-build runner 上对 prerelease 标签整体失败**（实测 tier1/tier2
+全部降级到 tier3 本地编译，白白多烧一次构建），而 `runtime-build` 的 `decide` 用 `gh api`
+读同一份 release 元数据却能成功 —— 说明 api 路径可用、CDN 下载路径不通。故
+`fetch-runtime.sh` 改用 `api_asset()` 封装（`gh api <release> --jq 取资产 url` →
+`gh api <asset-url> -H "Accept: application/octet-stream"`），与 decide 完全对齐。
+`api_asset()` 对 `latest` 与 `tags/<tag>` 都适用，且只下载匹配名称的资产，不会误取
+preview/edge/runtime 之外的滚动包。
 
 ### 5.1 新鲜度：`--expect-sha` 与 `--strict`
 
@@ -152,6 +158,11 @@ sha256 只能证明「zip 与 meta 同源」，不能证明「这个包是按当
   禁止降级到 ②③ —— ② 会随 `releases/latest` 漂移、③ 现场编译结果不稳定，都会让
   同一个 tag 在不同时间构建出不同 runtime，正式发布就不可复现了。
   失败信息里直接写了处置动作：`runtime-build` → Run workflow（勾 force）→ 重跑。
+
+> ② 级（releases/latest）现在也复用同一套新鲜度判据：若指定了 `--expect-sha` 且该
+> stable 发布含 `runtime-inputs.json` 但与当前脚本不符，**非 strict 会降级到 tier3
+> 本地重建**（重建产物与当前脚本一致，比静默用旧包更正确），**strict 直接失败**。
+> 这是 v1.4.36 之后的补强 —— 此前 ② 级命中即采用、完全不验指纹，会静默打包一份旧 runtime。
 
 三级产物都要过同一段闭包校验，安全网没有因为“复用”而变薄：
 
