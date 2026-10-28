@@ -162,6 +162,43 @@ sha256 只能证明「zip 与 meta 同源」，不能证明「这个包是按当
 - PTC 补丁 6 个标记（含 `[dsh-android] bootstrap path fallback`）与 WebView
   polyfill v4 的 4 个标记 —— `runtime-build` 发布前与 `build.gradle.kts` 打包前
   各验一遍，坏包不会进滚动 tag
+- **去重内容**（无嵌套 zod、10 锚点、corepack 完好、文件数 < 20000）——
+  `runtime-build` 发布前由「校验运行时去重内容」步骤验证（承接探针第 2 节）
+
+### 5.2 回归探针的职责切分（_test_runtime_dedupe.py）
+
+`_test_runtime_dedupe.py` 原本把「源码契约」和「产物质量」揉在一个文件里。
+i18n-check 是一个**轻量、无 Android SDK、几秒跑完**的门禁，其设计前提就是
+「干净检出、没有任何运行时产物」。而：
+
+- `app/src/main/assets/runtime.zip` —— PR #48 后**不再入库**，改由
+  `build/generated/runtimeAssets` 注入；
+- `_rel/x86_64-dedup.zip` —— 发布产物，从不入库；
+- `_runtime_bak/rt-x86_64-zodded.zip` —— 本机构建中间产物，不入库。
+
+所以在 CI 干净检出下，三处源必然都不存在。**把这种必然出现的正常态判成失败是错的**，
+而且「为了喂探针去下载一个 100MB+ 的运行时」直接毁掉 i18n-check 的轻量定位——
+check 只做检查，下载不合适。
+
+因此改为按性质切分：
+
+| 项 | 检查什么 | 需不需要产物 | 在哪跑 |
+|---|---|---|---|
+| 第 1/4 节 | 构建脚本有没有接好去重、幂等声明 | ❌ 纯读源码 | i18n-check（始终跑） |
+| 3b 的 gradle 静态项 | 构建期有没有强制校验 PTC 门禁 | ❌ 纯读源码 | i18n-check（始终跑） |
+| 第 2 节（去重内容） | 无嵌套 zod / 锚点 / corepack / 文件数 | ✅ 必须 | **runtime-build 发布门禁** |
+| 3b 的 PTC 内容项 | 补丁内容在不在 | ✅ 必须 | **runtime-build 发布门禁** |
+| 第 3 节（zod 版本） | 顶层 zod 版本号 | ✅ 必须 | **runtime-build 发布门禁** |
+
+i18n-check 里：无产物时，上述三项产物检查整体 **SKIP（不计入失败）**，本机有
+`_runtime_bak/`（或 `_rel/`）时仍全量校验，不丢本地守卫。产物质量统一由
+`runtime-build` 在「刚造出来、准备发布」的那一刻一票否决——这反而比改之前更强：
+过去 CI 下这些产物项**从没真正跑起来过**（一直走不到），现在首次在 CI 真正生效。
+
+> 注：该探针是上游文件，我们在 fork 内改了会与上游 diverge。但我们的运行时架构
+> （预构建复用 + `_rel` / `_runtime_bak`）本来就与上游不同，上游自己的 i18n-check
+> 也一直红着（同一个探针、同一个轻量工作流，干净检出下三处源都没有），所以在 fork
+> 内修是合理的。
 
 ---
 
@@ -245,3 +282,7 @@ prerelease / latest / 兜底构建。
 6. **tag 构建必须与 runtime 脚本指纹对齐**（`--strict`），禁止降级到
    `releases/latest` 或现场编译 —— 否则同一个 tag 在不同时间构建会内嵌不同的
    runtime，正式发布不可复现，正是本方案要消除的问题。
+7. **i18n-check 的运行时探针只验静态契约**：去重内容 / PTC 内容 / zod 版本等
+   产物质量项，在「无运行时产物」的干净检出下 SKIP（不计入失败），由
+   `runtime-build` 的发布门禁承担。CI 干净检出处红，不代表回归——那是检查放错了
+   位置，已从探针移走。
