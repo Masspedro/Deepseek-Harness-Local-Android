@@ -49,13 +49,39 @@ All figures come from real-device / emulator testing, not theory:
 
 | Metric | Measured | Environment |
 |---|---|---|
-| **Cold start to engine ready** | **< 10 s** | OnePlus 15T (Android 16), real device |
+| **Cold start to engine ready** | **3.4 s** | OnePlus 15T (Android 16), real device |
+| **Cold start, mainstream phones** | **5 – 6 s** | Mid-range devices from various OEMs |
+| **Cold start, weakest device** | **13 s** | Unisoc watch with **3 GB RAM** |
+| **Cold start, emulator** | **2.2 – 2.7 s** | x86_64 / 2.5 GB RAM |
 | **Memory with parallel services** | **< 400 MB** | Engine + multiple toolchains running together |
-| **Android compatibility** | **8.0 → 16** | Requires WebView ≥ Chrome 85 (APIs polyfilled; Chrome 96 verified, see below) |
-| **APK size** | **full ~150–230 MB / lite ~25 MB** | Full bundles Node.js; the noruntime package downloads the runtime on first launch |
-| **Installed size** | **~720 MB** | Runtime unpacks to ~494 MB + the app itself |
+| **Android compatibility** | **8.0 → 16** | Requires WebView ≥ Chrome 85 (APIs polyfilled; Chrome 96 verified) |
+| **APK size** | **full ~150 MB / lite ~24 MB** | Full bundles Node.js; noruntime downloads it on first launch |
+| **Installed size** | **~720 MB** | Runtime unpacks to 404 MB + the app itself |
 
-The runtime and toolchain ship in the APK, so you can start the upstream dsh engine without first setting up Termux or a proot/Ubuntu container.
+### Why it is this fast
+
+Most Android agent setups cannot be fast for a **structural** reason: they build a
+Linux environment on the device (Termux + apt), run a proot container
+(glibc rootfs, 500 MB – 2 GB), or ship a frozen Termux snapshot. All three have to
+*prepare* a lot before the engine can start — unpack a rootfs, mount pseudo
+filesystems, bootstrap a package index.
+
+DSH Mobile has **no layer in between**:
+
+| Approach | What sits between you and the engine | Cold start |
+|---|---|---|
+| Termux, manual setup | Perl/bash boot chain + apt + env init | minutes |
+| proot + Ubuntu | kernel → proot → glibc → distro → Node | 10 s+, fails on weaker devices |
+| Frozen snapshot | unpack rootfs → fix paths → start | tens of seconds |
+| **DSH Mobile** | **— straight `execve` of bionic Node** | **~3 s** |
+
+The entire runtime dsh needs is compiled to **Android-native (bionic) binaries and
+shipped inside the APK**. The runtime does not need to "boot" — it is already there.
+Cold start really only does three things: unpack (first launch only), start Node,
+wait for the loopback port.
+
+That a 3 GB Unisoc watch runs this at all is the architecture proving itself:
+proot + glibc would not even fit its rootfs in that much RAM.
 
 ## ✨ What It Can Do on a Phone
 

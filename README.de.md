@@ -47,13 +47,38 @@ Alle Werte stammen aus Tests auf echten Geräten und im Emulator, nicht aus der 
 
 | Kennzahl | Gemessen | Umgebung |
 |---|---|---|
-| **Kaltstart bis Engine bereit** | **< 10 s** | OnePlus 15T (Android 16), echtes Gerät; ~15 s auf Tablets |
+| **Kaltstart bis Engine bereit** | **3,4 s** | OnePlus 15T (Android 16), echtes Gerät |
+| **Kaltstart, Mittelklasse** | **5 – 6 s** | Geräte verschiedener Hersteller |
+| **Kaltstart, schwächstes Gerät** | **13 s** | Unisoc-Uhr mit **3 GB RAM** |
+| **Kaltstart, Emulator** | **2,2 – 2,7 s** | x86_64 / 2,5 GB RAM |
 | **Speicher mit parallelen Diensten** | **< 400 MB** | Engine + mehrere Toolchains gleichzeitig |
-| **Android-Kompatibilität** | **8.0 → 16** | WebView ≥ Chrome 85 erforderlich (siehe unten) |
-| **APK-Größe** | **voll ~150–230 MB / schlank ~25 MB** | Vollversion enthält Node.js; die noruntime-Variante lädt die Laufzeit beim ersten Start |
-| **Toolchains** | **19 One-Tap-Installationen** | Python/Go/Rust/Clang/OpenJDK/FFmpeg… |
+| **Android-Kompatibilität** | **8.0 → 16** | WebView ≥ Chrome 85 erforderlich |
+| **APK-Größe** | **voll ~150 MB / schlank ~24 MB** | Vollversion enthält Node.js; noruntime lädt sie beim ersten Start |
+| **Toolchains** | **21 One-Tap-Installationen** | Python/Go/Rust/Clang/OpenJDK/FFmpeg… |
 
-Zum Vergleich: Termux-Snapshot-basierte Alternativen brauchen beim ersten Start üblicherweise **mehrere Minuten** (Entpacken + manuelle Initialisierung); DSH Mobile liefert seine Laufzeit im APK aus — installieren und loslegen.
+### Warum es so schnell ist
+
+Die meisten Android-Agent-Lösungen können aus einem **strukturellen** Grund nicht
+schnell sein: Sie bauen erst eine Linux-Umgebung auf dem Gerät (Termux + apt),
+betreiben einen proot-Container (glibc-rootfs, 500 MB – 2 GB) oder liefern einen
+eingefrorenen Termux-Snapshot. Alle drei müssen vor dem Engine-Start viel
+*vorbereiten* — rootfs entpacken, Pseudo-Dateisysteme mounten, Paketindex aufbauen.
+
+DSH Mobile hat **keine Zwischenschicht**:
+
+| Ansatz | Was zwischen dir und der Engine liegt | Kaltstart |
+|---|---|---|
+| Termux, manuell | Perl/bash-Boot-Kette + apt + Env-Init | Minuten |
+| proot + Ubuntu | Kernel → proot → glibc → Distro → Node | ab 10 s, scheitert auf schwächeren Geräten |
+| Eingefrorener Snapshot | rootfs entpacken → Pfade fixen → Start | Dutzende Sekunden |
+| **DSH Mobile** | **— direktes `execve` von bionic Node** | **~3 s** |
+
+Die komplette Laufzeit liegt als **Android-native (bionic) Binaries im APK**. Die
+Laufzeit muss nicht „booten" — sie ist einfach da. Der Kaltstart macht nur drei
+Dinge: entpacken (nur beim ersten Start), Node starten, auf den Loopback-Port warten.
+
+Dass eine Unisoc-Uhr mit 3 GB RAM das überhaupt schafft, ist der Beweis der
+Architektur: proot + glibc würde dort nicht einmal das rootfs unterbringen.
 
 ## ✨ Was es auf einem Smartphone kann
 

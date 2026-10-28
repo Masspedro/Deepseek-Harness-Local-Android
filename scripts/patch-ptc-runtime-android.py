@@ -257,13 +257,23 @@ def restamp(zip_path: str) -> None:
             out.writestr(info, data)
     sha = digest(tmp)
     version = time.strftime("%Y.%m.%d", time.gmtime()) + "-" + sha[:8]
+    # 源 zip 没 BUILD.json 时（手工从 _runtime_bak 拷的中间产物就是这种），
+    # 别写 "unknown" —— 那会让 RuntimeInstaller 的版本比对与诊断全失效。
+    # abi 从文件名推（_rel/arm64-dedup.zip / x86_64-dedup.zip）；
+    # engineVersion 推不出来就**不写这个键**，不留假值。
+    abi = old.get("abi") or ""
+    if not abi:
+        name = os.path.basename(zip_path).lower()
+        abi = "arm64-v8a" if "arm64" in name else ("x86_64" if "x86" in name else "unknown")
     meta = {
         "version": version,
-        "abi": old.get("abi", "unknown"),
-        "engineVersion": old.get("engineVersion", "unknown"),
+        "abi": abi,
         "builtAt": int(time.time()),
         "contentSha256": sha,
     }
+    engine = old.get("engineVersion")
+    if engine:
+        meta["engineVersion"] = engine
     with zipfile.ZipFile(tmp, "a", zipfile.ZIP_DEFLATED) as out:
         out.writestr("BUILD.json", _json.dumps(meta, indent=2, ensure_ascii=False) + chr(10))
     os.replace(tmp, zip_path)
