@@ -53,6 +53,22 @@ class AboutActivity : ThemedActivity() {
             Toast.makeText(this, getString(R.string.about_qq_group_copied), Toast.LENGTH_SHORT).show()
         }
 
+        // Telegram 交流群（v1.4.38）：与 QQ 不同，Telegram 有统一的 t.me 邀请链接，
+        // 可以直接 ACTION_VIEW 打开；没装 Telegram 时系统会用浏览器兜底。
+        // 链接里带邀请 token，所以放在 strings.xml 而不是写死在代码里。
+        findViewById<android.view.View>(R.id.rowTelegram).setOnClickListener {
+            val url = getString(R.string.about_telegram_url)
+            val intent = android.content.Intent(
+                android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url),
+            )
+            runCatching { startActivity(intent) }.onFailure {
+                // 没有浏览器也没有 Telegram：复制链接，至少让用户能自己粘出去
+                val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("telegram", url))
+                Toast.makeText(this, getString(R.string.about_telegram_copied), Toast.LENGTH_SHORT).show()
+            }
+        }
+
         // 检查更新（v1.2.77）：查 GitHub Releases 是否有更高版本
         // 网络请求必须离开主线程（否则 ANR）；结果回主线程更新文案
         findViewById<android.view.View>(R.id.rowUpdate).setOnClickListener {
