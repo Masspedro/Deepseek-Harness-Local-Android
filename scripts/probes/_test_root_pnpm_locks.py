@@ -50,34 +50,25 @@ def check(name, ok, detail=""):
 
 src = open(PRIV, encoding="utf-8").read()
 
-# 1) 修复存在
-check("fix: 提及 issue #65 的 pnpm 锁属主还原",
-      "#65" in src and "pnpm" in src.lower(),
-      "root 模式下 chown -R 会把 pnpm 的 uid 后缀锁目录改错属主")
-check("fix: 遍历 .cache 下的 pnpm 锁目录",
-      "pnpm-*-locks-*" in src,
-      "缺它 → root 模式的 pnpm 锁被 chown 成 app uid，装卸插件必失败")
-check("fix: 也覆盖 swaps 目录",
-      "pnpm-*-swaps-*" in src,
-      "pnpm 模块交换目录同样是按 uid 分后缀")
-
-# 2) 属主按后缀还原，而不是一律改回 app uid
-check("fix: 从目录名后缀取 uid",
-      "n=${d##*-}" in src or "n=\\${d##*-}" in src,
-      "必须用目录名的数字后缀当属主，否则仍然是「一律 app uid」")
-check("fix: 非数字后缀跳过",
-      "[!0-9]" in src,
-      "防止把非 uid 后缀的目录 chown 成非法值")
-check("fix: chown 到该后缀对应的 uid:gid",
-      'chown "$n:$n"' in src or 'chown \\"$n:\\$n\\"' in src or 'chown \\"\\$n:\\$n\\"' in src,
-      "需同时设 user 和 group，否则 pnpm 仍报 owned-by 检查失败")
-
-# 3) 顺序：递归 chown 之后才还原
-i_bulk = src.find("chown -R ")
-i_restore = src.find("pnpm-*-locks-*")
-check("order: 先整树 chown，再还原锁目录属主",
-      i_bulk != -1 and i_restore != -1 and i_bulk < i_restore,
-      "顺序反了会被随后的 chown -R 覆盖，等于没修")
+# 1) v1.4.35 方案：chown 时整棵跳过 pnpm 锁树（prune），而不是「先改再还原」
+check("fix: 使用 find -prune 排除 pnpm 锁树",
+      "-prune" in src,
+      "v1.4.34 的「只还原目录本身」漏了目录里的文件 → issue #67")
+check("fix: 覆盖 store-operation-locks",
+      "pnpm-store-operation-locks-*" in src,
+      "缺它 → root 模式 pnpm 拿不到自己的锁，装卸插件必失败")
+check("fix: 覆盖 dir-locks",
+      "pnpm-dir-locks-*" in src,
+      "pnpm 的目录锁是另一套前缀")
+check("fix: 覆盖 modules-swaps",
+      "pnpm-modules-swaps-*" in src)
+OLD_RESTORE = 'chown "' + chr(92) + '"$n:$n' + chr(92) + '"' + '"'
+check("fix: 不再用「chown 全树再逐个还原」的旧方案",
+      OLD_RESTORE not in src,
+      "旧方案只改目录本身，目录内文件仍被改回 app uid（#67 的根因）")
+check("fix: 整棵树用 -exec chown 批量处理（幂等且高效）",
+      "-exec chown " in src and "{} +" in src,
+      "逐文件 fork 一次 chown 在几万文件的 dsh-home 上会非常慢")
 
 # 4) 仍然保留原有的关键行为，避免修 #65 时破坏别的自愈
 check("keep: 仍对 engine 目录补 u+rwX",
@@ -87,9 +78,12 @@ check("keep: 仍 restorecon 重置 SELinux 标签",
       "restorecon -R" in src)
 
 # 5) 命令拼接不能引入未转义的 Kotlin 模板
-check("safety: shell 变量在 Kotlin 字符串里已转义",
-      '\\$d' in src and '\\$n' in src,
-      "未转义的 $d/$n 会被 Kotlin 当模板求值 → 编译失败或命令错")
+check("safety: -path 参数用 shellQuote 整体加引号",
+      "shellQuote(homePlain + pat)" in src,
+      "裸拼 homeQ + pat 会让通配符在引号外被 shell 提前展开")
+check("safety: 不用未转义的分组括号",
+      "append('(')" not in src and 'append("(")' not in src,
+      "toybox find 对分组括号的转义与 GNU 不一致，能不用就不用")
 
 print("\n" + "-" * 44)
 print("通过 %d / 失败 %d" % (passed, failed))

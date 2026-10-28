@@ -617,21 +617,40 @@ object Privilege {
             //   directory owned by the current user
             // 用户每次重启引擎都会复发（因为启动即 chown）。
             //
-            // 修法：先 chown 整棵树，再把 `.cache` 下所有 pnpm 锁目录的属主**还原成
-            // 各自的数字后缀**（`-0` → root，`-<appUid>` → app）。这样两种身份都拿到
-            // 自己那份，互不干扰。
+            // 修法（v1.4.35，issue #65 + #67）：**chown 时直接排除整棵 pnpm 锁树**。
+            //
+            // v1.4.34 的做法是「先递归 chown 全树，再把锁目录本身改回原属主」，
+            // 漏了一点：`chown "$n:$n" "$d"` 没有 `-R`，目录里的锁文件仍是 app uid。
+            // 于是 pnpm 的报错从「lock directory must be a real directory owned by
+            // the current user」变成「lock must be a **regular file** owned by the
+            // current user」——问题没解决，只是换了一句话（issue #67）。
+            //
+            // 现在的做法更干净：这些锁目录**本来就不属于 App 数据**（是 pnpm 按运行
+            // 身份自己管理的运行时状态），递归遍历时整棵跳过。用 `-path ... -prune -o`
+            // 实现：命中锁树就不再下降，其余照常处理。
+            //
+            // 这样无论 root 还是 app uid 运行，各自那套锁都不被碰，天然正确。
+            val prunePatterns = listOf(
+                "/.cache/pnpm-store-operation-locks-*",
+                "/.cache/pnpm-dir-locks-*",
+                "/.cache/pnpm-modules-swaps-*",
+            )
+            // 不用分组括号：`-path A -o -path B -o -path C` 与 `-prune -o -exec`
+            // 的优先级天然正确（-o 左结合，-prune 只作用于紧邻的 -path），
+            // 也避免了在 shell 里转义括号带来的可移植性问题（toybox find 差异）。
+            val homePlain = home.absolutePath
+            val pruneExpr = buildString {
+                prunePatterns.forEachIndexed { i, pat ->
+                    if (i > 0) append(" -o ")
+                    append("-path ").append(shellQuote(homePlain + pat))
+                }
+                append(" -prune -o ")
+            }
             val cmd = buildString {
-                append("chown -R ").append(uid).append(":").append(uid).append(' ')
-                append(homeQ).append(' ').append(engineQ).append(" 2>/dev/null; ")
-                // 还原 pnpm 按 uid 分后缀的锁目录属主（issue #65）
-                append("for d in ").append(homeQ)
-                append("/.cache/pnpm-*-locks-* ").append(homeQ)
-                append("/.cache/pnpm-*-swaps-*; do ")
-                append("[ -d \"\$d\" ] || continue; ")
-                append("n=\${d##*-}; ")
-                append("case \"\$n\" in ''|*[!0-9]*) continue;; esac; ")
-                append("chown \"\$n:\$n\" \"\$d\" 2>/dev/null; ")
-                append("done; ")
+                append("find ").append(homeQ).append(' ').append(engineQ).append(' ')
+                append(pruneExpr)
+                append("-exec chown ").append(uid).append(':').append(uid)
+                append(" {} + 2>/dev/null; ")
                 append("chmod -R u+rwX ").append(engineQ).append(" 2>/dev/null; ")
                 // SELinux 标签重置：restorecon 不在所有设备上都可用（toybox 差异），失败无妨
                 append("restorecon -R ").append(homeQ).append(" 2>/dev/null; ")
