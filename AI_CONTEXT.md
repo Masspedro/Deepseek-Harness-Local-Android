@@ -68,6 +68,18 @@ find <home> <engine>   -path '<home>/.cache/pnpm-store-operation-locks-*' -o   -
   DOM 累积，需专项做视图虚拟化）、#59（Python 轮子，已回路线图）、#41（Profile）、
   #2（语音唤醒）、#49（swap 恢复窗口）
 
+### 发版 CI 的一次平台故障（记录备查）
+
+v1.4.36 首次 CI：8 个 build job 全绿，`publish-release` 在最后一步失败 ——
+11 个资产里成功上传了 10 个，上传 `runtime-x86_64.zip`（127 MB）时 GitHub
+返回 HTML 错误页（`##[error]<!DOCTYPE html>`），整个 Release 因此未创建。
+
+**不是我们的代码问题**：同样流程在 v1.4.35 一次通过。判断为 GitHub 侧瞬时故障
+（大文件上传 503）。处理：`rerun-failed-jobs` 重跑，第二次一次通过，12 资产齐全。
+
+> 以后再遇到 `publish-release` 失败而所有 build 都绿，先看日志末尾是不是
+> HTML 错误页 —— 那是平台故障，直接重跑即可，别去改代码。
+
 ## v1.4.33 / v1.4.34 已发布（2026-10-28，两个 PTC/root 修复）
 
 ### v1.4.33：PTC bootstrap 路径映射（用户报错，无 issue 号）
