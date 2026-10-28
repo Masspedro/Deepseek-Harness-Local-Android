@@ -91,3 +91,10 @@ _bench/
 # 宣传视频素材（体积大，不入库；需要时按 docs/promo/video/MATERIALS.md 重新采集）
 docs/promo/video/assets/*.mp4
 docs/promo/video/assets/*.png
+
+# Remotion 宣传视频工程：依赖与渲染产物不入库，源码与文档入库
+docs/promo/video/remotion/node_modules/
+docs/promo/video/remotion/out/
+docs/promo/video/remotion/.remotion/
+docs/promo/video/remotion/public/fonts/
+docs/promo/video/remotion/public/assets/

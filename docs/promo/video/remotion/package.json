@@ -1,0 +1,27 @@
+{
+  "name": "dsh-mobile-promo",
+  "version": "1.1.0",
+  "type": "module",
+  "private": true,
+  "description": "DSH Mobile promotional video built with Remotion",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/contracts.test.mjs",
+    "studio": "remotion studio src/Root.tsx",
+    "render:portrait": "remotion render src/Root.tsx DSHMobilePortrait out/dsh-mobile-portrait.mp4",
+    "render:landscape": "remotion render src/Root.tsx DSHMobileLandscape out/dsh-mobile-landscape.mp4",
+    "render:portrait:frames": "remotion render src/Root.tsx DSHMobilePortrait out/portrait-frames --frames=0,120,420,720,1020,1440,2100 --image-format=png"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.539",
+    "@remotion/player": "4.0.539",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "remotion": "4.0.539"
+  },
+  "devDependencies": {
+    "@types/react": "19.0.12",
+    "@types/react-dom": "19.0.4",
+    "typescript": "7.0.2"
+  }
+}
