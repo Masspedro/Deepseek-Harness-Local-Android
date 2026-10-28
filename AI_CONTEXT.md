@@ -22,6 +22,52 @@
   * 提交前看 `git diff --numstat`：**删除行数应远小于新增**，若大量删除要停下来复核。
 - **不确定就先查再问**，不要凭印象重写已工作的代码。
 
+## PR #68 已合并（2026-10-28 深夜，运行时预构建复用）
+
+### 解决的三个真问题
+
+| 问题 | 原状 |
+|---|---|
+| 慢 | 每次 push/PR/定时都要 apt 收集 + 去重 + 打补丁 + 打包 127MB×2（单腿 5-10 分钟），且是 build-apk 硬前置 |
+| 不可复现 | Termux 仓库浮动，同一 commit 两次构建 runtime sha 可能不同 |
+| **测的不是发的** | preview/edge 跑的 runtime 与 tag 正式包内嵌的可能不是同一份 |
+
+### 改动（app/ 零改动，发布产物形态不变，只换供应链）
+
+- `.github/workflows/runtime-build.yml`（新增，462 行）：唯一构建 runtime 的工作流
+  `decide → build → publish`，滚动覆盖 prerelease tag `runtime`
+- `scripts/fetch-runtime.sh`（新增）：**三级取货** ①滚动 prerelease ②releases/latest
+  ③本地兜底构建；sha256 校验 + `--expect-sha` 指纹比对 + `--strict` 禁止降级
+- `scripts/runtime-inputs-sha.py`、`scripts/make-runtime-meta.py`（新增）
+- `android-build.yml`：`collect-runtime` → `fetch-runtime`（只取用不编译）
+- **合并后 CI 全绿**：android-build / i18n-check / runtime-build 均 success
+
+### 关键设计（评审要点）
+
+1. **用「脚本指纹」而非「有没有」判断重建**：只判断 release 里有没有 runtime 会
+   静默漏发 —— 改了 patch-*.py → 触发重建 → 发现已存在 → 跳过 → tag 发布取到旧包
+2. **`--strict` 用于 tag 正式构建**：保证同一 tag 在任何时间构建内嵌同一 runtime
+3. **三级取货兜底**：新 fork bootstrap 时不会因缺 runtime 直接红
+
+### 顺带修复我引入的 CI 缺陷（重要）
+
+我把 `_test_runtime_dedupe.py` 接进 `i18n-check.yml` 后，**main 上连续 4 次 CI 失败**
+（07:26 / 07:44 / 09:51 / 10:44）。原因：CI 干净检出没有 `_runtime_bak/` 产物，
+而探针要打开真实 runtime.zip；我只在本机（有产物）验证过，没意识到这一点。
+
+PR #68 按「静态契约 / 产物质量」切分修好了：
+- 静态项无产物也跑
+- 产物项无产物时 SKIP（不计失败），校验交给 runtime-build 发布门禁
+
+**实测两种环境**：
+| 环境 | 结果 |
+|---|---|
+| 模拟 CI 干净检出（隐藏 _runtime_bak 与 _rel） | 11 通过 / 0 失败 / 3 跳过，exit=0 |
+| 本地有产物 | 34 通过 / 0 失败 / 0 跳过 |
+
+> **教训**：探针接入 CI 前必须在「干净检出」条件下跑一遍。本机有产物的通过
+> 不代表 CI 会通过 —— 这类"只在本地绿"的门禁比没有门禁更糟。
+
 ## v1.4.35 / v1.4.36 已发布（2026-10-28 晚）
 
 ### v1.4.35：pnpm 锁树整棵跳过 chown（#67，v1.4.34 修复不完整）
