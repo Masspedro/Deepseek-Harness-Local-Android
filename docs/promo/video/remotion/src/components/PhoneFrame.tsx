@@ -1,3 +1,4 @@
+/** @deprecated Legacy v1 phone wrapper; active video scenes use local framed screenshot markup. */
 import type {ReactNode} from 'react';
 import {Img, OffthreadVideo, staticFile} from 'remotion';
 import {facts} from '../data';

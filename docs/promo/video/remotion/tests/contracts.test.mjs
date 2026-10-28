@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
 import {copy, facts, film} from '../src/data.ts';
 
 test('both formats use 60 fps and a contiguous film between 30 and 45 seconds', () => {
@@ -13,6 +14,17 @@ test('both formats use 60 fps and a contiguous film between 30 and 45 seconds', 
   assert.equal(end, film.seconds);
   assert.deepEqual(film.portrait, {width: 1080, height: 1920});
   assert.deepEqual(film.landscape, {width: 1920, height: 1080});
+});
+
+test('portrait and landscape safe-area percentages match the delivery specification', async () => {
+  const layout = await readFile(new URL('../src/layout.ts', import.meta.url), 'utf8');
+  assert.match(layout, /portrait:\s*\{top:\s*0\.12,\s*bottom:\s*0\.18,\s*side:\s*0\.06\}/);
+  assert.match(layout, /landscape:\s*\{top:\s*0\.05,\s*bottom:\s*0\.05,\s*side:\s*0\.05\}/);
+});
+
+test('scene rendering does not use opposing scene crossfades', async () => {
+  const root = await readFile(new URL('../src/index.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(root, /outgoing|DirectionCut/);
 });
 
 test('the comparisons retain smaller products and the lite-package dependency', () => {

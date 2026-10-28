@@ -1,191 +1,54 @@
-/**
- * 04 Shell —— 0:19–0:24（300 帧）
- *
- * v2 重制：v1 把三条连线（PTY/OCR/SSH）、三个 so 文件名、dex 柱状图、
- * 覆盖率文字、下界说明同时铺开，五类信息抢注意力。
- *
- * v2 规矩：**主角是 dex 体量的对比**（15 倍差距是最强的一击）。
- * 三条能力改成一行三个「亮起的接口」，只给名字不给文件名。
- */
-import {AbsoluteFill, Easing, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
+import {AbsoluteFill, Easing, interpolate, useCurrentFrame} from 'remotion';
 import {theme} from '../theme';
-import {type, card, gradientText} from '../layout';
-import {Stage, Eyebrow, Headline, Body, ChapterBar} from '../ui';
-import {facts} from '../data';
+import {card, gradientText} from '../layout';
+import {SceneLayout, ChapterBar, usePortrait} from '../ui';
+import {facts, copy} from '../data';
 
-const easeOut = Easing.bezier(0.16, 1, 0.3, 1);
-
-const LINKS = [
-  {name: '真 PTY', detail: '581 行 C'},
+const links = [
+  {name: '真 PTY', detail: `${facts.engineering.ptyLines} 行 C`},
   {name: '自带 OCR', detail: 'MLKit'},
   {name: '内置 SSH', detail: 'ssh2'},
 ];
 
 export const ShellScene = () => {
   const frame = useCurrentFrame();
-  const {fps} = useVideoConfig();
-
-  const dexMax = 10;
-  const oursDex = facts.shell.dex[0];
-
-  return (
-    <AbsoluteFill style={{background: theme.colors.bg}}>
-      <AbsoluteFill
-        style={{background: `radial-gradient(circle at 70% 34%, ${theme.colors.accent}1A 0%, transparent 48%)`}}
-      />
-      <Stage>
-        <Eyebrow delay={0.08}>Same Engine · Native Connections</Eyebrow>
-        <Headline lines={['引擎相同。', '路，铺得更完整。']} delay={0.14} size={80} />
-
-        <div style={{height: 52}} />
-
-        {/* 三个接口：一行横排，只给名字 */}
-        <div style={{display: 'flex', gap: 16, marginBottom: 52}}>
-          {LINKS.map((l, i) => {
-            const t = (frame - (0.5 + i * 0.14) * fps) / (0.4 * fps);
-            const on = interpolate(t, [0, 1], [0, 1], {
-              extrapolateLeft: 'clamp',
-              extrapolateRight: 'clamp',
-              easing: easeOut,
-            });
-            return (
-              <div
-                key={l.name}
-                style={{
-                  flex: 1,
-                  padding: '26px 20px',
-                  borderRadius: 22,
-                  background: theme.colors.surfaceAlt,
-                  border: `1.5px solid ${theme.colors.accent}${on > 0.5 ? '55' : '22'}`,
-                  opacity: on,
-                  translate: `0px ${interpolate(on, [0, 1], ['16px', '0px'], {extrapolateRight: 'clamp'})}`,
-                }}
-              >
-                <div
-                  style={{
-                    fontFamily: theme.fonts.chinese,
-                    fontSize: type.body,
-                    fontWeight: 700,
-                    color: theme.colors.text,
-                    marginBottom: 8,
-                  }}
-                >
-                  {l.name}
-                </div>
-                <div
-                  style={{
-                    fontFamily: theme.fonts.mono,
-                    fontSize: type.eyebrow,
-                    color: theme.colors.accent,
-                  }}
-                >
-                  {l.detail}
-                </div>
-              </div>
-            );
-          })}
+  const portrait = usePortrait();
+  return <AbsoluteFill style={{background: theme.colors.bg}}>
+    <AbsoluteFill style={{zIndex: 0, background: `radial-gradient(circle at 68% 48%, ${theme.colors.accent}18, transparent 58%)`}} />
+    <SceneLayout eyebrow="NATIVE CONNECTIONS" title={['引擎相同。', '路，铺得更完整。']} titleSize={portrait ? 78 : 65}
+      footer={<><span style={{color: theme.colors.text}}>我们的实现覆盖 {facts.shell.coverage} 项 / 抽查竞品 {facts.shell.sampledCoverage}。</span><br />{copy.shell.lowerBound}</>}>
+      <div data-layout-stack style={{display: 'flex', flexDirection: 'column', gap: portrait ? 28 : 32}}>
+        <div data-layout-siblings style={{display: 'flex', gap: portrait ? 14 : 18}}>
+          {links.map((link) => <div key={link.name} style={{flex: 1, minWidth: 0, padding: portrait ? '24px 18px' : '28px 22px',
+            borderRadius: 20, background: theme.colors.surfaceAlt, border: `1px solid ${theme.colors.accent}44`, display: 'flex', flexDirection: 'column', gap: 12}}>
+            <div style={{fontSize: portrait ? 38 : 28, lineHeight: 1.2, fontWeight: 700, whiteSpace: 'nowrap'}}>{link.name}</div>
+            <div style={{fontSize: portrait ? 36 : 24, lineHeight: 1.2, fontFamily: theme.fonts.mono, color: theme.colors.accent}}>{link.detail}</div>
+          </div>)}
         </div>
-
-        {/* ── 主角：dex 体量 15 倍差 ── */}
-        <div style={{...card({glow: true}), padding: '44px 40px'}}>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'baseline',
-              justifyContent: 'space-between',
-              marginBottom: 30,
-            }}
-          >
-            <span style={{fontFamily: theme.fonts.chinese, fontSize: type.caption, color: theme.colors.muted}}>
-              同为 bionic 路线 · 原生代码体量
-            </span>
-            <span
-              style={{
-                fontFamily: theme.fonts.numeric,
-                fontSize: type.subtitle,
-                fontWeight: 600,
-                ...gradientText,
-              }}
-            >
-              15×
-            </span>
+        <div style={{...card({glow: true}), padding: portrait ? '30px 28px' : '34px 32px', display: 'flex', flexDirection: 'column', gap: portrait ? 26 : 30}}>
+          <div data-layout-siblings style={{display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 20}}>
+            <span style={{fontSize: portrait ? 36 : 24, lineHeight: 1.3, color: theme.colors.secondary}}>同为 bionic 路线 · dex 体量</span>
+            <span style={{fontFamily: theme.fonts.numeric, fontSize: portrait ? 55 : 50, lineHeight: 1, fontWeight: 700, ...gradientText}}>15×</span>
           </div>
-
-          {facts.shell.dex.map((d, i) => {
-            const t = (frame - (1.1 + i * 0.12) * fps) / (0.6 * fps);
-            const grow = interpolate(t, [0, 1], [0, 1], {
-              extrapolateLeft: 'clamp',
-              extrapolateRight: 'clamp',
-              easing: easeOut,
-            });
-            const pct = (d.value / dexMax) * 100;
-            return (
-              <div key={d.id} style={{marginBottom: i === facts.shell.dex.length - 1 ? 0 : 22}}>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'baseline',
-                    justifyContent: 'space-between',
-                    marginBottom: 10,
-                  }}
-                >
-                  <span
-                    style={{
-                      fontFamily: theme.fonts.chinese,
-                      fontSize: d.ours ? type.body : type.caption,
-                      fontWeight: d.ours ? 700 : 400,
-                      color: d.ours ? theme.colors.text : theme.colors.secondary,
-                    }}
-                  >
-                    {d.label}
-                  </span>
-                  <span
-                    style={{
-                      fontFamily: theme.fonts.numeric,
-                      fontSize: d.ours ? type.subtitle : type.body,
-                      fontWeight: d.ours ? 600 : 300,
-                      fontVariantNumeric: 'tabular-nums',
-                      color: d.ours ? theme.colors.accent : theme.colors.muted,
-                    }}
-                  >
-                    {d.value} MB
-                  </span>
-                </div>
-                <div
-                  style={{
-                    height: d.ours ? 16 : 10,
-                    background: theme.colors.surfaceAlt,
-                    borderRadius: 8,
-                    overflow: 'hidden',
-                    display: 'flex',
-                  }}
-                >
-                  <div
-                    style={{
-                      height: '100%',
-                      flex: `0 0 ${pct * grow}%`,
-                      borderRadius: 8,
-                      background: d.ours
-                        ? `linear-gradient(90deg, ${theme.colors.accent}, ${theme.colors.success})`
-                        : theme.colors.muted,
-                      opacity: d.ours ? 1 : 0.5,
-                      boxShadow: d.ours ? `0 0 24px ${theme.colors.accent}70` : 'none',
-                    }}
-                  />
-                </div>
+          {facts.shell.dex.map((dex, index) => {
+            const grow = interpolate(frame, [12 + index * 7, 65 + index * 7], [0.12, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.bezier(0.16, 1, 0.3, 1)});
+            return <div key={dex.id} style={{display: 'flex', flexDirection: 'column', gap: 12}}>
+              <div data-layout-siblings style={{display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 20}}>
+                <span style={{fontSize: portrait ? (dex.ours ? 42 : 38) : 26, lineHeight: 1.2,
+                  fontWeight: dex.ours ? 700 : 400, color: dex.ours ? theme.colors.text : theme.colors.secondary}}>{dex.label}</span>
+                <span style={{fontFamily: theme.fonts.numeric, fontSize: portrait ? (dex.ours ? 50 : 40) : 28, lineHeight: 1,
+                  fontWeight: dex.ours ? 700 : 400, color: dex.ours ? theme.colors.accent : theme.colors.secondary}}>{dex.value} MB</span>
               </div>
-            );
+              <div style={{height: dex.ours ? 14 : 10, borderRadius: 8, background: theme.colors.surfaceAlt, overflow: 'hidden'}}>
+                <div style={{height: '100%', width: `${dex.value / 10 * grow * 100}%`, borderRadius: 8,
+                  background: dex.ours ? `linear-gradient(90deg, ${theme.colors.accent}, ${theme.colors.success})` : theme.colors.muted}} />
+              </div>
+            </div>;
           })}
+          <div style={{fontSize: portrait ? 36 : 24, color: theme.colors.secondary, lineHeight: 1.35}}>{copy.shell.dexNote}</div>
         </div>
-
-        <div style={{height: 28}} />
-
-        <Body delay={2.2} color={theme.colors.muted} maxWidth="94%">
-          我们的实现覆盖 {facts.shell.coverage} 项 / 抽查竞品 {facts.shell.sampledCoverage}。
-          特征匹配，下界估计。
-        </Body>
-              <ChapterBar progress={frame / 300} />
-      </Stage>
-    </AbsoluteFill>
-  );
+      </div>
+    </SceneLayout>
+    <ChapterBar progress={frame / 300} />
+  </AbsoluteFill>;
 };

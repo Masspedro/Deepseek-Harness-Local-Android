@@ -1,3 +1,4 @@
+/** @deprecated Legacy v1 runtime swap diagram; active video scenes render DepthScene directly. */
 import {useCurrentFrame} from 'remotion';
 import {Caption} from './primitives';
 import {copy} from '../data';

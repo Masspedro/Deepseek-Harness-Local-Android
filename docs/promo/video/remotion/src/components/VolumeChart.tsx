@@ -1,3 +1,4 @@
+/** @deprecated Legacy v1 chart; active video scenes render ScaleScene directly. */
 import {useVideoConfig} from 'remotion';
 import {Caption, CountUp} from './primitives';
 import {copy, type VolumeRow} from '../data';

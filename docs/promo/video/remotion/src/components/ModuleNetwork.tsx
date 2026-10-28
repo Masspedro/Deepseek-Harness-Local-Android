@@ -1,3 +1,4 @@
+/** @deprecated Legacy v1 module network; active video scenes render DepthScene directly. */
 import {useCurrentFrame} from 'remotion';
 import {copy, facts} from '../data';
 import {progress} from '../motion';

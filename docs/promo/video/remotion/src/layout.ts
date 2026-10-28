@@ -49,6 +49,12 @@ export const safe = {
   landscape: {top: 0.05, bottom: 0.05, side: 0.05},
 } as const;
 
+/** 1920x1080 / 1080x1920 composition dimensions converted to pixel insets. */
+export const stageInsets = {
+  portrait: {top: 230, bottom: 346, side: 65},
+  landscape: {top: 54, bottom: 54, side: 96},
+} as const;
+
 /** 玻璃卡片：主角的容器 */
 export const card = (opts: {glow?: boolean} = {}) => ({
   background: `linear-gradient(160deg, ${theme.colors.surfaceAlt} 0%, ${theme.colors.surface} 100%)`,

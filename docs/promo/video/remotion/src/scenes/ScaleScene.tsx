@@ -1,208 +1,65 @@
-/**
- * 03 Scale —— 0:10–0:19（540 帧）
- *
- * v2 重制：v1 把「安装包 / 首次下载 / 解压占用」三组柱状图**同时**堆在一屏，
- * 每根柱子配 18px 小字标签，手机上根本读不出来。
- *
- * v2 规矩：三组数据**分三个时段**依次独占画面（每组 3 秒），
- * 主标题在顶部固定不动给出「现在是第几组」，柱状图占满中部，
- * 一行结论压在底部。任何时刻只有一组在说话。
- */
-import {AbsoluteFill, Easing, interpolate, Sequence, useCurrentFrame, useVideoConfig} from 'remotion';
+import {AbsoluteFill, Easing, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
 import {theme} from '../theme';
-import {type, card} from '../layout';
-import {Stage, Eyebrow, Headline, ChapterBar} from '../ui';
+import {card} from '../layout';
+import {SceneLayout, ChapterBar, usePortrait} from '../ui';
+import {facts, type VolumeRow} from '../data';
 
-const easeOut = Easing.bezier(0.16, 1, 0.3, 1);
-
-type Row = {label: string; value: number; display: string; ours?: boolean; note?: string; dim?: boolean};
-
-const GROUPS: {title: string; caption: string; max: number; rows: Row[]; verdict: string}[] = [
-  {
-    title: '安装包体积',
-    caption: '用户点下载时看到的数字',
-    max: 400,
-    rows: [
-      {label: 'dphmoblie', value: 392, display: '392'},
-      {label: 'DSHA', value: 279, display: '279'},
-      {label: 'woaiys3', value: 155, display: '155'},
-      {label: '本作 · 完整包', value: 149, display: '149', ours: true},
-      {label: 'guzhou079', value: 118, display: '118'},
-      {label: 'DSHBox', value: 112, display: '112'},
-      {label: 'dsh-phone-root', value: 41, display: '41', note: '需另装 Termux'},
-      {label: '本作 · 简单包', value: 24, display: '24', note: '另需首启下载 128'},
-    ],
-    verdict: '我们不是最小的 —— 但比 proot 系小一半以上。',
-  },
-  {
-    title: '首次可用总下载',
-    caption: '用户真正付出的流量',
-    max: 400,
-    rows: [
-      {label: 'dphmoblie', value: 392, display: '392'},
-      {label: 'DSHA', value: 279, display: '279'},
-      {label: 'woaiys3', value: 155, display: '155'},
-      {label: '本作 · 任一种包', value: 150, display: '≈150', ours: true},
-      {label: 'guzhou079', value: 118, display: '118'},
-      {label: 'DSHBox', value: 112, display: '112'},
-      {label: 'dsh-phone-root', value: 41, display: '41', note: '不含 Termux'},
-    ],
-    verdict: '完整包零二次下载，装完即用。',
-  },
-  {
-    title: '解压后磁盘占用',
-    caption: '安装完成后真正吃掉的空间',
-    max: 1300,
-    rows: [
-      {label: 'dphmoblie', value: 1297, display: '1297'},
-      {label: 'woaiys3', value: 462, display: '462'},
-      {label: 'DSHA', value: 440, display: '440'},
-      {label: '本作', value: 404, display: '404', ours: true},
-      {label: 'guzhou079', value: 370, display: '370'},
-    ],
-    verdict: '本作排第 4 —— 只有 dphmoblie 的三分之一。',
-  },
+const groups: {title: string; caption: string; rows: readonly VolumeRow[]; verdict: string; note: string}[] = [
+  {title: '01 / 安装包体积', caption: '用户点下载时看到的数字 · MB', rows: facts.install,
+    verdict: '我们不是最小的。', note: '简单包 24 MB + 首启下载 128 MB。\ndsh-phone-root 另需安装 Termux。'},
+  {title: '02 / 首次可用总下载', caption: '用户真正付出的流量 · MB', rows: facts.firstUse,
+    verdict: '两种包首次总下载均约 150 MB。', note: '完整包 149 MB；简单包首次约 152 MB。\ndsh-phone-root 的 Termux App 另计。'},
+  {title: '03 / 解压后磁盘占用', caption: '安装完成后真正吃掉的空间 · MB', rows: facts.extracted,
+    verdict: '本作排第 4（从大到小）。', note: 'DSHBox 解压占用未知，未纳入；本作统计运行时。'},
 ];
-
-const Bar = ({row, max, index, frame, fps}: {row: Row; max: number; index: number; frame: number; fps: number}) => {
-  const t = (frame - (0.25 + index * 0.07) * fps) / (0.62 * fps);
-  const grow = interpolate(t, [0, 1], [0, 1], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-    easing: easeOut,
-  });
-  const op = interpolate(t, [0, 0.4], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
-  const ours = row.ours;
-  const widthPct = (row.value / max) * 100;
-
-  return (
-    <div style={{marginBottom: 18, opacity: op}}>
-      <div style={{display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8}}>
-        <span
-          style={{
-            fontFamily: theme.fonts.chinese,
-            fontSize: ours ? type.body : type.caption,
-            fontWeight: ours ? 700 : 400,
-            color: ours ? theme.colors.text : theme.colors.secondary,
-          }}
-        >
-          {row.label}
-        </span>
-        <span
-          style={{
-            fontFamily: theme.fonts.numeric,
-            fontSize: ours ? type.subtitle : type.body,
-            fontWeight: ours ? 600 : 300,
-            fontVariantNumeric: 'tabular-nums',
-            color: ours ? theme.colors.accent : theme.colors.muted,
-          }}
-        >
-          {row.display}
-        </span>
-      </div>
-      <div style={{height: ours ? 24 : 16, background: theme.colors.surfaceAlt, borderRadius: 12, overflow: 'hidden', display: 'flex'}}>
-        <div
-          style={{
-            height: '100%',
-            // 用 flexBasis 百分比而非 width：父容器是 flex，width 会被内容压缩
-            flex: `0 0 ${widthPct * grow}%`,
-            borderRadius: 12,
-            background: ours
-              ? `linear-gradient(90deg, ${theme.colors.accent}, ${theme.colors.success})`
-              : theme.colors.muted,
-            opacity: ours ? 1 : 0.55,
-            boxShadow: ours ? `0 0 22px ${theme.colors.accent}66` : 'none',
-          }}
-        />
-      </div>
-      {row.note ? (
-        <div
-          style={{
-            marginTop: 7,
-            fontFamily: theme.fonts.chinese,
-            fontSize: type.eyebrow,
-            color: theme.colors.warning,
-            opacity: op,
-          }}
-        >
-          + {row.note}
-        </div>
-      ) : null}
-    </div>
-  );
-};
-
-const Group = ({group, index}: {group: (typeof GROUPS)[number]; index: number}) => {
-  const frame = useCurrentFrame();
-  const {fps} = useVideoConfig();
-  return (
-    <AbsoluteFill style={{justifyContent: 'center'}}>
-      <div style={{marginBottom: 26}}>
-        <div
-          style={{
-            fontFamily: theme.fonts.chinese,
-            fontSize: type.subtitle,
-            fontWeight: 700,
-            color: theme.colors.text,
-            marginBottom: 10,
-          }}
-        >
-          {String(index + 1).padStart(2, '0')} / {group.title}
-        </div>
-        <div style={{fontFamily: theme.fonts.chinese, fontSize: type.caption, color: theme.colors.muted}}>
-          {group.caption}
-        </div>
-      </div>
-
-      <div style={{...card(), padding: '38px 36px'}}>
-        {group.rows.map((r, i) => (
-          <Bar key={r.label} row={r} max={group.max} index={i} frame={frame} fps={fps} />
-        ))}
-      </div>
-
-      <div
-        style={{
-          marginTop: 30,
-          fontFamily: theme.fonts.chinese,
-          fontSize: type.body,
-          fontWeight: 600,
-          color: theme.colors.success,
-          opacity: interpolate(frame, [1.1 * fps, 1.6 * fps], [0, 1], {
-            extrapolateLeft: 'clamp',
-            extrapolateRight: 'clamp',
-          }),
-        }}
-      >
-        {group.verdict}
-      </div>
-    </AbsoluteFill>
-  );
-};
 
 export const ScaleScene = () => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
-  const SEG = 3 * fps;
-
-  return (
-    <AbsoluteFill style={{background: theme.colors.bg}}>
-      <AbsoluteFill
-        style={{background: `radial-gradient(circle at 68% 40%, ${theme.colors.accent}14 0%, transparent 50%)`}}
-      />
-      <Stage>
-        <Eyebrow delay={0.06}>The Complete Picture</Eyebrow>
-        <Headline lines={['体积，完整地看。']} delay={0.1} size={78} />
-        <div style={{height: 40}} />
-
-        <div style={{position: 'relative', flex: 1, minHeight: 0}}>
-          {GROUPS.map((g, i) => (
-            <Sequence key={g.title} from={i * SEG} durationInFrames={SEG} layout="absolute-fill">
-              <Group group={g} index={i} />
-            </Sequence>
-          ))}
+  const portrait = usePortrait();
+  const index = Math.min(2, Math.floor(frame / (3 * fps)));
+  const local = frame - index * 3 * fps;
+  const group = groups[index];
+  const max = Math.max(...group.rows.map((row) => row.value));
+  const rowLabel = portrait ? 38 : 26;
+  const rowValue = portrait ? 40 : 30;
+  const rowHeroLabel = portrait ? 42 : 32;
+  const rowHeroValue = portrait ? 48 : 36;
+  const barHeight = portrait ? 16 : 12;
+  const heroBarHeight = portrait ? 20 : 14;
+  return <AbsoluteFill style={{background: theme.colors.bg}}>
+    <AbsoluteFill style={{zIndex: 0, background: `radial-gradient(circle at 65% 45%, ${theme.colors.accent}13, transparent 56%)`}} />
+    <SceneLayout eyebrow="THE COMPLETE PICTURE" title={portrait ? ['体积，完整地看。'] : ['体积，', '完整地看。']} titleSize={portrait ? 78 : 68}>
+      <div data-layout-stack style={{display: 'flex', flexDirection: 'column', gap: portrait ? 18 : 16}}>
+        <div data-layout-block="chart-heading" style={{display: 'flex', flexDirection: 'column', gap: portrait ? 12 : 10}}>
+          <div style={{fontSize: portrait ? 50 : 40, lineHeight: 1.16, fontWeight: 700}}>{group.title}</div>
+          <div style={{fontSize: portrait ? 36 : 27, lineHeight: 1.3, color: theme.colors.secondary}}>{group.caption}</div>
         </div>
-              <ChapterBar progress={frame / 540} />
-      </Stage>
-    </AbsoluteFill>
-  );
+        <div data-layout-block="chart" style={{...card(), padding: portrait ? '22px 26px' : '22px 28px', display: 'flex', flexDirection: 'column', gap: portrait ? 10 : 9}}>
+          {group.rows.map((row, rowIndex) => {
+            const grow = interpolate(local, [rowIndex * 3, rowIndex * 3 + 40], [0.08, 1], {
+              extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.bezier(0.16, 1, 0.3, 1),
+            });
+            return <div key={row.id} data-volume-row={row.id} style={{display: 'flex', flexDirection: 'column', gap: 7}}>
+              <div data-layout-siblings style={{display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 18, minHeight: portrait ? 46 : 36}}>
+                <span style={{fontSize: row.ours ? rowHeroLabel : rowLabel, lineHeight: 1.16, fontWeight: row.ours ? 700 : 400,
+                  color: row.ours ? theme.colors.text : theme.colors.secondary, whiteSpace: 'nowrap'}}>{row.label}</span>
+                <span style={{fontFamily: theme.fonts.numeric, fontSize: row.ours ? rowHeroValue : rowValue,
+                  fontWeight: row.ours ? 700 : 400, lineHeight: 1.1, flexShrink: 0, color: row.ours ? theme.colors.accent : theme.colors.secondary}}>{row.approximate ? '≈' : ''}{row.value}</span>
+              </div>
+              <div data-volume-bar style={{height: row.ours ? heroBarHeight : barHeight, borderRadius: 8, overflow: 'hidden', background: theme.colors.surfaceAlt}}>
+                <div style={{height: '100%', width: `${row.value / max * grow * 100}%`, borderRadius: 8,
+                  background: row.ours ? `linear-gradient(90deg, ${theme.colors.accent}, ${theme.colors.success})` : theme.colors.muted}} />
+              </div>
+            </div>;
+          })}
+        </div>
+        <div data-layout-block="chart-conclusion" style={{display: 'flex', flexDirection: 'column', gap: 8}}>
+          <div style={{fontSize: portrait ? 38 : 31, lineHeight: 1.3, color: theme.colors.success, fontWeight: 700}}>{group.verdict}</div>
+          <div style={{fontSize: portrait ? 36 : 25, lineHeight: 1.3, color: theme.colors.secondary, whiteSpace: 'pre-line'}}>{group.note}</div>
+        </div>
+      </div>
+    </SceneLayout>
+    <ChapterBar progress={frame / 540} />
+  </AbsoluteFill>;
 };
