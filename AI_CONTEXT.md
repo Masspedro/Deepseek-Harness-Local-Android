@@ -22,6 +22,63 @@
   * 提交前看 `git diff --numstat`：**删除行数应远小于新增**，若大量删除要停下来复核。
 - **不确定就先查再问**，不要凭印象重写已工作的代码。
 
+## v1.4.38 ~ v1.4.41 已发布（2026-10-29）
+
+### v1.4.38：Telegram 交流群 + 修正红线表述
+- 群组 `https://t.me/+4VN3pYyH6i8yNDA1` 加入三个 README（徽章 + 反馈区）与
+  App「关于」页
+- **顺带修了一个红线问题**：`about_intro` 原来写「no data ever leaves the device /
+  数据全程不出设备」——模型请求必然离开设备，与 README 里的禁用表述冲突。
+  四种语言改为「会话与凭证留在本机；只有模型请求发往你配置的 API」
+
+### v1.4.39：PR #69 pt-BR 完整补齐（@Masspedro）
+EN 805 键覆盖 800，新增 127、改进 615。合并时恢复了我同日加的 5 个
+`about_telegram_*` 键（PR 基于 TG 字符串加入前的 main），现 805/805。
+
+### v1.4.40：PR #70 APK 安装器回调修复（@Masspedro）
+**这是 #47「Offline ASR 装不上」的真正根因**：旧代码把 PackageInstaller 的
+确认 PendingIntent 指向通用 launcher，于是
+- `STATUS_PENDING_USER_ACTION` 携带的确认弹窗**无人启动**
+- `STATUS_SUCCESS/FAILURE` 无人接收，只能靠轮询包名猜结果
+
+修复：新增非导出的 `ExtensionApkInstallActivity` 接住回调 + `ApkInstallStatus`
+按 session 记终态（PENDING 哨兵 + computeIfPresent，陈旧回执不覆盖终态）。
+附带 27 项合成桩测试（不需 Android SDK）。
+
+### v1.4.41：issue #72 WebView 语音插件全失效
+
+**用户报告质量极高**：dex 字符串池扫描 + `onShowFileChooser` 阳性对照，
+证明外壳重写了 WebChromeClient 但漏了媒体权限回调。
+
+**根因有两层，缺一不可**：
+1. 没实现 `WebChromeClient.onPermissionRequest` —— WebView 默认**直接拒绝**
+   所有网页媒体请求，与系统权限无关
+2. **manifest 缺 `MODIFY_AUDIO_SETTINGS`**（这层是实测才发现的）：
+   只补回调 + 授予 RECORD_AUDIO 后，错误变成
+   `NotReadableError: Could not start audio source`，logcat 说：
+   ```
+   cr_media: Requires MODIFY_AUDIO_SETTINGS and RECORD_AUDIO.
+             No audio device will be available for recording
+   ```
+   Chromium 录音**同时要求两个权限**。
+
+**端到端实测（CDP 直连 WebView 执行 getUserMedia）**：
+| 阶段 | 结果 |
+|---|---|
+| 修复前 | `NotAllowedError / Permission denied` |
+| 只补回调 + RECORD_AUDIO | `NotReadableError / Could not start audio source` |
+| **再补 MODIFY_AUDIO_SETTINGS** | **`PASS`（拿到 MediaStream）** |
+
+**为什么长期没被发现**：我们自己的语音走原生 `AsrManager`（不经 WebView），
+只有第三方网页插件走 `getUserMedia`。
+
+护栏：`_test_webview_media_permission.py`（17 项），其中两条专锁本次的坑 ——
+回调必须存在、manifest 必须**同时**声明两个权限（只查 RECORD_AUDIO 抓不到第二层）。
+
+### 发版
+- tag `v1.4.41` → CI `40837472702` **一次全绿** → 12 资产，latest
+- 18 项 Python 探针 + i18n + arm64 构建全过
+
 ## PR #68 已合并（2026-10-28 深夜，运行时预构建复用）
 
 ### 解决的三个真问题
