@@ -13,6 +13,13 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 语音输入（v1.2.58）：ASR 需要麦克风 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- issue #72：WebView 的音频采集除 RECORD_AUDIO 外**还要求**本权限。
+         缺它时 Chromium 直接判定「没有可用的录音设备」：
+           cr_media: Requires MODIFY_AUDIO_SETTINGS and RECORD_AUDIO.
+                     No audio device will be available for recording
+         表现与权限被拒几乎一样（getUserMedia 失败），极难定位 —— 实测踩过。
+         这是普通权限，安装即授予，不会弹框。 -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- 语音输入开/关的触感反馈（v1.2.73）：无此权限时 Vibrator 调用被静默忽略 -->
     <uses-permission android:name="android.permission.VIBRATE" />

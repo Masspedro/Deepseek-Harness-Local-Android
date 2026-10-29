@@ -81,6 +81,16 @@ class MainActivity : ThemedActivity() {
     /** 待回传的文件选择结果（onShowFileChooser → onActivityResult 之间持有；null 表示无进行中请求） */
     private var pendingFileCallback: android.webkit.ValueCallback<Array<Uri>>? = null
 
+    /**
+     * 挂起的网页媒体权限请求（issue #72）。
+     *
+     * `PermissionRequest` 是一次性对象：要么 grant、要么 deny，且只能各调一次。
+     * 系统权限框是异步的，所以授权前必须先把它存起来，回到
+     * `onRequestPermissionsResult` 再决定 grant/deny。
+     * 新请求到达时先 deny 掉旧的，避免上一个请求永远悬着（页面会一直 pending）。
+     */
+    private var pendingWebPermission: android.webkit.PermissionRequest? = null
+
     // ---------- 启动动画（v1.3.1） ----------
     /** 全屏启动遮罩；null = 已淡出/未初始化 */
     private var splash: android.view.View? = null
@@ -344,6 +354,11 @@ class MainActivity : ThemedActivity() {
             allowFileAccess = false       // 关闭文件域，收窄 WebView 攻击面
             allowContentAccess = false
             javaScriptCanOpenWindowsAutomatically = false
+            // issue #72：语音插件的 getUserMedia 在部分 WebView 版本上要等用户手势
+            // 才会 resolve，而它们的录制按钮本身就是那次手势。不关掉这个限制，
+            // 权限已经 grant 了仍可能卡在 NotAllowedError。只影响自动播放策略，
+            // 不涉及媒体采集权限（那个由 onPermissionRequest 管）。
+            mediaPlaybackRequiresUserGesture = false
             // 竖屏页面缩小靠 viewport meta 改写（同桌面模式机制），useWideViewPort 必须开。
             useWideViewPort = true
             loadWithOverviewMode = true
@@ -371,6 +386,50 @@ class MainActivity : ThemedActivity() {
                     logWebView("console/${msg.messageLevel()} ${msg.sourceId()}:${msg.lineNumber()} $text")
                 }
                 return false
+            }
+
+            /**
+             * 网页媒体权限（getUserMedia）—— issue #72。
+             *
+             * ## 为什么必须有
+             * Android WebView 的**默认实现直接拒绝**所有网页媒体请求，于是
+             * `navigator.mediaDevices.getUserMedia({audio:true})` 恒返回
+             * `DOMException: NotAllowedError / "Permission denied"`。
+             * 第三方语音插件（`@goodandready/dsh-voice`、引擎内置
+             * `dsh-experimental-client-ui-voice-input`）全靠这个 API，全部失效。
+             *
+             * 我们自己的语音输入走原生 `AsrManager`（不经 WebView），所以一直正常 ——
+             * 这也是为什么这个缺口长期没被发现。
+             *
+             * ## 流程
+             * ① 只处理 `RESOURCE_AUDIO_CAPTURE`，其余资源（视频/摄像头）原样拒绝；
+             * ② 系统已有 `RECORD_AUDIO` → 直接 grant；
+             * ③ 没有 → 弹系统权限框，结果在 `onRequestPermissionsResult` 里回到
+             *    `pendingWebPermission` 再 grant/deny。
+             *
+             * ⚠️ 必须判空并只 grant 一次：`PermissionRequest` 是一次性的，
+             * 重复调用 grant/deny 会抛 IllegalStateException（WebView 133 上实测）。
+             */
+            override fun onPermissionRequest(request: android.webkit.PermissionRequest?) {
+                request ?: return
+                val wantsAudio = request.resources?.contains(
+                    android.webkit.PermissionRequest.RESOURCE_AUDIO_CAPTURE,
+                ) == true
+                if (!wantsAudio) {
+                    // 摄像头/视频采集目前没有使用场景，保守拒绝（不扩大攻击面）
+                    request.deny()
+                    return
+                }
+                val granted = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) ==
+                    PackageManager.PERMISSION_GRANTED
+                if (granted) {
+                    grantAudio(request)
+                    return
+                }
+                // 挂起这次请求，等系统权限框回来
+                pendingWebPermission?.deny()
+                pendingWebPermission = request
+                requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), REQ_WEB_AUDIO)
             }
 
             /**
@@ -1817,11 +1876,34 @@ class MainActivity : ThemedActivity() {
         }, "voice-target").apply { isDaemon = true; start() }
     }
 
+    /** 授权网页媒体请求（一次性对象，只能调用一次）。 */
+    private fun grantAudio(request: android.webkit.PermissionRequest) {
+        runCatching {
+            request.grant(arrayOf(android.webkit.PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+        }.onFailure { logWebView("permission: grant audio failed: ${it.message}") }
+        if (pendingWebPermission === request) pendingWebPermission = null
+    }
+
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
         grantResults: IntArray,
     ) {
+        // issue #72：网页 getUserMedia 的系统权限回执
+        if (requestCode == REQ_WEB_AUDIO) {
+            val req = pendingWebPermission
+            pendingWebPermission = null
+            val ok = grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+            if (req == null) return
+            if (ok) {
+                grantAudio(req)
+            } else {
+                runCatching { req.deny() }
+                Toast.makeText(this, getString(R.string.voice_need_permission), Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
         if (requestCode == REQ_RECORD_AUDIO) {
             val ok = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
             if (ok) {
@@ -2000,6 +2082,9 @@ class MainActivity : ThemedActivity() {
 
         /** 麦克风权限请求码（语音输入，v1.2.58） */
         private const val REQ_RECORD_AUDIO = 1002
+
+        /** 网页 getUserMedia 的麦克风权限请求（issue #72，与原生语音区分开） */
+        private const val REQ_WEB_AUDIO = 1003
 
         /** 发送去重窗口（v1.2.90）：同文本在此时间内只发一次，防重复 */
         private const val DEDUP_WINDOW_MS = 1_500L
