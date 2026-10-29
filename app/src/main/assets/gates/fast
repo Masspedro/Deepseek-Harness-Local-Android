@@ -1,16 +1,15 @@
 #!/system/bin/sh
-# [dsh-android] fast —— 无障碍操作期间的「思考开关」（v1.2.165，用户需求）
+# [dsh-android] fast —— UI 自动化工作流标记（遗留 CLI 兼容）
 #
-# 为什么给 agent 这个工具：无障碍操作（读屏/点按/验证）的每一步都要走一次完整
-# 云端推理，慢；而那些步骤不需要思考——AI 早已规划好路径，执行只是照做。
-# 打开 fast 后，引擎侧插件（android-plugins/fast-mode.mjs）会在**每一步**把
-# reasoningEffort 置为 off → 不再付思考成本；关闭即恢复常规对话。
+# 只写/删 $DSH_HOME/fast-mode，不改变模型、provider 或 reasoningEffort。
+# 多步计划交给本地 loop 执行，避免每次手势重新请求云端决策。
+# on/off 不会恢复旧版本已持久化的 off；关标记后须显式重选有效思考档位。
 #
-#   fast on      开始无障碍操作（关思考，快）
-#   fast off     操作结束，恢复常规对话
-#   fast         查询当前状态
+#   fast on      标记 UI 工作流
+#   fast off     清除工作流标记
+#   fast         查询标记是否存在（CLI 不检查 TTL）
 #
-# 实现：写/删 $DSH_HOME/fast-mode 标记文件（插件每步读它，带 1.5s 缓存）。
+# 与 fast_mode 工具共享标记；工具读取时检查 30 分钟 TTL 并清理过期标记。
 # 幂等；不需要重启引擎。
 DSH_HOME="${DSH_HOME:-/data/user/0/app.dsh.mobile/files/dsh-home}"
 MARKER="$DSH_HOME/fast-mode"
@@ -19,7 +18,7 @@ case "$1" in
   on)
     printf 'enabled %s\n' "$(date +%s)" > "$MARKER" 2>/dev/null
     if [ -f "$MARKER" ]; then
-      echo '{"ok":true,"fast":true,"note":"thinking disabled for subsequent steps; run `fast off` when the UI task is done"}'
+      echo '{"ok":true,"fast":true,"note":"UI workflow hint ON; model/provider/reasoning unchanged. Run `fast off` when done; OFF or expiry does not restore saved reasoning effort from older versions. After OFF, explicitly reselect a valid reasoning effort if needed."}'
     else
       echo '{"ok":false,"error":"cannot write marker: '"$MARKER"'"}'
       exit 2
@@ -31,7 +30,7 @@ case "$1" in
       echo '{"ok":false,"error":"cannot remove marker: '"$MARKER"'"}'
       exit 2
     fi
-    echo '{"ok":true,"fast":false,"note":"back to normal mode (thinking on)"}'
+    echo '{"ok":true,"fast":false,"note":"UI workflow hint OFF; model/provider/reasoning unchanged. Does not restore saved reasoning effort from older versions; explicitly reselect a valid reasoning effort if needed."}'
     ;;
   ""|status)
     if [ -f "$MARKER" ]; then

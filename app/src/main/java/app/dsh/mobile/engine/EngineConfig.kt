@@ -1249,10 +1249,10 @@ object EngineConfig {
             |    - id: android-open-file
             |      name: ./android-plugins/open-file.mjs
             |
-            |# Accessibility-time thinking switch (v1.2.165): the agent runs `fast on`
-            |# before an accessibility task, so later steps stop paying the reasoning
-            |# cost; `fast off` restores normal conversation. The plugin reads the
-            |# ${'$'}DSH_HOME/fast-mode marker file and only affects reasoningEffort.
+            |# UI-workflow hint: fast_mode and the legacy `fast` gate share the
+            |# ${'$'}DSH_HOME/fast-mode marker (30-minute TTL when read by the tool).
+            |# The plugin preserves model/provider/reasoning selection; it does not
+            |# override agent/request, whose result becomes durable request state.
             |- insert:
             |    - id: android-fast-mode
             |      name: ./android-plugins/fast-mode.mjs
